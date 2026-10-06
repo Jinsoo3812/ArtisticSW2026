@@ -1,287 +1,81 @@
 #include "Task/BTT_MoveToDeckWaypoint.h"
-
-#include "AIController.h"
+#include "AI/BaseAIController.h"
 #include "BaseEnemy.h"
-#include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "BossAI/BossDeckMovementUtils.h"
-#include "Components/StaticMeshComponent.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
-#include "DeckAI/DeckWaypointComponent.h"
-#include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ShipAI/EnemyShip.h"
 
 namespace
 {
-	struct FDeckWaypointMoveMemory
+	void StopDeckMove(UBehaviorTreeComponent& OwnerComp, ABaseEnemy* Enemy, bool bReached)
 	{
-		float ElapsedTime = 0.0f;
-		float TimeSinceProgress = 0.0f;
-		float ProgressAnchorDistance = TNumericLimits<float>::Max();
-		float EffectiveAcceptanceRadius = 0.0f;
-		int32 ActiveGoalPointId = INDEX_NONE;
-	};
-
-	IDeckWaypointMovementInterface* ResolveDeckMover(const UBehaviorTreeComponent& OwnerComp)
-	{
-		const AAIController* Controller = OwnerComp.GetAIOwner();
-		return Controller ? Cast<IDeckWaypointMovementInterface>(Controller->GetPawn()) : nullptr;
-	}
-
-	ACharacter* ResolveMovingCharacter(const UBehaviorTreeComponent& OwnerComp)
-	{
-		const AAIController* Controller = OwnerComp.GetAIOwner();
-		return Controller ? Cast<ACharacter>(Controller->GetPawn()) : nullptr;
-	}
-
-	void StopDeckMovement(UBehaviorTreeComponent& OwnerComp, ACharacter* Character)
-	{
-		if (AAIController* Controller = OwnerComp.GetAIOwner())
+		if (AAIController* AI = OwnerComp.GetAIOwner()) AI->StopMovement();
+		if (Enemy && Enemy->GetCharacterMovement()) Enemy->GetCharacterMovement()->StopMovementImmediately();
+		if (IDeckWaypointMovementInterface* Mover = Cast<IDeckWaypointMovementInterface>(Enemy))
 		{
-			Controller->StopMovement();
+			if (bReached) Mover->OnDeckMoveReached(); else Mover->OnDeckMoveFailed();
 		}
-		if (Character)
-		{
-			if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
-			{
-				Movement->StopMovementImmediately();
-			}
-		}
+		if (UDeckWalkRouteComponent* Route = Enemy ? Enemy->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr) Route->ClearGoal();
+		if (UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent(); BB && BB->GetKeyID(TEXT("DestinationLocation")) != FBlackboard::InvalidKey)
+			BB->ClearValue(TEXT("DestinationLocation"));
 	}
-
-	void ClearDestinationBlackboard(UBehaviorTreeComponent& OwnerComp)
+	bool AttackReady(UBehaviorTreeComponent& OwnerComp, ADeckEnemy* Enemy)
 	{
-		static const FName DestinationPointKey(TEXT("DestinationPointId"));
-		if (UBlackboardComponent* Blackboard = OwnerComp.GetBlackboardComponent();
-			Blackboard && Blackboard->GetKeyID(DestinationPointKey) != FBlackboard::InvalidKey)
-		{
-			Blackboard->SetValueAsInt(DestinationPointKey, INDEX_NONE);
-		}
-	}
-
-	void ResetMoveMemory(
-		FDeckWaypointMoveMemory& Memory,
-		const FVector& LocalCharacter,
-		const FVector& LocalGoal,
-		float AcceptanceRadius,
-		int32 GoalPointId)
-	{
-		const float InitialDistance = FVector::Dist2D(LocalCharacter, LocalGoal);
-		Memory = FDeckWaypointMoveMemory();
-		Memory.ProgressAnchorDistance = InitialDistance;
-		Memory.EffectiveAcceptanceRadius = BossDeckMovement::ResolveAcceptanceRadius(
-			AcceptanceRadius, InitialDistance);
-		Memory.ActiveGoalPointId = GoalPointId;
+		const ABaseAIController* AI = Cast<ABaseAIController>(OwnerComp.GetAIOwner());
+		return AI && AI->GetEnemyState() == EEnemyAIState::Combat && Enemy && Enemy->GetDeckCombatComponent()
+			&& Enemy->GetDeckCombatComponent()->EvaluateAttack(AI->GetCombatTarget()) == EDeckAttackOutcome::Ready;
 	}
 }
-
-UBTT_MoveToDeckWaypoint::UBTT_MoveToDeckWaypoint()
+UBTT_MoveToDeckWaypoint::UBTT_MoveToDeckWaypoint() { NodeName = TEXT("Move On Deck Walk Area"); bNotifyTick = true; }
+uint16 UBTT_MoveToDeckWaypoint::GetInstanceMemorySize() const { return 0; }
+EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-	NodeName = TEXT("Move To Live Deck Waypoint");
-	bNotifyTick = true;
-}
-
-EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(
-	UBehaviorTreeComponent& OwnerComp,
-	uint8* NodeMemory)
-{
-	IDeckWaypointMovementInterface* DeckMover = ResolveDeckMover(OwnerComp);
-	ACharacter* Character = ResolveMovingCharacter(OwnerComp);
-	ABaseEnemy* Enemy = Cast<ABaseEnemy>(Character);
-	ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(Character);
-	if (DeckEnemy && DeckEnemy->GetGoalDeckWaypointId() == INDEX_NONE)
+	AAIController* AI = OwnerComp.GetAIOwner();
+	ABaseEnemy* Enemy = AI ? Cast<ABaseEnemy>(AI->GetPawn()) : nullptr;
+	IDeckWaypointMovementInterface* Mover = Cast<IDeckWaypointMovementInterface>(Enemy);
+	AEnemyShip* Ship = Mover ? Mover->GetDeckHostShip() : nullptr;
+	UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
+	UDeckWalkRouteComponent* Route = Enemy ? Enemy->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr;
+	if (bStopWhenAttackReady && AttackReady(OwnerComp, Cast<ADeckEnemy>(Enemy)))
 	{
-		if (UDeckEnemyNavigationComponent* Navigation = DeckEnemy->GetDeckEnemyNavigationComponent())
-		{
-			Navigation->PrepareNextHop();
-		}
+		StopDeckMove(OwnerComp, Enemy, true);
+		return EBTNodeResult::Succeeded;
 	}
-	AEnemyShip* HostShip = DeckMover ? DeckMover->GetDeckHostShip() : nullptr;
-	const UDeckWaypointComponent* Goal = HostShip && DeckMover
-		? HostShip->GetDeckWaypoint(DeckMover->GetGoalDeckPointId())
-		: nullptr;
-	if (!DeckMover || !Character || !Enemy || !Enemy->HasAuthority()
-		|| !DeckMover->CanMoveOnDeck() || !HostShip
-		|| !HostShip->GetShipDeckMesh() || !Goal)
+	if (!Mover || !Mover->CanMoveOnDeck() || !Area || !Area->IsReady() || !Route || !Route->HasGoal()
+		|| !Enemy->GetCharacterMovement() || !Enemy->GetCharacterMovement()->IsMovingOnGround())
 	{
-		StopDeckMovement(OwnerComp, Character);
-		if (DeckMover)
-		{
-			DeckMover->OnDeckMoveFailed();
-		}
-		ClearDestinationBlackboard(OwnerComp);
-		return EBTNodeResult::Failed;
+		StopDeckMove(OwnerComp, Enemy, false); return EBTNodeResult::Failed;
 	}
-
-	Character->SetBase(HostShip->GetShipDeckMesh());
-	if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
-	{
-		Enemy->SetBaseMovementSpeed(MoveSpeed);
-		Movement->BrakingDecelerationWalking = BrakingDeceleration;
-		if (!Movement->IsMovingOnGround())
-		{
-			StopDeckMovement(OwnerComp, Character);
-			DeckMover->OnDeckMoveFailed();
-			ClearDestinationBlackboard(OwnerComp);
-			return EBTNodeResult::Failed;
-		}
-		Movement->bForceNextFloorCheck = true;
-	}
-
-	const FTransform DeckTransform = HostShip->GetShipDeckMesh()->GetComponentTransform();
-	const FVector LocalCharacter = DeckTransform.InverseTransformPosition(Character->GetActorLocation());
-	const FVector LocalGoal = DeckTransform.InverseTransformPosition(Goal->GetComponentLocation());
-	FDeckWaypointMoveMemory& Memory = *reinterpret_cast<FDeckWaypointMoveMemory*>(NodeMemory);
-	ResetMoveMemory(
-		Memory, LocalCharacter, LocalGoal, AcceptanceRadius, Goal->GetWaypointId());
+	Enemy->SetBase(Area->GetMovementBase(*Enemy));
+	Enemy->SetBaseMovementSpeed(MoveSpeed);
+	Enemy->GetCharacterMovement()->BrakingDecelerationWalking = BrakingDeceleration;
 	return EBTNodeResult::InProgress;
 }
-
-void UBTT_MoveToDeckWaypoint::TickTask(
-	UBehaviorTreeComponent& OwnerComp,
-	uint8* NodeMemory,
-	float DeltaSeconds)
+void UBTT_MoveToDeckWaypoint::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
-	IDeckWaypointMovementInterface* DeckMover = ResolveDeckMover(OwnerComp);
-	ACharacter* Character = ResolveMovingCharacter(OwnerComp);
-	ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(Character);
-	AEnemyShip* HostShip = DeckMover ? DeckMover->GetDeckHostShip() : nullptr;
-	UDeckEnemyNavigationComponent* CombatNavigation = DeckEnemy
-		? DeckEnemy->GetDeckEnemyNavigationComponent()
-		: nullptr;
-	if (DeckEnemy && DeckEnemy->CanAttackCurrentTarget(true))
-	{
-		StopDeckMovement(OwnerComp, Character);
-		if (CombatNavigation)
-		{
-			CombatNavigation->CancelCombatRoute();
-		}
-		ClearDestinationBlackboard(OwnerComp);
-		FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
-		return;
-	}
-	if (CombatNavigation && CombatNavigation->HasActiveRoute()
-		&& CombatNavigation->ReplanIfTargetMoved(DeckEnemy->GetCombatTarget(), true)
-		&& DeckEnemy->GetGoalDeckWaypointId() == INDEX_NONE)
-	{
-		StopDeckMovement(OwnerComp, Character);
-		ClearDestinationBlackboard(OwnerComp);
-		FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
-		return;
-	}
-
-	const UDeckWaypointComponent* Goal = HostShip && DeckMover
-		? HostShip->GetDeckWaypoint(DeckMover->GetGoalDeckPointId())
-		: nullptr;
-	if (!DeckMover || !Character || !DeckMover->CanMoveOnDeck() || !HostShip
-		|| !HostShip->GetShipDeckMesh() || !Goal)
-	{
-		StopDeckMovement(OwnerComp, Character);
-		if (DeckMover)
-		{
-			DeckMover->OnDeckMoveFailed();
-		}
-		ClearDestinationBlackboard(OwnerComp);
-		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-		return;
-	}
-
-	const FTransform DeckTransform = HostShip->GetShipDeckMesh()->GetComponentTransform();
-	const FVector LocalEnemy = DeckTransform.InverseTransformPosition(Character->GetActorLocation());
-	const FVector LocalGoal = DeckTransform.InverseTransformPosition(Goal->GetComponentLocation());
-	const FVector LocalDelta(LocalGoal.X - LocalEnemy.X, LocalGoal.Y - LocalEnemy.Y, 0.0f);
-	const float Distance = LocalDelta.Size2D();
-	FDeckWaypointMoveMemory& Memory = *reinterpret_cast<FDeckWaypointMoveMemory*>(NodeMemory);
-	if (Memory.ActiveGoalPointId != Goal->GetWaypointId())
-	{
-		ResetMoveMemory(
-			Memory, LocalEnemy, LocalGoal, AcceptanceRadius, Goal->GetWaypointId());
-	}
-	if (BossDeckMovement::IsWithinPlanarAcceptance(
-		LocalEnemy, LocalGoal, Memory.EffectiveAcceptanceRadius))
-	{
-		StopDeckMovement(OwnerComp, Character);
-		const int32 ReachedPointId = DeckMover->GetGoalDeckPointId();
-		DeckMover->OnDeckPointReached();
-		if (DeckMover->GetCurrentDeckPointId() != ReachedPointId)
-		{
-			DeckMover->OnDeckMoveFailed();
-			if (CombatNavigation)
-			{
-				CombatNavigation->CancelCombatRoute();
-			}
-			ClearDestinationBlackboard(OwnerComp);
-			FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-			return;
-		}
-		if (CombatNavigation && CombatNavigation->HasActiveRoute()
-			&& CombatNavigation->HandlePointReached())
-		{
-			const UDeckWaypointComponent* NextGoal = HostShip->GetDeckWaypoint(
-				DeckMover->GetGoalDeckPointId());
-			if (NextGoal)
-			{
-				const FVector NextLocalEnemy = DeckTransform.InverseTransformPosition(
-					Character->GetActorLocation());
-				const FVector NextLocalGoal = DeckTransform.InverseTransformPosition(
-					NextGoal->GetComponentLocation());
-				ResetMoveMemory(
-					Memory, NextLocalEnemy, NextLocalGoal,
-					AcceptanceRadius, NextGoal->GetWaypointId());
-				return;
-			}
-		}
-		ClearDestinationBlackboard(OwnerComp);
-		FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
-		return;
-	}
-
-	Memory.ElapsedTime += DeltaSeconds;
-	Memory.TimeSinceProgress += DeltaSeconds;
-	if (Distance <= Memory.ProgressAnchorDistance - FMath::Max(1.0f, MinimumProgressDistance))
-	{
-		Memory.ProgressAnchorDistance = Distance;
-		Memory.TimeSinceProgress = 0.0f;
-	}
-	if (Memory.ElapsedTime >= FMath::Max(0.1f, MaximumMoveTime)
-		|| Memory.TimeSinceProgress >= FMath::Max(0.1f, ProgressTimeout))
-	{
-		StopDeckMovement(OwnerComp, Character);
-		DeckMover->OnDeckMoveFailed();
-		ClearDestinationBlackboard(OwnerComp);
-		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-		return;
-	}
-
-	const FVector WorldDirection = DeckTransform.TransformVectorNoScale(LocalDelta.GetSafeNormal2D());
-	Character->AddMovementInput(WorldDirection, 1.0f);
+	ABaseEnemy* Enemy = OwnerComp.GetAIOwner() ? Cast<ABaseEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr;
+	IDeckWaypointMovementInterface* Mover = Cast<IDeckWaypointMovementInterface>(Enemy);
+	ADeckEnemy* Deck = Cast<ADeckEnemy>(Enemy);
+	UDeckWalkRouteComponent* Route = Enemy ? Enemy->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr;
+	const bool bReady = bStopWhenAttackReady && AttackReady(OwnerComp, Deck);
+	if (Deck && !bReady) Deck->GetDeckEnemyNavigationComponent()->ReplanIfTargetMoved(Deck->GetCombatTarget());
+	const EDeckWalkRouteTick Result = bReady ? EDeckWalkRouteTick::Reached
+		: (Mover && Mover->CanMoveOnDeck() && Route ? Route->TickRoute(DeltaSeconds, AcceptanceRadius,
+			ProgressTimeout, MaximumMoveTime, MoveSpeed, MinimumProgressDistance) : EDeckWalkRouteTick::Failed);
+	if (Result == EDeckWalkRouteTick::Moving) return;
+	if (Deck && Deck->GetDeckCombatComponent()->HasRecovery()
+		&& Deck->GetDeckCombatComponent()->HasAttackPosition(Deck->GetCombatTarget())) Deck->GetDeckCombatComponent()->ClearRecovery();
+	StopDeckMove(OwnerComp, Enemy, Result == EDeckWalkRouteTick::Reached);
+	FinishLatentTask(OwnerComp, Result == EDeckWalkRouteTick::Reached ? EBTNodeResult::Succeeded : EBTNodeResult::Failed);
 }
-
-EBTNodeResult::Type UBTT_MoveToDeckWaypoint::AbortTask(
-	UBehaviorTreeComponent& OwnerComp,
-	uint8* NodeMemory)
+EBTNodeResult::Type UBTT_MoveToDeckWaypoint::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-	ACharacter* Character = ResolveMovingCharacter(OwnerComp);
-	StopDeckMovement(OwnerComp, Character);
-	if (IDeckWaypointMovementInterface* DeckMover = ResolveDeckMover(OwnerComp))
-	{
-		DeckMover->OnDeckMoveFailed();
-	}
-	if (ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(Character))
-	{
-		if (UDeckEnemyNavigationComponent* Navigation = DeckEnemy->GetDeckEnemyNavigationComponent())
-		{
-			Navigation->CancelCombatRoute();
-		}
-	}
-	ClearDestinationBlackboard(OwnerComp);
+	StopDeckMove(OwnerComp, OwnerComp.GetAIOwner() ? Cast<ABaseEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr, false);
 	return EBTNodeResult::Aborted;
-}
-
-uint16 UBTT_MoveToDeckWaypoint::GetInstanceMemorySize() const
-{
-	return sizeof(FDeckWaypointMoveMemory);
 }

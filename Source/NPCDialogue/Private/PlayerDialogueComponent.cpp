@@ -450,6 +450,24 @@ void UPlayerDialogueComponent::ServerSelectReply_Implementation(
 		return;
 	}
 
+	if (Reply->EndAction == ENPCDialogueReplyEndAction::CloseWithoutOutcome)
+	{
+		ClientCloseDialogue(ServerSessionId);
+		EndServerDialogue();
+		return;
+	}
+	if (Reply->EndAction == ENPCDialogueReplyEndAction::BeginFinalDeparture)
+	{
+		if (!OnFinalDepartureRequested.IsBound()
+			|| !OnFinalDepartureRequested.Execute(GetOwner()))
+		{
+			ClientDialogueFailed(ENPCDialogueFailureReason::StoryCommitFailed);
+			return;
+		}
+		ClientCloseDialogue(ServerSessionId);
+		EndServerDialogue();
+		return;
+	}
 	if (!CommitServerOutcome(*Rule, Inventory))
 	{
 		ClientDialogueFailed(Rule->ConsumedItems.IsEmpty() && Rule->RewardItems.IsEmpty()

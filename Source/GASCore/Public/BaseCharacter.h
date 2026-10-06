@@ -54,9 +54,8 @@ public:
 	float GetDeathRagdollUpwardImpulse() const { return DeathRagdollUpwardImpulse; }
 
 protected:
-	/** Player death ownership is released by GameMode after progress capture. */
-	virtual bool ShouldDetachControllerOnDeathRagdoll() const { return bDetachControllerOnDeathRagdoll; }
-
+	/** Player life flow owns unpossession; ordinary characters retain the authored policy. */
+	virtual bool ShouldDetachControllerForDeathRagdoll() const { return bDetachControllerOnDeathRagdoll; }
 	void InitializeAnimatedCombatHurtbox();
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;

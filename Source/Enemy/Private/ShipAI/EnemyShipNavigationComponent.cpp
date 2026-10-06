@@ -5,6 +5,12 @@
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipAvoidanceSettings.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
+#include "Network/SWFinalEncounterDiagnostics.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "EngineUtils.h"
+#include "WaterBodyActor.h"
+#include "WaterBodyComponent.h"
 #include "Net/UnrealNetwork.h"
 
 UEnemyShipNavigationComponent::UEnemyShipNavigationComponent()
@@ -41,6 +47,13 @@ void UEnemyShipNavigationComponent::BeginPlay()
 	{
 		SetComponentTickEnabled(false);
 	}
+	else if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AWaterBody> It(World); It; ++It)
+		{
+			WaterBodies.Add(*It);
+		}
+	}
 }
 
 void UEnemyShipNavigationComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -49,6 +62,7 @@ void UEnemyShipNavigationComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	StopOwnerShip();
 	OwnerShip.Reset();
 	TargetShip = nullptr;
+	WaterBodies.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -71,8 +85,10 @@ void UEnemyShipNavigationComponent::TickComponent(
 	}
 
 	RemoveInvalidOverrides();
-	if (!bNavigationEnabled || Ship->IsDeathHandled())
+	if (!bNavigationEnabled || Ship->IsDeathHandled() || Ship->IsStoryGateDormant()
+		|| Ship->IsDistanceOptimizationDormant())
 	{
+		ResetTerrainAvoidance();
 		StopOwnerShip();
 		return;
 	}
@@ -103,6 +119,7 @@ void UEnemyShipNavigationComponent::TickComponent(
 	}
 
 	UpdateAvoidance(DeltaTime);
+	UpdateTerrainAvoidance(DeltaTime);
 	ApplyControl(LastNavigationOutput);
 }
 
@@ -120,6 +137,7 @@ void UEnemyShipNavigationComponent::SetNavigationEnabled(bool bEnabled)
 	if (!bNavigationEnabled)
 	{
 		ResetAvoidance();
+		ResetTerrainAvoidance();
 		StopOwnerShip();
 	}
 }
@@ -321,6 +339,12 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 		return;
 	}
 
+	if (bTerrainAvoidanceActive)
+	{
+		Ship->SetAIControlInput(TerrainMoveInput, TerrainTurnInput);
+		return;
+	}
+
 	if (bAvoidanceManeuverActive)
 	{
 		const UEnemyShipAvoidanceSettings* Settings = GetDefault<UEnemyShipAvoidanceSettings>();
@@ -403,6 +427,191 @@ void UEnemyShipNavigationComponent::ResetAvoidance()
 	AvoidanceMinimumTimeRemaining = 0.0f;
 	AvoidanceSafeElapsed = 0.0f;
 	AvoidanceThreatActor.Reset();
+}
+
+void UEnemyShipNavigationComponent::UpdateTerrainAvoidance(float DeltaTime)
+{
+	AEnemyShip* Ship = OwnerShip.Get();
+	const bool bMovingState = CurrentState == ENavalCombatState::Approach
+		|| CurrentState == ENavalCombatState::Orbit || CurrentState == ENavalCombatState::Return;
+	if (!Ship || !bMovingState || LastNavigationOutput.MoveInput <= 0.0f
+		|| HasActiveOverride() || Ship->IsAnchorDropped() || Ship->IsSinking())
+	{
+		ResetTerrainAvoidance();
+		return;
+	}
+
+	const UEnemyShipAvoidanceSettings* Settings = GetDefault<UEnemyShipAvoidanceSettings>();
+	TerrainTurnMinimumRemaining = FMath::Max(0.0f, TerrainTurnMinimumRemaining - DeltaTime);
+	TerrainOverlapReverseRemaining = FMath::Max(0.0f, TerrainOverlapReverseRemaining - DeltaTime);
+	TerrainEvaluationAccumulator += DeltaTime;
+	const float Interval = FMath::Max(0.05f, Settings->EvaluationInterval);
+	if (TerrainEvaluationAccumulator < Interval)
+	{
+		return;
+	}
+	const float EvaluationElapsed = TerrainEvaluationAccumulator;
+	TerrainEvaluationAccumulator = 0.0f;
+
+	UWorld* World = GetWorld();
+	UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Ship->GetRootComponent());
+	if (!World || !Root || !Root->IsRegistered())
+	{
+		bTerrainAvoidanceActive = true;
+		TerrainMoveInput = 0.0f;
+		TerrainTurnInput = 0.0f;
+		FSWFinalEncounterDiagnostics::Write(TEXT("TerrainAvoidance"), TEXT("QueryUnavailable"),
+			FString::Printf(TEXT("Ship=%s Position=%s State=%d"), *Ship->GetPathName(),
+				*Ship->GetActorLocation().ToCompactString(), static_cast<int32>(CurrentState)));
+		return;
+	}
+
+	const FVector Origin = Root->GetComponentLocation();
+	const FVector Forward = Ship->GetActorForwardVector().GetSafeNormal2D();
+	if (Forward.IsNearlyZero())
+	{
+		bTerrainAvoidanceActive = true;
+		TerrainMoveInput = 0.0f;
+		TerrainTurnInput = 0.0f;
+		FSWFinalEncounterDiagnostics::Write(TEXT("TerrainAvoidance"), TEXT("DirectionUnavailable"),
+			FString::Printf(TEXT("Ship=%s Position=%s"), *Ship->GetPathName(), *Origin.ToCompactString()));
+		return;
+	}
+	const FVector Extent = Root->Bounds.BoxExtent;
+	const float ProbeDistance = FMath::Max(Settings->TerrainMinimumProbeDistance,
+		Extent.X + Settings->TerrainSideMargin
+		+ FMath::Max(0.0f, FVector::DotProduct(Root->GetComponentVelocity(), Forward))
+			* Settings->TerrainVelocityHorizon);
+	const FVector HalfExtent(FMath::Max(Extent.X, 100.0f),
+		FMath::Max(Extent.Y, 100.0f) + Settings->TerrainSideMargin,
+		Settings->TerrainHalfHeight);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(EnemyShipTerrainAvoidance), false, Ship);
+	for (const TWeakObjectPtr<AActor>& WaterBody : WaterBodies)
+	{
+		if (WaterBody.IsValid()) Params.AddIgnoredActor(WaterBody.Get());
+	}
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+	float FreeDistance[3] = { ProbeDistance, ProbeDistance, ProbeDistance };
+	AActor* Threat[3] = { nullptr, nullptr, nullptr };
+	bool bInitialOverlap = false;
+	for (int32 Candidate = 0; Candidate < 3; ++Candidate)
+	{
+		const float Yaw = Candidate == 0 ? 0.0f : (Candidate == 1 ? 1.0f : -1.0f) * Settings->TerrainProbeYaw;
+		const FVector Direction = Forward.RotateAngleAxis(Yaw, FVector::UpVector);
+		const FQuat Rotation = FRotationMatrix::MakeFromX(Direction).ToQuat();
+		TArray<FHitResult> Hits;
+		World->SweepMultiByObjectType(Hits, Origin, Origin + Direction * ProbeDistance,
+			Rotation, Objects, FCollisionShape::MakeBox(HalfExtent), Params);
+		for (const FHitResult& Hit : Hits)
+		{
+			AActor* Actor = Hit.GetActor();
+			UPrimitiveComponent* Component = Hit.GetComponent();
+			if (!Hit.bBlockingHit || !Actor || !Component || Actor == Ship
+				|| Actor->IsAttachedTo(Ship) || Actor->IsA(AWaterBody::StaticClass())
+				|| Component->GetCollisionProfileName() == TEXT("Water")
+				|| Component->IsA<UWaterBodyComponent>())
+			{
+				continue;
+			}
+			bool bLandscape = false;
+			for (const UClass* Class = Actor->GetClass(); Class; Class = Class->GetSuperClass())
+			{
+				bLandscape |= Class->GetName().StartsWith(TEXT("Landscape"));
+			}
+			if (!bLandscape && !Component->IsA<UStaticMeshComponent>()) continue;
+			const float Distance = Hit.bStartPenetrating ? 0.0f : Hit.Distance;
+			if (Distance < FreeDistance[Candidate])
+			{
+				FreeDistance[Candidate] = Distance;
+				Threat[Candidate] = Actor;
+			}
+			if (Candidate == 0 && Hit.bStartPenetrating) bInitialOverlap = true;
+		}
+	}
+
+	const bool bWasActive = bTerrainAvoidanceActive;
+	const bool bWasBothBlocked = bTerrainBothSidesBlocked;
+	const int32 PreviousSide = TerrainSelectedSide;
+	AActor* PreviousThreat = TerrainThreatActor.Get();
+	if (FreeDistance[0] >= ProbeDistance)
+	{
+		TerrainClearElapsed += EvaluationElapsed;
+		if (!bTerrainAvoidanceActive || (TerrainTurnMinimumRemaining <= 0.0f
+			&& TerrainClearElapsed >= Settings->TerrainClearConfirmationTime))
+		{
+			ResetTerrainAvoidance();
+		}
+	}
+	else
+	{
+		TerrainClearElapsed = 0.0f;
+		bTerrainAvoidanceActive = true;
+		const bool bBothBlocked = FreeDistance[1] < ProbeDistance && FreeDistance[2] < ProbeDistance;
+		bTerrainBothSidesBlocked = bBothBlocked;
+		int32 PreferredSide = FreeDistance[1] > FreeDistance[2] ? 1 : -1;
+		if (FMath::Abs(FreeDistance[1] - FreeDistance[2]) <= Settings->TerrainSideTieDistance)
+		{
+			PreferredSide = TerrainSelectedSide != 0 ? TerrainSelectedSide
+				: (LastNavigationOutput.TurnInput < 0.0f ? -1 : 1);
+		}
+		if (TerrainSelectedSide == 0 || TerrainTurnMinimumRemaining <= 0.0f)
+		{
+			if (TerrainSelectedSide != PreferredSide)
+			{
+				TerrainSelectedSide = PreferredSide;
+				TerrainTurnMinimumRemaining = Settings->TerrainMinimumTurnTime;
+			}
+		}
+		TerrainTurnInput = static_cast<float>(TerrainSelectedSide);
+		const float SelectedFreeDistance = TerrainSelectedSide > 0 ? FreeDistance[1] : FreeDistance[2];
+		TerrainMoveInput = (bBothBlocked || SelectedFreeDistance < ProbeDistance) ? 0.0f
+			: FMath::Min(LastNavigationOutput.MoveInput, Settings->TerrainLimitedMoveInput);
+		TerrainThreatActor = Threat[0];
+		if (bInitialOverlap && !bTerrainOverlapping && !bTerrainOverlapReverseExhausted)
+		{
+			TerrainOverlapReverseRemaining = Settings->TerrainMinimumTurnTime;
+		}
+		bTerrainOverlapping = bInitialOverlap;
+		if (bInitialOverlap && TerrainOverlapReverseRemaining > 0.0f)
+		{
+			TerrainMoveInput = Settings->TerrainOverlapReverseInput;
+		}
+		else if (bInitialOverlap)
+		{
+			bTerrainOverlapReverseExhausted = true;
+		}
+		else
+		{
+			bTerrainOverlapReverseExhausted = false;
+		}
+	}
+	if (bWasActive != bTerrainAvoidanceActive || PreviousSide != TerrainSelectedSide
+		|| bWasBothBlocked != bTerrainBothSidesBlocked || PreviousThreat != TerrainThreatActor.Get())
+	{
+		FSWFinalEncounterDiagnostics::Write(TEXT("TerrainAvoidance"),
+			bTerrainAvoidanceActive ? (bTerrainBothSidesBlocked ? TEXT("BothBlocked")
+				: (bWasActive ? TEXT("Changed") : TEXT("ThreatStarted"))) : TEXT("Cleared"),
+			FString::Printf(TEXT("Ship=%s Position=%s State=%d Forward=%.0f Right=%.0f Left=%.0f Side=%d Threat=%s"),
+				*Ship->GetPathName(), *Origin.ToCompactString(), static_cast<int32>(CurrentState),
+				FreeDistance[0], FreeDistance[1], FreeDistance[2], TerrainSelectedSide,
+				*GetNameSafe(TerrainThreatActor.Get())));
+	}
+}
+
+void UEnemyShipNavigationComponent::ResetTerrainAvoidance()
+{
+	bTerrainAvoidanceActive = false;
+	bTerrainBothSidesBlocked = false;
+	bTerrainOverlapping = false;
+	bTerrainOverlapReverseExhausted = false;
+	TerrainMoveInput = 0.0f;
+	TerrainTurnInput = 0.0f;
+	TerrainTurnMinimumRemaining = 0.0f;
+	TerrainClearElapsed = 0.0f;
+	TerrainOverlapReverseRemaining = 0.0f;
+	TerrainSelectedSide = 0;
+	TerrainThreatActor.Reset();
 }
 
 void UEnemyShipNavigationComponent::StopOwnerShip()

@@ -1,11 +1,10 @@
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 
 #include "Components/CapsuleComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "DeckAI/DeckNavigationComponent.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
-#include "DeckAI/DeckWaypointComponent.h"
-#include "Engine/World.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
 #include "ShipAI/EnemyShip.h"
 
 UDeckEnemyNavigationComponent::UDeckEnemyNavigationComponent()
@@ -13,358 +12,154 @@ UDeckEnemyNavigationComponent::UDeckEnemyNavigationComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
 }
+ADeckEnemy* UDeckEnemyNavigationComponent::GetDeckEnemy() const { return Cast<ADeckEnemy>(GetOwner()); }
 
-ADeckEnemy* UDeckEnemyNavigationComponent::GetDeckEnemy() const
+FVector UDeckEnemyNavigationComponent::CalculateDistanceGoal(const FVector& PlayerFloor, const FVector& EnemyFloor,
+	float Distance, float AngleDegrees)
 {
-	return Cast<ADeckEnemy>(GetOwner());
+	FVector Direction = FVector(EnemyFloor.X - PlayerFloor.X, EnemyFloor.Y - PlayerFloor.Y, 0.0f).GetSafeNormal();
+	if (Direction.IsNearlyZero()) Direction = FVector::ForwardVector;
+	return PlayerFloor + Direction.RotateAngleAxis(AngleDegrees, FVector::UpVector) * FMath::Max(0.0f, Distance);
 }
 
-bool UDeckEnemyNavigationComponent::BuildCombatGoals(
-	AActor& TargetActor,
-	bool bRequireLineOfSight,
-	TMap<int32, float>& OutGoalSecondaryCosts,
-	FVector& OutTargetLocalLocation) const
-{
-	OutGoalSecondaryCosts.Reset();
-	const ADeckEnemy* Enemy = GetDeckEnemy();
-	const AEnemyShip* Ship = Enemy ? Enemy->GetDeckHostShip() : nullptr;
-	const UDeckNavigationComponent* Navigation = Ship ? Ship->GetDeckNavigationComponent() : nullptr;
-	const UStaticMeshComponent* DeckMesh = Ship ? Ship->GetShipDeckMesh() : nullptr;
-	if (!Enemy || !Ship || !Navigation || !DeckMesh || !Enemy->IsValidCombatTarget(&TargetActor))
-	{
-		return false;
-	}
-
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	OutTargetLocalLocation = DeckTransform.InverseTransformPosition(TargetActor.GetActorLocation());
-	const float MinimumRange = Enemy->GetDeckCombatRole() == EDeckEnemyCombatRole::Melee
-		? 0.0f
-		: FMath::Max(0.0f, Enemy->GetMinAttackRange() + RangeSafetyMargin);
-	const float MaximumRange = FMath::Max(MinimumRange, Enemy->GetMaxAttackRange() - RangeSafetyMargin);
-	const float PreferredRange = FMath::Clamp(
-		Enemy->GetPreferredDeckCombatRange(), MinimumRange, MaximumRange);
-
-	TArray<int32> CombatPointIds;
-	Ship->GetDeckWaypointIds(CombatPointIds, true);
-	for (const int32 PointId : CombatPointIds)
-	{
-		FVector PointLocalLocation;
-		if (!Navigation->GetPointLocalLocation(PointId, PointLocalLocation)
-			|| !Ship->IsDeckCombatPointClaimAvailable(PointId, Enemy))
-		{
-			continue;
-		}
-
-		const float TargetDistance = FVector::Dist2D(PointLocalLocation, OutTargetLocalLocation);
-		if (TargetDistance < MinimumRange || TargetDistance > MaximumRange
-			|| (bRequireLineOfSight && !HasCandidateLineOfSight(PointId, TargetActor)))
-		{
-			continue;
-		}
-
-		OutGoalSecondaryCosts.Add(PointId, FMath::Abs(TargetDistance - PreferredRange));
-	}
-	return !OutGoalSecondaryCosts.IsEmpty();
-}
-
-bool UDeckEnemyNavigationComponent::HasCandidateLineOfSight(
-	int32 PointId,
-	const AActor& TargetActor) const
-{
-	const ADeckEnemy* Enemy = GetDeckEnemy();
-	const AEnemyShip* Ship = Enemy ? Enemy->GetDeckHostShip() : nullptr;
-	UWorld* World = Ship ? Ship->GetWorld() : nullptr;
-	if (!Enemy || !Ship || !World)
-	{
-		return false;
-	}
-
-	const float EyeHeight = Enemy->GetCapsuleComponent()
-		? Enemy->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
-		: 90.0f;
-	const FVector Start = Ship->GetDeckWaypointWorldLocation(PointId)
-		+ Ship->GetShipDeckMesh()->GetUpVector() * EyeHeight;
-	const FVector End = TargetActor.GetActorLocation() + FVector::UpVector * 60.0f;
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckCombatCandidateLOS), true, Enemy);
-	QueryParams.AddIgnoredActor(Ship);
-	FHitResult Hit;
-	return !World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, QueryParams)
-		|| Hit.GetActor() == &TargetActor;
-}
-
-bool UDeckEnemyNavigationComponent::PlanCombatRoute(
-	AActor* TargetActor,
-	bool bRequireLineOfSight)
+bool UDeckEnemyNavigationComponent::ClaimGoal(const FDeckWalkLocation& Goal)
 {
 	ADeckEnemy* Enemy = GetDeckEnemy();
-	AEnemyShip* Ship = Enemy ? Enemy->GetDeckHostShip() : nullptr;
-	UDeckNavigationComponent* Navigation = Ship ? Ship->GetDeckNavigationComponent() : nullptr;
-	if (!Enemy || !Enemy->HasAuthority() || !Enemy->IsPoolActive()
-		|| !Ship || !Navigation || !Enemy->IsValidCombatTarget(TargetActor))
+	UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
+	UDeckWalkRouteComponent* Route = Enemy ? Enemy->GetDeckWalkRouteComponent() : nullptr;
+	if (!Area || !Route || !Enemy->CanMoveOnDeck() || !Area->TryClaimLocation(Goal, *Enemy)
+		|| !(bUseDistanceBand ? Route->SetLocationGoalInDistanceBand(Goal, BandCenter, BandDistance, 100.0f)
+			: Route->SetLocationGoal(Goal)))
 	{
-		CancelCombatRoute();
+		if (Area) Area->ReleaseLocationClaim(Enemy);
+		if (Route) Route->ClearGoal();
 		return false;
 	}
+	CombatGoal = Goal;
+	Enemy->BeginFreeDeckMovement();
+	return true;
+}
 
-	if (Enemy->CanAttackTarget(TargetActor, bRequireLineOfSight))
+bool UDeckEnemyNavigationComponent::SelectNearGoal(const FDeckWalkLocation& Start, const FVector& Ideal,
+	FName Surface, float Tolerance, bool bExcludePlayer, AActor* Player)
+{
+	ADeckEnemy* Enemy = GetDeckEnemy();
+	UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
+	if (!Area || !Enemy->CanMoveOnDeck() || Ideal.ContainsNaN() || !FMath::IsFinite(Tolerance)) return false;
+	auto IsUsable = [&](const FDeckWalkLocation& Goal)
 	{
-		CancelCombatRoute();
+		if (!Area->IsLocationAvailable(Goal, *Enemy)) return false;
+		if (bExcludePlayer && Player)
+		{
+			const ACharacter* Character = Cast<ACharacter>(Player);
+			const float OtherRadius = Character && Character->GetCapsuleComponent() ? Character->GetCapsuleComponent()->GetScaledCapsuleRadius() : 45.0f;
+			if (FVector::Dist2D(Goal.LocalFloor, Area->ToLocal(Area->GetActorFeetWorld(*Player)))
+				< Enemy->GetCapsuleComponent()->GetScaledCapsuleRadius() + OtherRadius + 10.0f) return false;
+		}
 		return true;
-	}
-
-	TMap<int32, float> GoalSecondaryCosts;
-	FVector TargetLocalLocation;
-	if (!BuildCombatGoals(
-		*TargetActor, bRequireLineOfSight, GoalSecondaryCosts, TargetLocalLocation))
+	};
+	FDeckWalkLocation Exact;
+	if (Area->ResolvePreciseLocalFloor(Ideal, Surface, Exact) && IsUsable(Exact) && ClaimGoal(Exact)) return true;
+	TArray<FDeckWalkLocation> Candidates;
+	Area->GetReachableLocations(Start, Candidates);
+	Candidates.RemoveAll([&](const FDeckWalkLocation& Candidate)
 	{
-		CancelCombatRoute();
-		return false;
+		return Candidate.SurfaceId != Surface || FVector::Dist2D(Candidate.LocalFloor, Ideal) > FMath::Max(0.0f, Tolerance);
+	});
+	Candidates.Sort([&](const FDeckWalkLocation& A, const FDeckWalkLocation& B)
+	{
+		const float DA = FVector::DistSquared2D(A.LocalFloor, Ideal), DB = FVector::DistSquared2D(B.LocalFloor, Ideal);
+		return FMath::IsNearlyEqual(DA, DB) ? A.NodeIndex < B.NodeIndex : DA < DB;
+	});
+	for (const FDeckWalkLocation& Candidate : Candidates)
+	{
+		if (Candidate.SurfaceId != Surface || FVector::Dist2D(Candidate.LocalFloor, Ideal) > FMath::Max(0.0f, Tolerance)) continue;
+		if (IsUsable(Candidate) && ClaimGoal(Candidate)) return true;
 	}
+	return false;
+}
 
+bool UDeckEnemyNavigationComponent::PlanTargetDistanceRoute(AActor* Target, float Distance, float ProjectionTolerance, float AngleDegrees)
+{
 	CancelCombatRoute();
-	const int32 StartPointId = Enemy->GetCurrentDeckWaypointId();
-	while (!GoalSecondaryCosts.IsEmpty())
-	{
-		FDeckNavigationPath CandidateRoute;
-		if (!Navigation->FindPathToAny(
-			StartPointId, GoalSecondaryCosts, Enemy, CandidateRoute))
-		{
-			return false;
-		}
-
-		if (!Ship->TryClaimDeckCombatPoint(CandidateRoute.GoalPointId, Enemy))
-		{
-			GoalSecondaryCosts.Remove(CandidateRoute.GoalPointId);
-			continue;
-		}
-
-		Route = MoveTemp(CandidateRoute);
-		RouteCursor = 0;
-		ClaimedCombatPointId = Route.GoalPointId;
-		PlannedGraphRevision = Navigation->GetGraphRevision();
-		PlannedTargetLocalLocation = TargetLocalLocation;
-		PlannedTarget = TargetActor;
-		NextAllowedReplanTime = GetWorld()
-			? GetWorld()->GetTimeSeconds() + FMath::Max(0.05f, MinimumReplanInterval)
-			: 0.0;
-
-		if (Route.PointIds.Num() == 1)
-		{
-			return true;
-		}
-		if (PrepareNextHop())
-		{
-			return true;
-		}
-
-		const int32 FailedGoalPointId = ClaimedCombatPointId;
-		ReleaseCombatClaim();
-		Route.Reset();
-		GoalSecondaryCosts.Remove(FailedGoalPointId);
-	}
-	return false;
-}
-
-void UDeckEnemyNavigationComponent::RequestReleaseLineOfSightReposition(AActor* TargetActor)
-{
 	ADeckEnemy* Enemy = GetDeckEnemy();
-	if (!Enemy || !Enemy->HasAuthority() || !Enemy->IsPoolActive()
-		|| Enemy->GetDeckCombatRole() != EDeckEnemyCombatRole::Ranged
-		|| !Enemy->IsValidCombatTarget(TargetActor))
-	{
-		return;
-	}
-
-	ReleaseLineOfSightRepositionState = EReleaseLineOfSightRepositionState::Pending;
-	ReleaseLineOfSightRepositionTarget = TargetActor;
+	const UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Start, TargetFloor;
+	if (!Enemy || !Enemy->CanMoveOnDeck() || !Area || !Enemy->IsValidCombatTarget(Target)
+		|| !FMath::IsFinite(Distance) || !FMath::IsFinite(AngleDegrees)
+		|| !Area->ResolveActorOnDeck(*Enemy, Start) || !Area->ResolveActorOnDeck(*Target, TargetFloor)) return false;
+	const FVector TargetFeet = Area->ToLocal(Area->GetActorFeetWorld(*Target));
+	const FVector SelfFeet = Area->ToLocal(Area->GetActorFeetWorld(*Enemy));
+	// First acquire the radius; lateral paths stay in the annulus and cannot cut through the Player.
+	bUseDistanceBand = !FMath::IsNearlyZero(AngleDegrees) && Start.SurfaceId == TargetFloor.SurfaceId
+		&& FMath::Abs(FVector::Dist2D(SelfFeet, TargetFeet) - Distance) <= 100.0f;
+	BandCenter = TargetFeet; BandDistance = Distance;
+	FVector Ideal = CalculateDistanceGoal(TargetFeet, SelfFeet, Distance, bUseDistanceBand ? AngleDegrees : 0.0f);
+	if (!SelectNearGoal(Start, Ideal, TargetFloor.SurfaceId, ProjectionTolerance, true, Target)) { CancelCombatRoute(); return false; }
+	PlannedTarget = Target; PlannedTargetFloor = TargetFloor; PlannedTargetFloor.LocalFloor = TargetFeet;
+	PlannedDistance = Distance; PlannedAngle = AngleDegrees; PlannedProjectionTolerance = ProjectionTolerance;
+	NextAllowedReplanTime = GetWorld()->GetTimeSeconds() + MinimumReplanInterval;
+	return true;
 }
 
-bool UDeckEnemyNavigationComponent::PrepareReleaseLineOfSightReposition(AActor* TargetActor)
+bool UDeckEnemyNavigationComponent::PlanRecoveryRoute(AActor* Target)
 {
-	ADeckEnemy* Enemy = GetDeckEnemy();
-	AEnemyShip* Ship = Enemy ? Enemy->GetDeckHostShip() : nullptr;
-	if (!Enemy || !Enemy->HasAuthority() || !Enemy->IsPoolActive() || !Ship
-		|| ReleaseLineOfSightRepositionState == EReleaseLineOfSightRepositionState::None
-		|| ReleaseLineOfSightRepositionTarget.Get() != TargetActor
-		|| !Enemy->IsValidCombatTarget(TargetActor))
-	{
-		CompleteReleaseLineOfSightReposition();
-		return false;
-	}
-
-	if (ReleaseLineOfSightRepositionState == EReleaseLineOfSightRepositionState::Moving)
-	{
-		return Enemy->GetGoalDeckWaypointId() != INDEX_NONE;
-	}
-
-	CancelRouteState();
-	int32 CurrentPointId = Enemy->GetCurrentDeckWaypointId();
-	if (!Ship->GetDeckWaypoint(CurrentPointId))
-	{
-		CurrentPointId = Ship->FindNearestDeckWaypoint(Enemy->GetActorLocation());
-	}
-
-	TArray<int32> LinkedPointIds;
-	Ship->GetConnectedDeckWaypointIds(CurrentPointId, LinkedPointIds);
-	TArray<int32> Candidates;
-	for (const int32 PointId : LinkedPointIds)
-	{
-		const UDeckWaypointComponent* Waypoint = Ship->GetDeckWaypoint(PointId);
-		if (PointId != Enemy->GetPreviousDeckWaypointId()
-			&& Waypoint && Waypoint->CanUseInCombat()
-			&& Ship->IsDeckPointAvailable(PointId, Enemy))
-		{
-			Candidates.AddUnique(PointId);
-		}
-	}
-
-	while (!Candidates.IsEmpty())
-	{
-		const int32 CandidateIndex = Enemy->GetDeckRandomStream().RandRange(0, Candidates.Num() - 1);
-		const int32 SelectedPointId = Candidates[CandidateIndex];
-		if (Enemy->TrySetGoalDeckWaypointId(SelectedPointId))
-		{
-			ReleaseLineOfSightRepositionState = EReleaseLineOfSightRepositionState::Moving;
-			return true;
-		}
-		Candidates.RemoveAtSwap(CandidateIndex, 1, EAllowShrinking::No);
-	}
-
-	return false;
-}
-
-bool UDeckEnemyNavigationComponent::HasReleaseLineOfSightReposition(
-	const AActor* TargetActor) const
-{
-	return ReleaseLineOfSightRepositionState != EReleaseLineOfSightRepositionState::None
-		&& ReleaseLineOfSightRepositionTarget.IsValid()
-		&& (!TargetActor || ReleaseLineOfSightRepositionTarget.Get() == TargetActor);
-}
-
-void UDeckEnemyNavigationComponent::CompleteReleaseLineOfSightReposition()
-{
-	ReleaseLineOfSightRepositionState = EReleaseLineOfSightRepositionState::None;
-	ReleaseLineOfSightRepositionTarget.Reset();
-}
-
-bool UDeckEnemyNavigationComponent::PrepareNextHop()
-{
-	ADeckEnemy* Enemy = GetDeckEnemy();
-	if (!Enemy || !Route.IsValid())
-	{
-		return false;
-	}
-
-	const int32 CurrentPointId = Enemy->GetCurrentDeckWaypointId();
-	const int32 CurrentRouteIndex = Route.PointIds.IndexOfByKey(CurrentPointId);
-	if (CurrentRouteIndex == INDEX_NONE)
-	{
-		CancelCombatRoute();
-		return false;
-	}
-	RouteCursor = CurrentRouteIndex;
-	if (RouteCursor + 1 >= Route.PointIds.Num())
-	{
-		return false;
-	}
-
-	return Enemy->TrySetGoalDeckWaypointId(Route.PointIds[RouteCursor + 1]);
-}
-
-bool UDeckEnemyNavigationComponent::HandlePointReached()
-{
-	ADeckEnemy* Enemy = GetDeckEnemy();
-	if (!Enemy || !Route.IsValid())
-	{
-		return false;
-	}
-
-	const int32 CurrentRouteIndex = Route.PointIds.IndexOfByKey(Enemy->GetCurrentDeckWaypointId());
-	if (CurrentRouteIndex == INDEX_NONE)
-	{
-		CancelCombatRoute();
-		return false;
-	}
-	RouteCursor = CurrentRouteIndex;
-	if (RouteCursor + 1 >= Route.PointIds.Num())
-	{
-		return false;
-	}
-	if (PrepareNextHop())
-	{
-		return true;
-	}
-
-	// The route can no longer make forward progress. Release the final soft claim so
-	// another combatant may use it while this enemy returns to selection/replanning.
 	CancelCombatRoute();
+	ADeckEnemy* Enemy = GetDeckEnemy();
+	UDeckEnemyCombatComponent* Combat = Enemy ? Enemy->GetDeckCombatComponent() : nullptr;
+	const UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Start, Snapshot;
+	if (!Combat || !Area || !Combat->HasRecovery(Target) || !Combat->GetRecoveryGoal(Snapshot)
+		|| !Area->ResolveActorOnDeck(*Enemy, Start)) return false;
+	// A local point survives ship motion and a graph rebuild. SelectNearGoal resolves a fresh handle.
+	if (!SelectNearGoal(Start, Snapshot.LocalFloor, Snapshot.SurfaceId, 250.0f, true, Target)) return false;
+	PlannedTarget = Target; bRecoveryRoute = true;
+	return true;
+}
+
+bool UDeckEnemyNavigationComponent::PlanInvestigationRoute(const FVector& WorldPoint)
+{
+	CancelCombatRoute();
+	ADeckEnemy* Enemy = GetDeckEnemy();
+	const UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Start;
+	if (!Enemy || !Enemy->CanMoveOnDeck() || !Area || WorldPoint.ContainsNaN() || !Area->ResolveActorOnDeck(*Enemy, Start)) return false;
+	const FVector Local = Area->ToLocal(WorldPoint);
+	TArray<FDeckWalkLocation> Candidates;
+	Area->GetReachableLocations(Start, Candidates);
+	Candidates.Sort([&](const FDeckWalkLocation& A, const FDeckWalkLocation& B)
+	{
+		return FVector::DistSquared(A.LocalFloor, Local) < FVector::DistSquared(B.LocalFloor, Local);
+	});
+	for (const FDeckWalkLocation& Candidate : Candidates)
+	{
+		if (FVector::Dist2D(Candidate.LocalFloor, Local) > 250.0f || FMath::Abs(Candidate.LocalFloor.Z - Local.Z) > 120.0f) continue;
+		if (ClaimGoal(Candidate)) return true;
+	}
 	return false;
 }
 
-bool UDeckEnemyNavigationComponent::ReplanIfTargetMoved(
-	AActor* TargetActor,
-	bool bRequireLineOfSight)
+bool UDeckEnemyNavigationComponent::ReplanIfTargetMoved(AActor* Target)
 {
+	if (!HasActiveRoute() || bRecoveryRoute || !PlannedTarget.IsValid() || Target != PlannedTarget.Get()
+		|| GetWorld()->GetTimeSeconds() < NextAllowedReplanTime) return false;
 	ADeckEnemy* Enemy = GetDeckEnemy();
-	AEnemyShip* Ship = Enemy ? Enemy->GetDeckHostShip() : nullptr;
-	UDeckNavigationComponent* Navigation = Ship ? Ship->GetDeckNavigationComponent() : nullptr;
-	UStaticMeshComponent* DeckMesh = Ship ? Ship->GetShipDeckMesh() : nullptr;
-	UWorld* World = GetWorld();
-	if (!Enemy || !Ship || !Navigation || !DeckMesh || !World || !Route.IsValid()
-		|| World->GetTimeSeconds() < NextAllowedReplanTime)
-	{
-		return false;
-	}
-
-	const FVector CurrentTargetLocal = TargetActor
-		? DeckMesh->GetComponentTransform().InverseTransformPosition(TargetActor->GetActorLocation())
-		: FVector::ZeroVector;
-	const bool bGraphChanged = Navigation->GetGraphRevision() != PlannedGraphRevision;
-	const bool bTargetChanged = TargetActor != PlannedTarget.Get()
-		|| FVector::Dist2D(CurrentTargetLocal, PlannedTargetLocalLocation)
-			>= FMath::Max(25.0f, TargetReplanDistance);
-	if (!bGraphChanged && !bTargetChanged)
-	{
-		return false;
-	}
-
-	return PlanCombatRoute(TargetActor, bRequireLineOfSight);
-}
-
-bool UDeckEnemyNavigationComponent::IsAtCombatGoal() const
-{
-	const ADeckEnemy* Enemy = GetDeckEnemy();
-	return Enemy && ClaimedCombatPointId != INDEX_NONE
-		&& Enemy->GetCurrentDeckWaypointId() == ClaimedCombatPointId;
-}
-
-void UDeckEnemyNavigationComponent::ReleaseCombatClaim()
-{
-	ADeckEnemy* Enemy = GetDeckEnemy();
-	if (AEnemyShip* Ship = Enemy ? Enemy->GetDeckHostShip() : nullptr)
-	{
-		Ship->ReleaseDeckCombatPointClaim(ClaimedCombatPointId, Enemy);
-	}
-	ClaimedCombatPointId = INDEX_NONE;
-}
-
-void UDeckEnemyNavigationComponent::CancelRouteState()
-{
-	ADeckEnemy* Enemy = GetDeckEnemy();
-	if (Enemy && Enemy->HasAuthority())
-	{
-		Enemy->TrySetGoalDeckWaypointId(INDEX_NONE);
-	}
-	ReleaseCombatClaim();
-	Route.Reset();
-	RouteCursor = 0;
-	PlannedGraphRevision = INDEX_NONE;
-	PlannedTargetLocalLocation = FVector::ZeroVector;
-	PlannedTarget.Reset();
+	const UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Floor;
+	if (!Area || !Enemy->IsValidCombatTarget(Target) || !Area->ResolveActorOnDeck(*Target, Floor)) { CancelCombatRoute(); return true; }
+	const FVector Feet = Area->ToLocal(Area->GetActorFeetWorld(*Target));
+	if (Area->IsLocationValid(CombatGoal) && Floor.SurfaceId == PlannedTargetFloor.SurfaceId
+		&& FMath::Abs(Feet.Z - PlannedTargetFloor.LocalFloor.Z) <= 45.0f
+		&& FVector::Dist2D(Feet, PlannedTargetFloor.LocalFloor) < TargetReplanDistance) return false;
+	PlanTargetDistanceRoute(Target, PlannedDistance, PlannedProjectionTolerance, PlannedAngle);
+	return true;
 }
 
 void UDeckEnemyNavigationComponent::CancelCombatRoute()
 {
-	CancelRouteState();
-	CompleteReleaseLineOfSightReposition();
+	ADeckEnemy* Enemy = GetDeckEnemy();
+	if (!Enemy || !Enemy->HasAuthority()) return;
+	if (Enemy->GetDeckWalkRouteComponent()) Enemy->GetDeckWalkRouteComponent()->ClearGoal();
+	if (AEnemyShip* Ship = Enemy->GetDeckHostShip(); Ship && Ship->GetDeckWalkAreaComponent()) Ship->GetDeckWalkAreaComponent()->ReleaseLocationClaim(Enemy);
+	CombatGoal = FDeckWalkLocation(); PlannedTarget.Reset(); bRecoveryRoute = bUseDistanceBand = false;
 }

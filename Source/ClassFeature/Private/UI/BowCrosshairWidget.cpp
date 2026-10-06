@@ -3,11 +3,15 @@
 #include "UI/BowCrosshairWidget.h"
 
 #include "Rendering/DrawElements.h"
+#include "Combat/PlayerAimComponent.h"
+#include "GameFramework/Pawn.h"
 
 UBowCrosshairWidget::UBowCrosshairWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	SetVisibility(ESlateVisibility::HitTestInvisible);
+	// Clearance changes while holding full draw, even when no widget property changes.
+	ForceVolatile(true);
 }
 
 // 활 장착 확인하는 함수, 활이 장착되었으면, 십자선 그림
@@ -76,6 +80,9 @@ int32 UBowCrosshairWidget::NativePaint(
 	// 활이 장착되어 있을 때만 그림
 	if (bBowEquipped || bBowAiming)
 	{
+		const APawn* Pawn = GetOwningPlayerPawn();
+		const UPlayerAimComponent* Aim = Pawn ? Pawn->FindComponentByClass<UPlayerAimComponent>() : nullptr;
+		const FLinearColor ShotColor = Aim && Aim->IsShotObstructed() ? FLinearColor(1.0f, 0.2f, 0.1f) : LineColor;
 		const float ScaledLineLength = LineLength * Scale;
 		// RestGap, ChargedGap 사이를 DrawAlpha값에 따라서 중앙 공간으로 모이는 정도를 보간
 		const float ScaledGap = FMath::Lerp(RestGap, ChargedGap, DrawAlpha) * Scale;
@@ -103,7 +110,7 @@ int32 UBowCrosshairWidget::NativePaint(
 				AllottedGeometry.ToPaintGeometry(),
 				Points,
 				ESlateDrawEffect::None,
-				LineColor,
+				ShotColor,
 				true,
 				ScaledThickness);
 		}

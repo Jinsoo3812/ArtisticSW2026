@@ -717,7 +717,7 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 	bool bFeetInsideCabin = false;
 	bool bCenterInsideCabin = false;
 	const bool bInsideCabin = IsInsideCabinWaterCull(&bFeetInsideCabin, &bCenterInsideCabin);
-	DrawCabinWaterCullDebug(bInsideCabin, bFeetInsideCabin, bCenterInsideCabin);
+	// DrawCabinWaterCullDebug(bInsideCabin, bFeetInsideCabin, bCenterInsideCabin);
 	TraceCabinWaterCull(bInsideCabin, bFeetInsideCabin, bCenterInsideCabin);
 	const bool bLeftCabin = bWasInsideCabinWaterCull && !bInsideCabin;
 	bWasInsideCabinWaterCull = bInsideCabin;

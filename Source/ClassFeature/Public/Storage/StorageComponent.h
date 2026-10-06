@@ -52,6 +52,7 @@ public:
 	bool ReturnReservedCursor(UInventoryComponent* Inventory);
 	void ReturnAllReservedCursors();
 	TArray<FInventorySlot> GetPersistentSlots() const;
+	bool RestoreRoomSlots(int32 InSlotCount, int32 InColumnCount, const TArray<FInventorySlot>& InSlots);
 
 	const TArray<FInventorySlot>& GetSlots() const { return StorageSlots; }
 	bool IsEmpty() const;

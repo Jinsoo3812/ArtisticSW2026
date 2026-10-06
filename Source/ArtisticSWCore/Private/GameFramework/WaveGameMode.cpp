@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GameFramework/WaveGameMode.h"
 
@@ -233,6 +233,7 @@ void AWaveGameMode::NotifyPlayerDead(AController* DeadPlayer)
 		return;
 
 	case EFailConditionType::AllPlayersDead:
+		if (IsHostedRoom()) return;
 		if (AreAllPlayersDead())
 		{
 			HandleDefeat();
@@ -590,6 +591,7 @@ bool AWaveGameMode::AreAllPlayersDead() const
 
 void AWaveGameMode::HandleAllPlayersDeathFinished()
 {
+	if (IsHostedRoom()) return;
 	if (!HasAuthority()) return;
 	HandleDefeat();
 	Super::HandleAllPlayersDeathFinished();

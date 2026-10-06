@@ -25,6 +25,8 @@ protected:
 	void OnProjectileHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
 	void Split();
+	virtual void CaptureGrenadeSubclassState(FSWRoomGrenadeState& State) const override;
+	virtual void RestoreGrenadeSubclassState(const FSWRoomGrenadeState& State) override;
 
 protected:
 	// 산탄으로 분리될 자탄 클래스 (확장성을 위해 노출)

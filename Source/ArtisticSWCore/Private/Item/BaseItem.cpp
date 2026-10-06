@@ -11,9 +11,11 @@
 #include "GAS/EquipmentStatModel.h"
 #include "GameplayEffect.h"
 #include "WeaponFeedback/WeaponFeedbackComponent.h"
+#include "Room/SWRoomSnapshotComponent.h"
 
 ABaseItem::ABaseItem()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	// 둥둥 뜰 때만 Tick 켜기
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
@@ -151,9 +153,45 @@ void ABaseItem::SetItemState(EItemState NewState)
 	if (HasAuthority() && ItemState != NewState)
 	{
 		ItemState = NewState;
+		if (USWRoomSnapshotComponent* RoomComponent = FindComponentByClass<USWRoomSnapshotComponent>())
+			RoomComponent->PersistenceClass = (NewState == EItemState::Equipped || NewState == EItemState::InItemSlot)
+				? ESWRoomPersistenceClass::Transient : ESWRoomPersistenceClass::ManualOnly;
 
 		OnRep_ItemState(); // 서버 로컬 적용
 	}
+}
+
+void ABaseItem::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomDroppedItemState State;
+	State.ItemTag = ItemTag;
+	State.ItemState = static_cast<uint8>(ItemState);
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Loot;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Loot");
+		Issue.FieldKey = TEXT("DroppedItemState");
+		Issue.Reason = TEXT("Dropped item serialization failed");
+	}
+}
+
+bool ABaseItem::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomDroppedItemState State;
+	if (Part.Domain != ESWRoomDomain::Loot || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| !State.ItemTag.IsValid() || State.ItemState > static_cast<uint8>(EItemState::Dropped_Hovering))
+	{
+		OutError = TEXT("Invalid dropped item state");
+		return false;
+	}
+	ItemTag = State.ItemTag;
+	OnRep_ItemTag();
+	SetItemState(static_cast<EItemState>(State.ItemState));
+	return true;
 }
 
 void ABaseItem::OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneName)

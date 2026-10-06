@@ -6,6 +6,8 @@
 #include "StorySaveGame.h"
 #include "StorySettings.h"
 #include "StoryStateReplicator.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogStory, Log, All);
 
@@ -41,6 +43,12 @@ void UStorySubsystem::InitializeConfiguredProgress()
 {
 	if (bStartupProgressInitialized || !HasStoryAuthority())
 	{
+		return;
+	}
+	FString HostedRunId;
+	if (IsRunningDedicatedServer() && FParse::Value(FCommandLine::Get(), TEXT("SWRoomRunId="), HostedRunId))
+	{
+		bStartupProgressInitialized = true;
 		return;
 	}
 
@@ -216,16 +224,20 @@ bool UStorySubsystem::SaveProgressToSlot(const FString& SlotName)
 		return false;
 	}
 
-	UStorySaveGame* Save = Cast<UStorySaveGame>(
-		UGameplayStatics::CreateSaveGameObject(UStorySaveGame::StaticClass()));
+	UStorySaveGame* Save = BuildRoomProgress();
 	if (!Save)
 	{
 		return false;
 	}
 
-	Save->StoryDefinitionId = Definition
-		? Definition->GetPrimaryAssetId()
-		: FPrimaryAssetId();
+	return UGameplayStatics::SaveGameToSlot(Save, ResolveSlotName(SlotName), 0);
+}
+
+UStorySaveGame* UStorySubsystem::BuildRoomProgress() const
+{
+	if (!HasStoryAuthority()) return nullptr;
+	UStorySaveGame* Save = NewObject<UStorySaveGame>(GetTransientPackage());
+	Save->StoryDefinitionId = Definition ? Definition->GetPrimaryAssetId() : FPrimaryAssetId();
 	Save->Facts = Facts;
 	for (const TPair<FGameplayTag, int32>& Counter : Counters)
 	{
@@ -233,8 +245,38 @@ bool UStorySubsystem::SaveProgressToSlot(const FString& SlotName)
 		Value.CounterTag = Counter.Key;
 		Value.Value = Counter.Value;
 	}
+	Save->Counters.Sort([](const FStoryCounterValue& A, const FStoryCounterValue& B)
+	{
+		return A.CounterTag.ToString() < B.CounterTag.ToString();
+	});
 	Save->AppliedActionKeys = AppliedActionKeys.Array();
-	return UGameplayStatics::SaveGameToSlot(Save, ResolveSlotName(SlotName), 0);
+	Save->AppliedActionKeys.Sort(FNameLexicalLess());
+	return Save;
+}
+
+bool UStorySubsystem::ApplyRoomProgress(const UStorySaveGame* Progress)
+{
+	if (!HasStoryAuthority() || !Progress || Progress->SaveVersion != 1) return false;
+	const FPrimaryAssetId CurrentId = Definition ? Definition->GetPrimaryAssetId() : FPrimaryAssetId();
+	if (Progress->StoryDefinitionId != CurrentId) return false;
+	TSet<FGameplayTag> SeenCounters;
+	for (const FStoryCounterValue& Counter : Progress->Counters)
+	{
+		if (!Counter.CounterTag.IsValid() || SeenCounters.Contains(Counter.CounterTag)) return false;
+		SeenCounters.Add(Counter.CounterTag);
+	}
+	Facts = Progress->Facts;
+	Counters.Reset();
+	for (const FStoryCounterValue& Counter : Progress->Counters)
+	{
+		Counters.Add(Counter.CounterTag, Counter.Value);
+	}
+	AppliedActionKeys = TSet<FName>(Progress->AppliedActionKeys);
+	bStartupProgressInitialized = true;
+	EvaluateStateRules();
+	RebuildPendingActions();
+	CommitProgressChange();
+	return true;
 }
 
 bool UStorySubsystem::LoadProgressFromSlot(const FString& SlotName)

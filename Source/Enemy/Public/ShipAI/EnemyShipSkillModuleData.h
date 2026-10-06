@@ -74,5 +74,7 @@ public:
 
 	FGameplayTag GetAbilityTag() const;
 
-	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 };

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/TimerHandle.h"
 #include "Engine/DataTable.h"
+#include "Room/SWRoomSnapshotTypes.h"
 #include "WaveSpawnTypes.generated.h"
 
 class ABaseEnemy;
@@ -215,6 +216,7 @@ public:
      * 서버 런타임에서만 쓰고 저장/복제하지 않는다.
      */
     FTimerHandle TimerHandle;
+	TArray<FSWRoomPendingSpawnTicket> PendingTickets;
 
 public:
     void Reset()
@@ -224,6 +226,7 @@ public:
         bFinished = false;
         State = EWaveSpawnGroupState::Waiting;
         TimerHandle.Invalidate();
+		PendingTickets.Reset();
     }
 
     void InitializeFromDefinition(const FSpawnGroupDefinition& Definition)
@@ -233,5 +236,6 @@ public:
         bFinished = RemainingCount <= 0;
         State = bFinished ? EWaveSpawnGroupState::Finished : EWaveSpawnGroupState::Waiting;
         TimerHandle.Invalidate();
+		PendingTickets.Reset();
     }
 };

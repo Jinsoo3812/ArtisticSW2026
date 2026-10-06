@@ -12,6 +12,8 @@
 #include "Skills/SkillUseProvider.h"
 #include "CannonRiderInterface.h"
 #include "ShipRepairUserInterface.h"
+#include "MountedDamageUserInterface.h"
+#include "Room/SWRoomSnapshotTypes.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -36,9 +38,9 @@ class UPlayerSkillComponent;
 class UAnimSequence;
 class UPlayerDialogueComponent;
 class UPlayerAimComponent;
-class UPlayerDeathCameraComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
+struct FSWPlayerProgressSnapshot;
 
 UENUM(BlueprintType)
 enum class EQuickSlotType : uint8
@@ -84,12 +86,23 @@ struct FStartingInventoryItemForTest
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider, public ICannonRiderInterface, public IShipRepairUserInterface
+class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider, public ICannonRiderInterface, public IShipRepairUserInterface, public IMountedDamageUserInterface
 {
 	GENERATED_BODY()
 	friend class ULocomotionAnimStateComponent;
 
 public:
+	virtual void SetMountedDamageMode(bool bEnabled) override;
+	virtual bool IsMountedForDamage() const override { return bMountedDamageMode; }
+	virtual void PrepareForHealthDeath() override;
+	UFUNCTION() void OnRep_MountedDamageMode();
+	UPROPERTY(ReplicatedUsing=OnRep_MountedDamageMode) bool bMountedDamageMode = false;
+	bool bMountedCollisionSaved = false;
+	ECollisionEnabled::Type SavedMountedCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
+	ECollisionEnabled::Type SavedMountedMeshCollision = ECollisionEnabled::QueryOnly;
+	bool bInventoryProgressRestored = false;
+	bool bStartingInventoryDecisionMade = false;
+	void FinalizeStartingInventory(bool bFreshInventory);
 	/** Keeps skill input mappings above quick-slot mappings that may share keys. */
 	static int32 ResolveDefaultMappingPriority(
 		int32 ConfiguredDefaultPriority,
@@ -107,8 +120,7 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void ApplyLocalDeathRagdoll() override;
-	virtual void ResetLocalDeathRagdoll() override;
+	bool HandleFinalDepartureRequested(AActor* Requester);
 	virtual void PostInitializeComponents() override;
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
@@ -120,12 +132,20 @@ public:
 
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
+
+	virtual void ApplyLocalDeathRagdoll() override;
+	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:
 	UFUNCTION(BlueprintCallable, Category = "Respawn")
 	void CaptureRespawnProgress();
+	UFUNCTION()
+	void CaptureReconnectProgress();
+	void CaptureRoomProgress(struct FSWRoomPlayerProgress& OutProgress) const;
+	void RestoreRoomProgress(const struct FSWRoomPlayerProgress& Progress);
+	bool FinalizeRoomProgressEffects(FString& OutError);
+	bool BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const;
+	void ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot);
 	protected:
-	// Presentation must not clear Controller/PlayerState before GameMode registers death.
-	virtual bool ShouldDetachControllerOnDeathRagdoll() const override { return false; }
 	void RestoreRespawnProgress(AController* OwningController);
 
 	/* --- GAS 초기화 ---*/
@@ -145,6 +165,16 @@ public:
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
+	TArray<FSWRoomGameplayEffectState> PendingRoomEffects;
+	bool bHasPendingRoomEffects = false;
+	float PendingRoomHealth = 0.f;
+	bool bHasCompletedInitialPossession = false;
+	public:
+	bool HasCompletedInitialPossession() const { return bHasCompletedInitialPossession && bInitialLifeRestoreSuccessful; }
+	bool bInitialLifeRestoreSuccessful = true;
+	bool RestoreProgressForNewLife(const FSWRoomPlayerProgress& Progress, FString& OutError);
+	bool CanMutateLifeGameplay() const;
+	protected:
 	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */
@@ -633,11 +663,7 @@ protected:
 public:
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
-	UPlayerDeathCameraComponent* GetDeathCameraComponent() const { return DeathCameraComponent; }
 protected:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
-	TObjectPtr<UPlayerDeathCameraComponent> DeathCameraComponent;
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
 

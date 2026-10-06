@@ -1,6 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannonball.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
+#include "WaterBombCannonball.h"
+#include "Room/SWRoomSnapshotComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "CannonballImpactReceiver.h"
@@ -52,6 +55,7 @@ namespace
 
 ACannonball::ACannonball()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 
 	// Sphere Collision
@@ -127,9 +131,9 @@ void ACannonball::OnRep_LaunchingShip()
 
 void ACannonball::ConfigureProjectileCollision()
 {
-	if (SphereCollision && LaunchingShip)
+	if (SphereCollision && (LaunchingShip || bHasSavedTeam))
 	{
-		const bool bEnemyProjectile = LaunchingShip->ActorHasTag(TEXT("Enemy"));
+		const bool bEnemyProjectile = LaunchingShip ? LaunchingShip->ActorHasTag(TEXT("Enemy")) : bSavedEnemyTeam;
 		SphereCollision->SetCollisionProfileName(
 			bEnemyProjectile ? TEXT("EnemyCannonball") : TEXT("PlayerCannonball"),
 			false);
@@ -145,7 +149,7 @@ void ACannonball::ConfigureProjectileCollision()
 		SphereCollision->SetGenerateOverlapEvents(true);
 		SphereCollision->SetNotifyRigidBodyCollision(true);
 
-		SphereCollision->IgnoreActorWhenMoving(LaunchingShip, true);
+		if (LaunchingShip) SphereCollision->IgnoreActorWhenMoving(LaunchingShip, true);
 		if (AActor* OwnerActor = GetOwner())
 		{
 			SphereCollision->IgnoreActorWhenMoving(OwnerActor, true);
@@ -290,12 +294,9 @@ void ACannonball::InitializeProjectile(
 
 	if (ProjectileMovement)
 	{
-		ProjectileMovement->InitialSpeed = InSpeed;
-		ProjectileMovement->Velocity = GetActorForwardVector() * InSpeed + InInheritedVelocity;
-		ProjectileMovement->MaxSpeed = FMath::Max(
-			ProjectileMovement->Velocity.Size() * 2.0f,
-			5000.0f);
-		ProjectileMovement->UpdateComponentVelocity();
+		const FVector WorldVelocity = GetActorForwardVector() * InSpeed + InInheritedVelocity;
+		if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovement, WorldVelocity,
+			FMath::Max(WorldVelocity.Size() * 2.0f, 5000.0f))) return;
 		// Never carry interpolation offset into the projectile's first visible frame.
 		ProjectileMovement->ResetInterpolation();
 	}
@@ -763,4 +764,108 @@ void ACannonball::DeactivateProjectile()
 	{
 		ProjectileEffectComponent->Deactivate();
 	}
+}
+
+void ACannonball::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomCannonballState State;
+	if (LaunchingShip)
+	{
+		State.bEnemyTeam = LaunchingShip->ActorHasTag(TEXT("Enemy"));
+		if (const USWRoomSnapshotComponent* Id = LaunchingShip->FindComponentByClass<USWRoomSnapshotComponent>())
+			State.LaunchingShipId = Id->StableId;
+	}
+	else State.bEnemyTeam = bHasSavedTeam && bSavedEnemyTeam;
+	State.DamageAmount = DamageAmount;
+	State.DamageEffectClass = DamageGEClass ? FSoftClassPath(DamageGEClass.Get()) : FSoftClassPath();
+	State.bHasHitWater = bHasHitWater;
+	State.bHasProcessedShipHit = bHasProcessedShipHit;
+	State.bHasProcessedBlockingImpact = bHasProcessedBlockingImpact;
+	State.bHasDesignatedImpact = bHasDesignatedImpact;
+	State.DesignatedImpactLocation = DesignatedImpactLocation;
+	State.DesignatedImpactTolerance = DesignatedImpactTolerance;
+	State.GravityScale = ProjectileMovement ? ProjectileMovement->ProjectileGravityScale : 1.f;
+	if (GetWorld())
+	{
+		State.bWaterTimerPending = GetWorldTimerManager().IsTimerActive(WaterHitTimerHandle);
+		if (State.bWaterTimerPending)
+			State.WaterTimerRemaining = FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(WaterHitTimerHandle));
+	}
+	if (const AWaterBombCannonball* WaterBomb = Cast<AWaterBombCannonball>(this))
+	{
+		State.bIsWaterBomb = true;
+		State.WaterBombDuration = WaterBomb->GetEffectDurationSeconds();
+		State.WaterBombAttackSpeedMultiplier = WaterBomb->GetAttackSpeedMultiplier();
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Projectile;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("CannonballState");
+		Issue.Reason = TEXT("Cannonball adapter serialization failed");
+	}
+}
+
+bool ACannonball::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain != ESWRoomDomain::Projectile || Part.Version != 1)
+	{
+		OutError = TEXT("Unsupported cannonball domain or version");
+		return false;
+	}
+	FSWRoomCannonballState State;
+	if (!FSWRoomStructCodec::Read(Part.Bytes, State) || !FMath::IsFinite(State.DamageAmount)
+		|| !FMath::IsFinite(State.DesignatedImpactTolerance) || !FMath::IsFinite(State.GravityScale)
+		|| State.DesignatedImpactLocation.ContainsNaN() || !FMath::IsFinite(State.WaterTimerRemaining)
+		|| State.WaterTimerRemaining < 0.f || State.bIsWaterBomb != IsA<AWaterBombCannonball>())
+	{
+		OutError = TEXT("Invalid cannonball state");
+		return false;
+	}
+	DamageAmount = State.DamageAmount;
+	DamageGEClass = State.DamageEffectClass.IsNull() ? nullptr : State.DamageEffectClass.TryLoadClass<UGameplayEffect>();
+	if (!State.DamageEffectClass.IsNull() && !DamageGEClass)
+	{
+		OutError = FString::Printf(TEXT("Cannonball effect class missing: %s"), *State.DamageEffectClass.ToString());
+		return false;
+	}
+	bHasHitWater = State.bHasHitWater;
+	bHasProcessedShipHit = State.bHasProcessedShipHit;
+	bHasProcessedBlockingImpact = State.bHasProcessedBlockingImpact;
+	bHasDesignatedImpact = State.bHasDesignatedImpact;
+	DesignatedImpactLocation = State.DesignatedImpactLocation;
+	DesignatedImpactTolerance = State.DesignatedImpactTolerance;
+	if (ProjectileMovement) ProjectileMovement->ProjectileGravityScale = State.GravityScale;
+	if (AWaterBombCannonball* WaterBomb = Cast<AWaterBombCannonball>(this))
+		WaterBomb->ConfigureFromAbility(State.WaterBombDuration, State.WaterBombAttackSpeedMultiplier);
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool ACannonball::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	LaunchingShip = nullptr;
+	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.LaunchingShipId))
+		LaunchingShip = Cast<AShip>(*Found);
+	bHasSavedTeam = true;
+	bSavedEnemyTeam = PendingRoomState.bEnemyTeam;
+	ConfigureProjectileCollision();
+	if (bHasProcessedShipHit || bHasProcessedBlockingImpact) DeactivateProjectile();
+	if (PendingRoomState.bWaterTimerPending)
+	{
+		if (PendingRoomState.WaterTimerRemaining <= 0.f)
+			WaterHitTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &ACannonball::DeactivateProjectile);
+		else
+			GetWorldTimerManager().SetTimer(WaterHitTimerHandle, this, &ACannonball::DeactivateProjectile,
+				PendingRoomState.WaterTimerRemaining, false);
+	}
+	PendingRoomState = FSWRoomCannonballState();
+	return true;
 }

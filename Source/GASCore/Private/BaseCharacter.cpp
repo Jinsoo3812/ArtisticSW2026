@@ -107,7 +107,7 @@ void ABaseCharacter::ApplyLocalDeathRagdoll()
 
 	bLocalDeathRagdollApplied = true;
 
-	if (ShouldDetachControllerOnDeathRagdoll())
+	if (ShouldDetachControllerForDeathRagdoll())
 	{
 		DetachFromControllerPendingDestroy();
 	}

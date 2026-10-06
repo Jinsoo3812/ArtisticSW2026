@@ -2,8 +2,11 @@
 
 
 #include "BasePlayer.h"
+#include "GASStrengthEquipmentGameplayEffect.h"
+#include "Components/CapsuleComponent.h"
 #include "Combat/PlayerAimComponent.h"
 #include "WeaponInputAbilitySystemComponent.h"
+#include "SWRoomAbilitySystemComponent.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
 #include "PlayerDialogueComponent.h"
 #include "BasePlayerState.h"
@@ -11,7 +14,6 @@
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
 #include "Camera/CameraComponent.h"
-#include "Camera/PlayerDeathCameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -21,6 +23,7 @@
 #include "InputCoreTypes.h"
 #include "BaseItem.h"
 #include "BaseGameplayTags.h"
+#include "BaseAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "SWCharacterMovementComponent.h"
@@ -48,14 +51,19 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/MotionMatchingAnimInstance.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "PhysicsEngine/SkeletalBodySetup.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "PhysicsEngine/PhysicsAsset.h"
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
 #include "Skills/PlayerSkillComponent.h"
+#include "Room/SWRoomSaveGame.h"
+#include "Room/SWRoomProgressSubsystem.h"
+#include "Room/ClassFeatureRoomProgressSubsystem.h"
+#include "Network/SWInputDiag.h"
+#include "Network/SWNetworkLog.h"
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 #include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "Skills/Abilities/GA_Bombardment.h"
@@ -108,9 +116,6 @@ int32 ABasePlayer::ResolveDefaultMappingPriority(
 ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
-	bDetachControllerOnDeathRagdoll = false;
-	DeathCameraComponent = CreateDefaultSubobject<UPlayerDeathCameraComponent>(TEXT("DeathCameraComponent"));
-
 	// 카메라 붐(SpringArm) 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -192,10 +197,12 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, QuickSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
+	DOREPLIFETIME(ABasePlayer, bMountedDamageMode);
 }
 
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
 {
+	if (!CanMutateLifeGameplay()) return false;
 	if (bBypassSkillRequirementsForTesting)
 	{
 		return GetPlayerSkillComponent()
@@ -208,6 +215,7 @@ bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
 
 bool ABasePlayer::TryConsumeSkillUse(const FGameplayTag& SkillTag)
 {
+	if (!CanMutateLifeGameplay()) return false;
 	UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
 	if (bBypassSkillRequirementsForTesting)
 	{
@@ -237,6 +245,8 @@ void ABasePlayer::PostInitializeComponents()
 void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
+	if (HasAuthority() && DialogueComponent)
+		DialogueComponent->OnFinalDepartureRequested.BindUObject(this, &ABasePlayer::HandleFinalDepartureRequested);
 	InitializeSwimmingAnimLayers();
 
 	// Apply presentation-only smoothing after Blueprint defaults are loaded.
@@ -277,7 +287,6 @@ void ABasePlayer::BeginPlay()
 	}
 
 #if WITH_EDITOR
-	GiveStartingItemsForTest();
 	ApplyShipUpgradeTestFlags();
 #endif
 
@@ -355,11 +364,7 @@ void ABasePlayer::GiveStartingItemsForTest()
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (HealthComponent && HealthComponent->IsDead())
-	{
-		UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] EndPlay Pawn=%s Reason=%d NetMode=%d"),
-			*GetNameSafe(this), static_cast<int32>(EndPlayReason), static_cast<int32>(GetNetMode()));
-	}
+	if (DialogueComponent) DialogueComponent->OnFinalDepartureRequested.Unbind();
 	ResetAutomaticSwimDiveInput();
 
 	if (InventoryComponent)
@@ -376,50 +381,58 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void ABasePlayer::ApplyLocalDeathRagdoll()
+bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 {
-	Super::ApplyLocalDeathRagdoll();
-	if (bLocalDeathRagdollApplied && DeathCameraComponent)
-	{
-		DeathCameraComponent->StartFollowing(CameraBoom, GetMesh());
-	}
-}
-
-void ABasePlayer::ResetLocalDeathRagdoll()
-{
-	if (DeathCameraComponent) DeathCameraComponent->StopFollowing();
-	Super::ResetLocalDeathRagdoll();
+	if (!HasAuthority() || Requester != this || !GetGameInstance()) return false;
+	if (UClassFeatureRoomProgressSubsystem* Progress =
+		GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
+		return Progress->TryFinalDeparture(GetWorld(), this);
+	return false;
 }
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
-	UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] DeathFinished Pawn=%s Controller=%s PlayerState=%s NetMode=%d"),
-		*GetNameSafe(this), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), static_cast<int32>(GetNetMode()));
-	ApplyLocalDeathRagdoll();
-	UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] Ragdoll Pawn=%s PhysicsAsset=%s Simulating=%d Hidden=%d LifeSpan=%.2f"),
-		*GetNameSafe(this), *GetNameSafe(GetMesh() ? GetMesh()->GetPhysicsAsset() : nullptr),
-		GetMesh() && GetMesh()->IsSimulatingPhysics() ? 1 : 0, IsHidden() ? 1 : 0, GetLifeSpan());
-	if (HasAuthority())
-	{
-		CaptureRespawnProgress();
-	}
-	// The corpse outlives possession. Retire its subscriptions before a new avatar
-	// binds the persistent PlayerState ASC, including status/presentation delegates.
-	if (UAbilitySystemComponent* ASC = CachedAbilitySystemComponent.Get())
-	{
-		const FGameplayTag InteractionTags[] = {Interaction_PickUp, Interaction_ShipBoard, Interaction_CannonBoard};
-		for (const FGameplayTag& Tag : InteractionTags)
-		{
-			if (auto* Callback = ASC->GenericGameplayEventCallbacks.Find(Tag)) Callback->RemoveAll(this);
-		}
-	}
-	if (HealthComponent) HealthComponent->UninitializeFromAbilitySystem();
+	if (InHealthComponent && InHealthComponent->IsLifeInitializing()) return;
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathFinished Player=%s Authority=%d Controller=%s PlayerState=%s Health=%s"),
+		*GetName(), HasAuthority(), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), *GetNameSafe(InHealthComponent));
 	if (HasAuthority())
 	{
 		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
 		{
 			GameMode->NotifyPlayerDeathFinished(this);
 		}
+	}
+	// GameMode must capture/register the owning controller before unpossession.
+	// Presentation must never detach the player controller on either peer.
+	ApplyLocalDeathRagdoll();
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollAfterApply Player=%s NetMode=%d Simulating=%d AnyBodySimulating=%d Mesh=%s"),
+		*GetName(), static_cast<int32>(GetNetMode()), GetMesh() && GetMesh()->IsSimulatingPhysics(), GetMesh() && GetMesh()->IsAnySimulatingPhysics(), *GetNameSafe(GetMesh()));
+}
+
+void ABasePlayer::ApplyLocalDeathRagdoll()
+{
+	if (bLocalDeathRagdollApplied) return;
+	Super::ApplyLocalDeathRagdoll();
+	USkeletalMeshComponent* RagdollMesh = GetMesh();
+	if (!RagdollMesh) return;
+	// Blend every simulated body into the rendered pose, including bodies with
+	// an authored custom physics type. This is presentation local to each peer.
+	RagdollMesh->SetAllBodiesPhysicsBlendWeight(1.0f, false);
+	int32 SimulatedBodies = 0;
+	if (const UPhysicsAsset* RagdollAsset = RagdollMesh->GetPhysicsAsset())
+	{
+		for (const USkeletalBodySetup* BodySetup : RagdollAsset->SkeletalBodySetups)
+		{
+			if (BodySetup && RagdollMesh->IsSimulatingPhysics(BodySetup->BoneName)) ++SimulatedBodies;
+		}
+	}
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollBodies Player=%s NetMode=%d Asset=%s Bodies=%d Simulated=%d TransformMode=%d BlendPhysics=%d DedicatedPhysics=%d"),
+		*GetName(), static_cast<int32>(GetNetMode()), *GetNameSafe(RagdollMesh->GetPhysicsAsset()), RagdollMesh->Bodies.Num(), SimulatedBodies,
+		static_cast<int32>(RagdollMesh->PhysicsTransformUpdateMode), RagdollMesh->bBlendPhysics, RagdollMesh->bEnablePhysicsOnDedicatedServer);
+	if (GetNetMode() != NM_DedicatedServer && SimulatedBodies == 0)
+	{
+		UE_LOG(LogSWRoom, Warning, TEXT("[SWLifeDiag] Event=PlayerRagdollUnavailable Player=%s Asset=%s Bodies=%d"),
+			*GetName(), *GetNameSafe(RagdollMesh->GetPhysicsAsset()), RagdollMesh->Bodies.Num());
 	}
 }
 
@@ -433,15 +446,284 @@ void ABasePlayer::CaptureRespawnProgress()
 	const int32 PlayerIndex = GameMode->GetPlayerIndex(OwnerController);
 	if (PlayerIndex == INDEX_NONE) return;
 	FSWPlayerProgressSnapshot Snapshot;
-	if (InventoryComponent) InventoryComponent->CaptureProgressSnapshot(Snapshot.InventorySlots);
+	if (!BuildProgressSnapshot(Snapshot)) return;
+	Progress->StoreSnapshot(PlayerIndex, Snapshot);
+}
+
+void ABasePlayer::CaptureReconnectProgress()
+{
+	if (InventoryComponent) InventoryComponent->ReturnCursorToOriginalSlot();
+	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	AController* OwnerController = GetController();
+	if (!OwnerController && GetPlayerState()) OwnerController = GetPlayerState()->GetOwningController();
+	if (!GameMode || !OwnerController) return;
+
+	FSWPlayerProgressSnapshot Snapshot;
+	if (BuildProgressSnapshot(Snapshot))
+	{
+		GameMode->StoreReconnectSnapshotForController(OwnerController, Snapshot);
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=Reconnect Side=Server PlayerIndex=%d Phase=MemorySnapshotStored"), GameMode->GetPlayerIndex(OwnerController));
+	}
+	if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr)
+	{
+		Room->CapturePlayer(this);
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=Reconnect Side=Server PlayerIndex=%d Phase=RoomProgressCaptured"), GameMode->GetPlayerIndex(OwnerController));
+	}
+}
+
+void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
+{
+	if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("RoomProgressCapture"), true);
+	OutProgress = FSWRoomPlayerProgress();
+	const APawn* ControlPawn = nullptr;
+	if (const AShip* Ship = Cast<AShip>(GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == this) ControlPawn = Ship;
+	else if (const ACannon* Cannon = Cast<ACannon>(GetAttachParentActor()); Cannon && Cannon->GetRidingPlayer() == this) ControlPawn = Cannon;
+	const ABasePlayerState* RoomPlayerState = GetPlayerState<ABasePlayerState>();
+	if (!RoomPlayerState && ControlPawn) RoomPlayerState = ControlPawn->GetPlayerState<ABasePlayerState>();
+	const AController* RoomController = GetController() ? GetController() : ControlPawn ? ControlPawn->GetController() : nullptr;
+	if (InventoryComponent)
+	{
+		for (uint8 TabIndex = 0; TabIndex < 4; ++TabIndex)
+		{
+			const TArray<FInventorySlot>& Slots = InventoryComponent->GetSlots(static_cast<EInventoryTab>(TabIndex));
+			for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
+			{
+				FSWInventorySlotSnapshot& Saved = OutProgress.InventorySlots.AddDefaulted_GetRef();
+				Saved.Tab = TabIndex;
+				Saved.SlotIndex = SlotIndex;
+				Saved.ItemTag = Slots[SlotIndex].ItemTag;
+				Saved.Count = Slots[SlotIndex].Count;
+			}
+		}
+	}
+	for (const FQuickSlotReference& Slot : QuickSlots) OutProgress.QuickSlotItemTags.Add(Slot.ItemTag);
+	if (EquipmentComponent) OutProgress.EquippedItemTag = EquipmentComponent->GetEquippedItemTag();
+	if (RoomPlayerState)
+		if (const UShipUpgradeComponent* Upgrade = RoomPlayerState->GetShipUpgradeComponent()) OutProgress.UpgradeNodeIds = Upgrade->GetActiveNodeIds();
+	OutProgress.UpgradeNodeIds.Sort(FNameLexicalLess());
+	if (const UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FGameplayTag& Tag : Skills->GetRegisteredSkillTags())
+		{
+			FSWRoomSkillProgress& State = OutProgress.Skills.AddDefaulted_GetRef();
+			State.SkillTag = Tag;
+			State.bUnlocked = Skills->IsSkillUnlocked(Tag);
+			State.bConditionsMet = Skills->IsSkillUnlockConditionMet(Tag);
+		}
+	OutProgress.Skills.Sort([](const FSWRoomSkillProgress& A, const FSWRoomSkillProgress& B)
+	{
+		return A.SkillTag.ToString() < B.SkillTag.ToString();
+	});
+	OutProgress.bHasResumeTransform = !GetActorLocation().ContainsNaN();
+	OutProgress.ResumeWorldTransform = GetActorTransform();
+	if (const UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		if (!Movement->Velocity.ContainsNaN())
+		{
+			OutProgress.bHasMovement = true;
+			OutProgress.WorldVelocity = Movement->Velocity;
+			OutProgress.MovementMode = static_cast<uint8>(Movement->MovementMode);
+			OutProgress.CustomMovementMode = Movement->CustomMovementMode;
+		}
+		else
+		{
+			FSWRoomCaptureIssue& Issue = OutProgress.CaptureIssues.AddDefaulted_GetRef();
+			Issue.Scope = ESWRoomIssueScope::Player;
+			Issue.PlayerKey = RoomPlayerState ? RoomPlayerState->GetPlayerName() : TEXT("UnknownPlayer");
+			Issue.ClassPath = FSoftClassPath(GetClass());
+			Issue.Domain = TEXT("Movement");
+			Issue.FieldKey = TEXT("WorldVelocity");
+			Issue.Reason = TEXT("Non-finite movement velocity");
+		}
+	}
+	OutProgress.ControlRotation = RoomController ? RoomController->GetControlRotation() : GetActorRotation();
+	OutProgress.CameraZoom = CameraBoom ? CameraBoom->TargetArmLength : 0.0f;
+	if (HealthComponent)
+	{
+		OutProgress.CurrentHealth = HealthComponent->GetHealth();
+		OutProgress.MaximumHealth = CachedAbilitySystemComponent.IsValid()
+			? CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute())
+			: HealthComponent->GetMaxHealth();
+		OutProgress.bWasDead = HealthComponent->IsDead();
+	}
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		OutProgress.BaseStrength = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+		OutProgress.BaseMoveSpeed = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedAttribute());
+		OutProgress.BaseMoveSpeedMultiplier = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute());
+		OutProgress.BaseAttackSpeedMultiplier = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute());
+	}
+	if (const USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+	{
+		OutProgress.bEffectsCaptured = true;
+		RoomASC->CaptureRoomEffects(OutProgress.ActiveEffects, OutProgress.CaptureIssues);
+		for (FSWRoomCaptureIssue& Issue : OutProgress.CaptureIssues)
+		{
+			Issue.Scope = ESWRoomIssueScope::Player;
+			Issue.PlayerKey = RoomPlayerState ? RoomPlayerState->GetPlayerName() : TEXT("UnknownPlayer");
+			Issue.ClassPath = FSoftClassPath(GetClass());
+		}
+	}
+}
+
+void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
+{
+	if (!HasAuthority()) return;
+	bInventoryProgressRestored = true;
+	PendingRoomEffects = Progress.ActiveEffects;
+	bHasPendingRoomEffects = Progress.bEffectsCaptured;
+	PendingRoomHealth = Progress.CurrentHealth;
+	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Progress.InventorySlots);
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		CachedAbilitySystemComponent->CancelAllAbilities();
+		if (Progress.MaximumHealth > 0.f)
+			CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), Progress.MaximumHealth);
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), Progress.BaseStrength);
+		if (Progress.BaseMoveSpeed > 0.f)
+			CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedAttribute(), Progress.BaseMoveSpeed);
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute(), Progress.BaseMoveSpeedMultiplier);
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute(), Progress.BaseAttackSpeedMultiplier);
+	}
+	if (GetMesh() && GetMesh()->GetAnimInstance()) GetMesh()->GetAnimInstance()->StopAllMontages(0.f);
+	bInitialLifeRestoreSuccessful = !EquipmentComponent || EquipmentComponent->RestoreRoomEquippedItem(Progress.EquippedItemTag);
+	if (!bInitialLifeRestoreSuccessful)
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore Result=Partial Domain=Equipment Tag=%s"), *Progress.EquippedItemTag.ToString());
+	InitializeQuickSlots();
+	for (int32 Index = 0; Index < 5 && Index < Progress.QuickSlotItemTags.Num() && QuickSlots.IsValidIndex(Index); ++Index)
+	{
+		const FGameplayTag Tag = Progress.QuickSlotItemTags[Index];
+		QuickSlots[Index].ItemTag = InventoryComponent && Tag.IsValid() && InventoryComponent->GetItemCount(Tag) > 0 ? Tag : FGameplayTag();
+	}
+	OnQuickSlotsChanged.Broadcast();
+	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) Upgrade->RestoreActiveNodeIds(Progress.UpgradeNodeIds);
+	if (UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FSWRoomSkillProgress& State : Progress.Skills)
+		{
+			Skills->SetSkillUnlocked(State.SkillTag, State.bUnlocked);
+			Skills->SetSkillUnlockConditionMet(State.SkillTag, State.bConditionsMet);
+		}
+	if (CachedAbilitySystemComponent.IsValid() && HealthComponent && Progress.MaximumHealth > 0.0f)
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(),
+			Progress.bRestoreFullHealth ? HealthComponent->GetMaxHealth()
+				: FMath::Clamp(Progress.CurrentHealth, 0.0f, HealthComponent->GetMaxHealth()));
+	if (Progress.bWasDead && HealthComponent) HealthComponent->StartDeath();
+	if (Progress.bHasResumeTransform && GetWorld())
+	{
+		FVector Location = Progress.ResumeWorldTransform.GetLocation();
+		const FRotator Rotation = Progress.ResumeWorldTransform.Rotator();
+		if (!TeleportTo(Location, Rotation, false, false))
+		{
+			UE_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore ForcedTransform Player=%s"), *GetPathName());
+			SetActorTransform(Progress.ResumeWorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
+		}
+	}
+	if (Progress.bHasMovement)
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->SetMovementMode(static_cast<EMovementMode>(Progress.MovementMode), Progress.CustomMovementMode);
+			Movement->Velocity = Progress.WorldVelocity;
+		}
+	if (GetController()) GetController()->SetControlRotation(Progress.ControlRotation);
+	if (CameraBoom && Progress.CameraZoom > 0.0f) CameraBoom->TargetArmLength = Progress.CameraZoom;
+}
+
+bool ABasePlayer::FinalizeRoomProgressEffects(FString& OutError)
+{
+	if (!bHasPendingRoomEffects) return true;
+	bHasPendingRoomEffects = false;
+	USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(CachedAbilitySystemComponent.Get());
+	if (!RoomASC || !RoomASC->RestoreRoomEffects(PendingRoomEffects, OutError)) return false;
+	PendingRoomEffects.Reset();
+	if (HealthComponent)
+		RoomASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(),
+			FMath::Clamp(PendingRoomHealth, 0.f, HealthComponent->GetMaxHealth()));
+	return true;
+}
+
+bool ABasePlayer::BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const
+{
+	OutSnapshot = FSWPlayerProgressSnapshot();
+	if (InventoryComponent) InventoryComponent->CaptureProgressSnapshot(OutSnapshot.InventorySlots);
+	for (const FQuickSlotReference& Slot : QuickSlots) OutSnapshot.QuickSlotItemTags.Add(Slot.ItemTag);
+	if (const UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FGameplayTag& Tag : Skills->GetRegisteredSkillTags())
+		{
+			FSWSkillStateSnapshot& State = OutSnapshot.Skills.AddDefaulted_GetRef();
+			State.SkillTag = Tag;
+			State.bUnlocked = Skills->IsSkillUnlocked(Tag);
+			State.bConditionsMet = Skills->IsSkillUnlockConditionMet(Tag);
+		}
 	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
 	{
 		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
 		{
-			Snapshot.ActiveShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
+			OutSnapshot.ActiveShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
 		}
 	}
-	Progress->StoreSnapshot(PlayerIndex, Snapshot);
+	if (HealthComponent)
+	{
+		OutSnapshot.CurrentHealth = HealthComponent->GetHealth();
+		OutSnapshot.bHasCurrentHealth = true;
+		OutSnapshot.bWasDead = HealthComponent->IsDead();
+	}
+
+	if (!GetActorLocation().ContainsNaN())
+	{
+		OutSnapshot.LastValidWorldTransform = GetActorTransform();
+		OutSnapshot.bHasLastValidWorldTransform = true;
+		if (const UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			if (const UPrimitiveComponent* MovementBase = MovementComponent->GetMovementBase())
+			{
+				OutSnapshot.LastMovementHost = MovementBase->GetOwner();
+				if (OutSnapshot.LastMovementHost.IsValid())
+				{
+					OutSnapshot.LastMovementHostRelativeTransform = GetActorTransform().GetRelativeTransform(
+						OutSnapshot.LastMovementHost->GetActorTransform());
+				}
+			}
+		}
+	}
+	return true;
+}
+
+void ABasePlayer::ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot)
+{
+	bInventoryProgressRestored = true;
+	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
+	InitializeQuickSlots();
+	for (int32 Index = 0; Index < 5 && Index < Snapshot.QuickSlotItemTags.Num() && QuickSlots.IsValidIndex(Index); ++Index)
+	{
+		const FGameplayTag Tag = Snapshot.QuickSlotItemTags[Index];
+		QuickSlots[Index].ItemTag = InventoryComponent && Tag.IsValid() && InventoryComponent->GetItemCount(Tag) > 0 ? Tag : FGameplayTag();
+	}
+	OnQuickSlotsChanged.Broadcast();
+	if (UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FSWSkillStateSnapshot& State : Snapshot.Skills)
+		{
+			Skills->SetSkillUnlocked(State.SkillTag, State.bUnlocked);
+			Skills->SetSkillUnlockConditionMet(State.SkillTag, State.bConditionsMet);
+		}
+	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+	{
+		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
+		{
+			Upgrade->RestoreActiveNodeIds(Snapshot.ActiveShipUpgradeNodeIds);
+		}
+	}
+
+	if (Snapshot.bWasDead)
+	{
+		if (HealthComponent) HealthComponent->StartDeath();
+		return;
+	}
+	if (Snapshot.bHasCurrentHealth && CachedAbilitySystemComponent.IsValid() && HealthComponent)
+	{
+		CachedAbilitySystemComponent->SetNumericAttributeBase(
+			UBaseAttributeSet::GetHealthAttribute(),
+			FMath::Clamp(Snapshot.CurrentHealth, 0.0f, HealthComponent->GetMaxHealth()));
+	}
 }
 
 void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
@@ -451,11 +733,7 @@ void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
 	if (!GameMode || !Progress || !OwningController) return;
 	FSWPlayerProgressSnapshot Snapshot;
 	if (!Progress->ConsumeSnapshot(GameMode->GetPlayerIndex(OwningController), Snapshot)) return;
-	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
-	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
-	{
-		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) Upgrade->RestoreActiveNodeIds(Snapshot.ActiveShipUpgradeNodeIds);
-	}
+	ApplyProgressSnapshot(Snapshot);
 }
 
 void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
@@ -679,7 +957,6 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 
 	FReplicatedLocomotionState NewSnapshot;
 	NewSnapshot.bIsSprinting = AnimStateComponent->bIsSprinting;
-	NewSnapshot.bLastGroundMoveWasSprinting = AnimStateComponent->bLastGroundMoveWasSprinting;
 	if (HasAuthority() && bHasAuthoritativeMoveInput)
 	{
 		NewSnapshot.MoveInput = AuthoritativeMoveInput.GetClampedToMaxSize(1.f);
@@ -784,6 +1061,15 @@ void ABasePlayer::PrepareForCannonControl()
 
 void ABasePlayer::PossessedBy(AController* NewController)
 {
+	AMultiGameMode* LifeMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	ABasePlayerController* LifeOwner = Cast<ABasePlayerController>(NewController);
+	const bool bIndividualLifeInitialization = LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController);
+	if (bIndividualLifeInitialization)
+	{
+		if (HealthComponent) HealthComponent->BeginLifeInitialization();
+		if (ABasePlayer* PreviousLife = LifeOwner ? LifeOwner->LifeCharacter.Get() : nullptr)
+			if (PreviousLife != this && PreviousLife->GetHealthComponent()) PreviousLife->GetHealthComponent()->UninitializeFromAbilitySystem();
+	}
 	Super::PossessedBy(NewController);
 	ResetAutomaticSwimDiveInput();
 
@@ -818,19 +1104,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		{
 			CachedAbilitySystemComponent->AddLooseGameplayTag(Team_Player);
 		}
-		if (HealthComponent && CachedAbilitySystemComponent.IsValid())
+		if (HealthComponent)
 		{
-			// A newly spawned avatar shares the dead player's zero-health ASC.
-			// Bind first, then restore life before any death montage/ragdoll can start.
-			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get(), false);
-			if (HealthComponent->IsDead() || HealthComponent->GetHealth() <= 0.0f
-				|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dead))
-			{
-				HealthComponent->ResetForReuse();
-			}
+			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
+			if (HealthComponent->IsDead()) HealthComponent->ResetForReuse();
 		}
-		RestoreRespawnProgress(NewController);
-
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
 		if(CachedAbilitySystemComponent.IsValid()) {
@@ -890,7 +1168,42 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState is null!"));
 	}
 
-	// ASC 초기화 완료 알림 방송
+ USWRoomProgressSubsystem* LifeRoom = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+ const bool bNewEntryLife = LifeRoom && (LifeRoom->IsReturnTravelPending() || LifeRoom->IsFinalDepartureTravelPending());
+ if (LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController))
+ {
+  bInitialLifeRestoreSuccessful = LifeOwner && LifeOwner->ApplyPendingLifeProgress(this);
+  if (bInitialLifeRestoreSuccessful) bInitialLifeRestoreSuccessful = HealthComponent && HealthComponent->EndLifeInitialization();
+ }
+ else if (LifeMode && (LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::GameOver || LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::ReturningAfterGameOver))
+ {
+  if (LifeOwner)
+  {
+   // This possession is a GameOver reconnect, not the normal sinking notification.
+   LifeOwner->bGameOverReconnect = true;
+   if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
+    LifeOwner->bHasLatestLifeProgress = Room->GetStoredControllerProgress(LifeOwner, LifeOwner->LatestLifeProgress);
+   LifeOwner->bLifeProgressFrozen = LifeOwner->bHasLatestLifeProgress;
+   LifeOwner->FreezeLifeProgressForGameOver();
+  }
+ }
+ else if (!bHasCompletedInitialPossession)
+ {
+  FSWPlayerProgressSnapshot ReconnectSnapshot;
+  if (!bNewEntryLife && LifeMode && LifeMode->ConsumeReconnectSnapshotForController(NewController, ReconnectSnapshot)) ApplyProgressSnapshot(ReconnectSnapshot);
+  else
+  {
+   if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr) Room->RestorePlayer(this);
+   if (!bNewEntryLife) RestoreRespawnProgress(NewController);
+  }
+ }
+ bHasCompletedInitialPossession = true;
+ if (!bStartingInventoryDecisionMade)
+ {
+  const bool bFreshInventory = !bInventoryProgressRestored && (!LifeRoom || !LifeRoom->IsHostedRoom() || LifeRoom->IsNewRoomPending());
+  FinalizeStartingInventory(bFreshInventory);
+ }
+ // ASC 초기화 완료 알림 방송
 	OnAbilitySystemInitialized.Broadcast();
 }
 
@@ -909,11 +1222,6 @@ void ABasePlayer::UnPossessed()
 void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
-	// Late replication of an old corpse must not reclaim the new avatar's ASC.
-	if (HealthComponent && HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
-	{
-		return;
-	}
 
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
 
@@ -1181,6 +1489,7 @@ void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
 
 void ABasePlayer::ServerAssignQuickSlotFromInventory_Implementation(int32 QuickSlotIndex)
 {
+	if (!CanMutateLifeGameplay()) return;
 	AssignQuickSlotFromInventory(QuickSlotIndex);
 }
 
@@ -1201,6 +1510,7 @@ void ABasePlayer::ClearQuickSlot(int32 QuickSlotIndex)
 
 void ABasePlayer::ServerClearQuickSlot_Implementation(int32 QuickSlotIndex)
 {
+	if (!CanMutateLifeGameplay()) return;
 	ClearQuickSlot(QuickSlotIndex);
 }
 
@@ -1214,6 +1524,7 @@ int32 ABasePlayer::FindQuickSlotIndex(const FGameplayTag SlotTag) const
 
 void ABasePlayer::OnQuickSlotInputPressed(const FGameplayTag SlotTag)
 {
+	if (!CanMutateLifeGameplay()) return;
 	const int32 QuickSlotIndex = FindQuickSlotIndex(SlotTag);
 	if (!QuickSlots.IsValidIndex(QuickSlotIndex))
 	{
@@ -1304,6 +1615,7 @@ void ABasePlayer::OnShipRepairInteractionReleased()
 
 void ABasePlayer::OnShipRepairInteractionPressed()
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (IsLocallyControlled())
 	{
 		bShipRepairInputHeld = true;
@@ -1313,6 +1625,7 @@ void ABasePlayer::OnShipRepairInteractionPressed()
 
 void ABasePlayer::ServerSetShipRepairInputHeld_Implementation(const bool bHeld)
 {
+	if (bHeld) if (!CanMutateLifeGameplay()) return;
 	bShipRepairInputHeld = bHeld;
 	if (!bHeld && ActiveShipRepairPoint)
 	{
@@ -1448,6 +1761,7 @@ void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 
 void ABasePlayer::ServerActivateQuickSlot_Implementation(int32 QuickSlotIndex)
 {
+	if (!CanMutateLifeGameplay()) return;
 	ActivateQuickSlot(QuickSlotIndex);
 }
 
@@ -1599,6 +1913,7 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
+	if (!CanMutateLifeGameplay()) return;
 	const bool bInteractionInput = InputTag.MatchesTagExact(Key_Default_F);
 	const bool bLogInteraction = bInteractionInput && IsStorageInteractionLoggingEnabled();
 	if (bLogInteraction)
@@ -1685,6 +2000,7 @@ void ABasePlayer::OnAreaSlowSkillReleased()
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
 	if (!CanPerformCombatAction()) return;
@@ -1768,10 +2084,10 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
 
-	// The view snapshot and input use the same reliable event, so no separate aim RPC can race release.
+	// Authorize a shot ID with release input; sample its view at the later FireArrow notify.
 	if (ReleasedEventTag == Key_Default_Mouse_LeftClick_Released && AimComponent)
 	{
-		AimComponent->CaptureReleaseView(EventData);
+		AimComponent->CreateReleaseRequest(EventData);
 	}
 	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
 
@@ -1783,6 +2099,7 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleShipBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
 		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 		Payload ? TEXT("YES") : TEXT("NO"),
@@ -1805,6 +2122,7 @@ void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleCannonBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
 		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 		Payload ? TEXT("YES") : TEXT("NO"),
@@ -1827,6 +2145,7 @@ void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (!HasAuthority() || !Payload || !Payload->Target || !InventoryComponent)
 	{
 		return;
@@ -1904,6 +2223,7 @@ void ABasePlayer::HandleEquipmentAttachNotify()
 
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	// 서버의 ASC에서 이벤트를 발생시켜 WaitGameplayEvent 태스크를 깨웁니다.
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventTag, Payload);
 }
@@ -2102,6 +2422,7 @@ void ABasePlayer::Look(const FInputActionValue& Value)
 
 void ABasePlayer::DoMove(float Right, float Forward)
 {
+	if (IsLocallyControlled() && (!FMath::IsNearlyZero(Right) || !FMath::IsNearlyZero(Forward))) FSWInputDiag::RecordFirstMove(GetGameInstance());
 	const bool bVerticalSwimOverride = SwimmingComponent
 		&& SwimmingComponent->IsCustomSwimming()
 		&& (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState());
@@ -2225,6 +2546,7 @@ void ABasePlayer::StopMoveInput()
 
 void ABasePlayer::DoLook(float Yaw, float Pitch)
 {
+	if (IsLocallyControlled() && (!FMath::IsNearlyZero(Yaw) || !FMath::IsNearlyZero(Pitch))) FSWInputDiag::RecordFirstLook(GetGameInstance());
 	if (GetController() != nullptr)
 	{
 		float Multiplier = 1.0f;
@@ -2287,6 +2609,7 @@ void ABasePlayer::DoJumpEnd()
 
 void ABasePlayer::StartSwimDive()
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
 	{
 		return;
@@ -2353,6 +2676,7 @@ void ABasePlayer::ResetAutomaticSwimDiveInput()
 
 void ABasePlayer::StartSprint()
 {
+	if (!CanMutateLifeGameplay()) return;
 	bSprintInputHeld = true;
 	RefreshSprintFromInput();
 }
@@ -2433,6 +2757,7 @@ void ABasePlayer::RefreshSprintFromInput()
 
 void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
 {
+	if (bNewSprinting) if (!CanMutateLifeGameplay()) return;
 	const bool bServerAllowsSprinting = bNewSprinting && CanSprintFromServerState();
 	
 	if (AnimStateComponent)
@@ -2444,6 +2769,7 @@ void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
 
 void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
 {
+	if (!CanMutateLifeGameplay()) return;
 	const FVector2D ClampedMoveInput = NewMoveInput.GetClampedToMaxSize(1.f);
 	
 	AuthoritativeMoveInput = ClampedMoveInput;
@@ -2528,6 +2854,7 @@ void ABasePlayer::OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState
 
 void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->HandleJumpStarted();
@@ -2590,9 +2917,8 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 		return;
 	}
 
-	// Physical falling owns air rotation, even before the animation snapshot
-	// catches up at takeoff or while the landing pose is still blending out.
-	const bool bIsInAir = GetCharacterMovement() && GetCharacterMovement()->IsFalling();
+	const bool bIsInAir = AnimStateComponent &&
+		(AnimStateComponent->bIsInAir || AnimStateComponent->CurrentState == ELocomotionState::InAir);
 
 	const bool bIsMovingInStrafe =
 		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
@@ -2605,13 +2931,20 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 
 		if (bIsInAir)
 		{
-			// Project_J keeps one rotation owner throughout flight. Toggling
-			// controller yaw below 0.5 degrees introduces a snap on the next look.
-			bUseControllerRotationYaw = false;
-			const FRotator CurrentRot = GetActorRotation();
-			const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
-			const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
-			SetActorRotation(FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, AirRotationCatchUpSpeed));
+			// 공중 체공 중에는 마우스 회전 시 캡슐이 굳지 않고 AirRotationCatchUpSpeed 속도로 카메라 방향을 부드럽게 추종
+			if (YawDelta > 0.5f)
+			{
+				bUseControllerRotationYaw = false;
+				const FRotator CurrentRot = GetActorRotation();
+				const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
+				const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+				const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, AirRotationCatchUpSpeed);
+				SetActorRotation(NewRot);
+			}
+			else
+			{
+				bUseControllerRotationYaw = true;
+			}
 		}
 		else if (YawDelta > 5.0f)
 		{
@@ -3407,4 +3740,117 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
     }
 #endif
 #endif
+}
+
+bool ABasePlayer::RestoreProgressForNewLife(const FSWRoomPlayerProgress& Stored, FString& OutError)
+{
+ if (!HasAuthority() || !CachedAbilitySystemComponent.IsValid() || !HealthComponent || !InventoryComponent)
+ { OutError = TEXT("RespawnProgressMissing: life components unavailable"); return false; }
+ CachedAbilitySystemComponent->CancelAllAbilities();
+ if (USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+ {
+  if (!RoomASC->RestoreRoomEffects({}, OutError)) return false;
+ }
+ else
+ {
+  // The equipment restore below clears and rebuilds the old equipment effect.
+  for (const FActiveGameplayEffectHandle Handle : CachedAbilitySystemComponent->GetActiveEffects(FGameplayEffectQuery()))
+  {
+   const FActiveGameplayEffect* Effect = CachedAbilitySystemComponent->GetActiveGameplayEffect(Handle);
+   if (Effect && Effect->Spec.Def && !Effect->Spec.Def->IsA<UGASStrengthEquipmentGameplayEffect>())
+    if (!CachedAbilitySystemComponent->RemoveActiveGameplayEffect(Handle)) { OutError = TEXT("Combat effect removal failed"); return false; }
+  }
+ }
+ HealthComponent->ResetForReuse();
+ PendingRoomEffects.Reset(); bHasPendingRoomEffects = false; PendingRoomHealth = 0;
+ FSWRoomPlayerProgress Progress = Stored;
+ Progress.bWasDead = false; Progress.bRestoreFullHealth = true;
+ Progress.CurrentHealth = Progress.MaximumHealth;
+ Progress.bHasResumeTransform = false; Progress.ResumeWorldTransform = FTransform::Identity;
+ Progress.ShipRelativeTransform = FTransform::Identity; Progress.ShipStableId.Invalidate();
+ Progress.bWasMounted = false; Progress.MountedDeviceId.Invalidate(); Progress.bWasSwimming = false;
+ Progress.bHasMovement = false; Progress.WorldVelocity = FVector::ZeroVector;
+ Progress.MovementMode = MOVE_Walking; Progress.CustomMovementMode = 0;
+ Progress.bEffectsCaptured = false; Progress.ActiveEffects.Reset();
+ Progress.CameraMode = NAME_None; Progress.ControlRotation = FRotator(0, GetActorRotation().Yaw, 0);
+ RestoreRoomProgress(Progress);
+ if (!bInitialLifeRestoreSuccessful) { OutError = TEXT("RespawnSpawnFailed: equipment restoration"); return false; }
+ if (!FinalizeRoomProgressEffects(OutError)) return false;
+ HealthComponent->ResetForReuse();
+ CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), HealthComponent->GetMaxHealth());
+ GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+ if (GetMesh())
+ {
+  GetMesh()->SetSimulatePhysics(false);
+  GetMesh()->SetCollisionProfileName(TEXT("CharacterMesh"));
+ }
+ if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+ { Movement->StopMovementImmediately(); Movement->SetMovementMode(MOVE_Walking); }
+ return !HealthComponent->IsDead() && HealthComponent->GetHealth() > 0;
+}
+
+bool ABasePlayer::CanMutateLifeGameplay() const
+{
+ if (const ABasePlayerController* Flow = Cast<ABasePlayerController>(GetController())) return Flow->CanMutateGameplay();
+ if (GetWorld())
+  for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+   if (const ABasePlayerController* Flow = Cast<ABasePlayerController>(It->Get()); Flow && Flow->GetLifeCharacter() == this) return Flow->CanMutateGameplay();
+ return !HasAuthority();
+}
+
+void ABasePlayer::SetMountedDamageMode(bool bEnabled)
+{
+ if (!HasAuthority() || bMountedDamageMode == bEnabled) return;
+ bMountedDamageMode = bEnabled;
+ if (bEnabled && CachedAbilitySystemComponent.IsValid())
+ {
+  FGameplayTagContainer HitReactionTags(GameplayAbility_HitReaction);
+  CachedAbilitySystemComponent->CancelAbilities(&HitReactionTags);
+ }
+ OnRep_MountedDamageMode();
+ ForceNetUpdate();
+}
+
+void ABasePlayer::FinalizeStartingInventory(bool bFreshInventory)
+{
+ if (!HasAuthority() || bStartingInventoryDecisionMade) return;
+ bStartingInventoryDecisionMade = true;
+ UE_LOG(LogSWRoom, Display, TEXT("[SWInventoryDiag] Event=StartingItemsDecision Player=%s Restored=%d Fresh=%d"), *GetName(), bInventoryProgressRestored, bFreshInventory);
+ if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsBefore"), true);
+#if WITH_EDITOR
+ if (bFreshInventory) GiveStartingItemsForTest();
+#endif
+ if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsAfter"), true);
+}
+
+void ABasePlayer::OnRep_MountedDamageMode()
+{
+ if (bMountedDamageMode)
+ {
+  if (!bMountedCollisionSaved)
+  {
+   SavedMountedCapsuleCollision = GetCapsuleComponent()->GetCollisionEnabled();
+   SavedMountedMeshCollision = GetMesh()->GetCollisionEnabled();
+   bMountedCollisionSaved = true;
+  }
+  SetActorEnableCollision(true);
+  GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+  GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+ }
+ else if (bMountedCollisionSaved)
+ {
+  GetCapsuleComponent()->SetCollisionEnabled(SavedMountedCapsuleCollision);
+  GetMesh()->SetCollisionEnabled(SavedMountedMeshCollision);
+  bMountedCollisionSaved = false;
+ }
+}
+
+void ABasePlayer::PrepareForHealthDeath()
+{
+ if (!HasAuthority() || !bMountedDamageMode) return;
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=MountedLethalExitBegin Player=%s Parent=%s Health=%.3f"), *GetName(), *GetNameSafe(GetAttachParentActor()), HealthComponent ? HealthComponent->GetHealth() : 0.f);
+ if (ACannon* Cannon = Cast<ACannon>(GetAttachParentActor()); Cannon && Cannon->GetRidingPlayer() == this) Cannon->ForceExit();
+ else if (AShip* Ship = Cast<AShip>(GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == this) Ship->ForceDisembark();
+ SetMountedDamageMode(false);
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=MountedLethalExitComplete Player=%s Controller=%s Parent=%s"), *GetName(), *GetNameSafe(GetController()), *GetNameSafe(GetAttachParentActor()));
 }

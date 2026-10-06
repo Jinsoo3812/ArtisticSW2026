@@ -10,9 +10,12 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "BaseEnemy.h"
+#include "AI/BaseAIController.h"
 #include "BaseGameplayTags.h"
 #include "BaseAttributeSet.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
@@ -39,6 +42,16 @@ UGA_BasicAttack::UGA_BasicAttack()
 	ActivationBlockedTags.AddTag(State_Damaged);
 	ActivationBlockedTags.AddTag(State_Boss_Busy);
 	NativeCooldownTags.AddTag(Cooldown_Enemy_BasicAttack);
+}
+
+bool UGA_BasicAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	const ADeckEnemy* Deck = ActorInfo ? Cast<ADeckEnemy>(ActorInfo->AvatarActor.Get()) : nullptr;
+	const ABaseAIController* AI = Deck ? Cast<ABaseAIController>(Deck->GetController()) : nullptr;
+	if (Deck && (Deck->GetDeckCombatComponent()->HasCommittedAttack() || (AI && AI->HasDeferredDeckDecision()))) return false;
+	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
 }
 
 const FGameplayTagContainer* UGA_BasicAttack::GetCooldownTags() const
@@ -84,8 +97,22 @@ void UGA_BasicAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	ABaseEnemy* EnemyOwner = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo());
+	DeckCombat.Reset(); DeckAttackAttempt = 0;
+	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(EnemyOwner))
+	{
+		DeckCombat = Deck->GetDeckCombatComponent();
+		DeckAttackAttempt = DeckCombat->BeginAttack(Deck->GetCombatTarget());
+		if (!Deck->CanAttackCurrentTarget(true))
+		{
+			if (Deck->CanAttackCurrentTarget(false)) DeckCombat->RecordBlockedLOS(DeckAttackAttempt, Deck->GetCombatTarget());
+			else DeckCombat->RecordFailure(DeckAttackAttempt, Deck->IsValidCombatTarget(Deck->GetCombatTarget())
+				? EDeckAttackOutcome::OutOfRange : EDeckAttackOutcome::TargetInvalid);
+			EndAbility(Handle, ActorInfo, ActivationInfo, true, true); return;
+		}
+	}
 	if (!EnemyOwner || !EnemyOwner->IsBalanceAttackReady() || !EnemyOwner->HasBalancedMeleeAttackSlot())
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::Cooldown);
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -93,6 +120,7 @@ void UGA_BasicAttack::ActivateAbility(
 	FEnemyBasicAttackExecutionData AttackData;
 	if (!PrepareAttack(EnemyOwner) || !CacheAttackData(EnemyOwner, AttackData))
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::InvalidSetup);
 		UE_LOG(LogEnemyBasicAttack, Warning,
 			TEXT("Basic attack has no valid weapon damage data. Enemy=%s SourceObject=%s"),
 			*GetNameSafe(EnemyOwner), *GetNameSafe(GetCurrentSourceObject()));
@@ -101,9 +129,11 @@ void UGA_BasicAttack::ActivateAbility(
 	}
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::Cooldown);
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	if (DeckCombat.IsValid()) DeckCombat->CommitAttack(DeckAttackAttempt, Handle, AttackData.AttackMontage);
 	bOpenedAttackWindow = false;
 	OpenedWindowSources.Reset();
 	ActiveWindowSource.Reset();
@@ -157,6 +187,8 @@ void UGA_BasicAttack::EndAbility(
 	bool bWasCancelled)
 {
 	EndHitScan();
+	if (DeckCombat.IsValid()) DeckCombat->EndAttack(DeckAttackAttempt, bWasCancelled);
+	DeckCombat.Reset(); DeckAttackAttempt = 0;
 	if (bPoseRefreshAcquired)
 	{
 		if (ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo()); Enemy && Enemy->GetMesh())
@@ -316,6 +348,22 @@ void UGA_BasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 void UGA_BasicAttack::StartHitScan()
 {
 	if (!IsActive() || bAttackFinished || bHitScanActive || bOpenedAttackWindow || !IsValid(CachedWeapon)) return;
+	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(GetAvatarActorFromActorInfo()))
+	{
+		if (!DeckCombat.IsValid() || !DeckCombat->IsCurrentAttack(DeckAttackAttempt))
+		{
+			if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::TargetInvalid);
+			FinishAttack(true); return;
+		}
+		// Range is a start condition. An already committed swing uses the weapon's real hit volume.
+		// A blocked target can suppress this hit window without ending the montage.
+		if (Deck->IsValidCombatTarget(Deck->GetCombatTarget())
+			&& !DeckCombat->HasClearAttackLine(Deck->GetCombatTarget()))
+		{
+			DeckCombat->RecordBlockedLOS(DeckAttackAttempt, Deck->GetCombatTarget());
+			return;
+		}
+	}
 	FStrengthDamageRequest Request;
 	Request.SourceASC = GetAbilitySystemComponentFromActorInfo();
 	Request.InstigatorActor = GetAvatarActorFromActorInfo();
@@ -323,10 +371,16 @@ void UGA_BasicAttack::StartHitScan()
 
 	Request.AttackCoefficient = CachedExecutionData.AttackCoefficient;
 	CachedDamageSpecHandle = UGASCombatLibrary::MakeStrengthDamageEffectSpec(Request);
-	if (!CachedDamageSpecHandle.IsValid()) { FinishAttack(true); return; }
+	if (!CachedDamageSpecHandle.IsValid())
+	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::InvalidSetup);
+		else FinishAttack(true);
+		return;
+	}
 	if (CachedExecutionData.ImpactGameplayCueTag.IsValid()) CachedDamageSpecHandle.Data->AddDynamicAssetTag(CachedExecutionData.ImpactGameplayCueTag);
 	bOpenedAttackWindow = true;
 	bHitScanActive = true;
+	if (DeckCombat.IsValid()) DeckCombat->RecordExecuted(DeckAttackAttempt);
 	CachedWeapon->HitScanStart(CachedDamageSpecHandle);
 }
 

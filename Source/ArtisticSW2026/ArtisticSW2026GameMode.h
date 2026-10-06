@@ -31,13 +31,6 @@ public:
 	TSubclassOf<APawn> SecondPlayerPawnClass;
 
 protected:
-	/** PlayerStart가 선택되기 전에 접속 순번을 배정한다. */
-	virtual FString InitNewPlayer(
-		APlayerController* NewPlayerController,
-		const FUniqueNetIdRepl& UniqueId,
-		const FString& Options,
-		const FString& Portal) override;
-
 	/** AMultiGameMode가 PostLogin 전에 배정한 플레이어 인덱스로 Pawn 클래스를 선택한다. */
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 };

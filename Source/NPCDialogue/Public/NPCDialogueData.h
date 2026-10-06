@@ -45,5 +45,7 @@ public:
 
 	const FNPCDialogueRule* FindRule(FName RuleId) const;
 
+#if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 };

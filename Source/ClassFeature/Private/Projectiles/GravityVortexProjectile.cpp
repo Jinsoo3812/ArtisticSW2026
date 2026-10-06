@@ -1,6 +1,7 @@
 #include "Projectiles/GravityVortexProjectile.h"
 
 #include "Components/SphereComponent.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -9,9 +10,12 @@
 #include "Effects/SWNiagaraScaleLibrary.h"
 #include "Skills/GravityVortexField.h"
 #include "WaterSurfaceQueryLibrary.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
 AGravityVortexProjectile::AGravityVortexProjectile()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
 	SetReplicateMovement(true);
@@ -98,7 +102,8 @@ void AGravityVortexProjectile::BeginPlay()
 
 	if (HasAuthority())
 	{
-		SetLifeSpan(FMath::Max(0.1f, MaxProjectileLifetime));
+		if (!GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
+			SetLifeSpan(FMath::Max(0.1f, MaxProjectileLifetime));
 	}
 }
 
@@ -113,7 +118,7 @@ void AGravityVortexProjectile::Tick(float DeltaSeconds)
 	}
 #endif
 
-	if (!HasAuthority() || bActivated)
+	if (!HasAuthority() || bActivated || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		return;
 	}
@@ -154,12 +159,70 @@ void AGravityVortexProjectile::Tick(float DeltaSeconds)
 	PreviousLocation = CurrentLocation;
 }
 
+void AGravityVortexProjectile::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomGravityProjectileState State;
+	State.PreviousLocation = PreviousLocation;
+	State.bActivated = bActivated;
+	State.bIncludeWaveHeight = bIncludeWaveHeight;
+	State.RemainingLife = GetLifeSpan();
+	State.GravityScale = ProjectileMovement ? ProjectileMovement->ProjectileGravityScale : 1.f;
+	State.FieldClass = FieldClass ? FSoftClassPath(FieldClass.Get()) : FSoftClassPath();
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Projectile;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("GravityVortexState");
+		Issue.Reason = TEXT("Gravity vortex projectile serialization failed");
+	}
+}
+
+bool AGravityVortexProjectile::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomGravityProjectileState State;
+	if (Part.Domain != ESWRoomDomain::Projectile || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| State.PreviousLocation.ContainsNaN() || !FMath::IsFinite(State.RemainingLife) || State.RemainingLife < 0.f
+		|| !FMath::IsFinite(State.GravityScale))
+	{
+		OutError = TEXT("Invalid gravity vortex projectile state");
+		return false;
+	}
+	if (!State.FieldClass.IsNull())
+	{
+		FieldClass = State.FieldClass.TryLoadClass<AGravityVortexField>();
+		if (!FieldClass)
+		{
+			OutError = TEXT("Gravity vortex field class missing");
+			return false;
+		}
+	}
+	PreviousLocation = State.PreviousLocation;
+	bActivated = State.bActivated;
+	bIncludeWaveHeight = State.bIncludeWaveHeight;
+	if (ProjectileMovement) ProjectileMovement->ProjectileGravityScale = State.GravityScale;
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AGravityVortexProjectile::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	SetLifeSpan(FMath::Max(KINDA_SMALL_NUMBER, PendingRoomState.RemainingLife));
+	return true;
+}
+
 void AGravityVortexProjectile::LaunchProjectile(const FVector& LaunchVelocity)
 {
 	if (ProjectileMovement)
 	{
-		ProjectileMovement->Velocity = LaunchVelocity;
-		ProjectileMovement->MaxSpeed = FMath::Max(ProjectileMovement->MaxSpeed, LaunchVelocity.Size());
+		if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovement, LaunchVelocity,
+			FMath::Max(ProjectileMovement->MaxSpeed, LaunchVelocity.Size()))) return;
 		ProjectileMovement->Activate(true);
 	}
 }

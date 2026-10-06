@@ -12,6 +12,7 @@ class UNPCDialogueWidget;
 class UNPCDialogueSourceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FNPCDialogueEvent);
+DECLARE_DELEGATE_RetVal_OneParam(bool, FOnFinalDepartureRequested, AActor*);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FNPCDialogueFailedEvent,
 	ENPCDialogueFailureReason,
@@ -29,6 +30,7 @@ class NPCDIALOGUE_API UPlayerDialogueComponent : public UActorComponent
 
 public:
 	UPlayerDialogueComponent();
+	FOnFinalDepartureRequested OnFinalDepartureRequested;
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

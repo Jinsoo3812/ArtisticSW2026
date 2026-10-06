@@ -2,6 +2,7 @@
 
 #include "Cannon.h"
 #include "CannonRiderInterface.h"
+#include "MountedDamageUserInterface.h"
 #include "Components/StaticMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "InteractableComponent.h"
@@ -96,6 +97,16 @@ void ACannon::BeginPlay()
 	VisualAimRotation = AimRotation;
 
 	RefreshPlayerInteractionAvailability();
+	if (AShip* Ship = GetOwningShip())
+	{
+		Ship->RefreshStoryGateOwnedActors();
+		if (Ship->IsStoryGateDormantForDeckContent())
+		{
+			SetActorHiddenInGame(true);
+			SetActorEnableCollision(false);
+			SetActorTickEnabled(false);
+		}
+	}
 }
 
 void ACannon::Tick(float DeltaTime)
@@ -313,7 +324,7 @@ void ACannon::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board initiated by player pawn %s. Cannon location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
-	SetRiderInvulnerable(true);
+	if (IMountedDamageUserInterface* Rider = Cast<IMountedDamageUserInterface>(RidingPlayer)) Rider->SetMountedDamageMode(true);
 	RefreshPlayerInteractionAvailability();
 	if (ICannonRiderInterface* CannonRider = Cast<ICannonRiderInterface>(RidingPlayer))
 	{
@@ -321,7 +332,7 @@ void ACannon::Board(APawn* PlayerPawn)
 	}
 
 	// Disable player collision
-	RidingPlayer->SetActorEnableCollision(false);
+	RidingPlayer->SetActorEnableCollision(true);
 	RidingPlayer->SetActorHiddenInGame(false);
 
 	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
@@ -620,7 +631,7 @@ void ACannon::ExitAimMode()
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Player bReplicateMovement after enable: %s"), PlayerToRestore->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
 	// Return possession to player character (Ship의 Disembark와 동일)
-	SetRiderInvulnerable(false);
+	if (IMountedDamageUserInterface* Rider = Cast<IMountedDamageUserInterface>(PlayerToRestore)) Rider->SetMountedDamageMode(false);
 	if (PC)
 	{
 		PC->Possess(PlayerToRestore);
@@ -628,26 +639,6 @@ void ACannon::ExitAimMode()
 
 	RidingPlayer = nullptr;
 	RefreshPlayerInteractionAvailability();
-}
-
-void ACannon::SetRiderInvulnerable(bool bEnabled)
-{
-	if (!HasAuthority() || bRiderInvulnerabilityApplied == bEnabled)
-	{
-		return;
-	}
-	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
-	{
-		if (bEnabled)
-		{
-			ASC->AddLooseGameplayTag(State_Invulnerable);
-		}
-		else
-		{
-			ASC->RemoveLooseGameplayTag(State_Invulnerable);
-		}
-		bRiderInvulnerabilityApplied = bEnabled;
-	}
 }
 
 void ACannon::ClearLocalRiderHiddenActors()
@@ -1027,7 +1018,7 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 	if (RidingPlayer)
 	{
 		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
-		RidingPlayer->SetActorEnableCollision(false);
+		RidingPlayer->SetActorEnableCollision(true);
 		if (ICannonRiderInterface* CannonRider = Cast<ICannonRiderInterface>(RidingPlayer))
 		{
 			CannonRider->PrepareForCannonControl();

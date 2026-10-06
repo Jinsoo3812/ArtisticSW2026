@@ -4,6 +4,7 @@
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ShipAI/EnemyShip.h"
@@ -39,8 +40,11 @@ EBTNodeResult::Type UBTT_BossStrafe::ExecuteTask(
 	{
 		Target = Boss->GetBossCombatTarget();
 	}
-	if (!Boss || !Boss->HasAuthority() || !HostShip || !DeckMesh || !Movement
-		|| !Boss->CanEngageActor(Target))
+	UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Start, TargetFloor;
+	if (!Boss || !Boss->HasAuthority() || !HostShip || !DeckMesh || !Movement || !Area
+		|| !Boss->CanEngageActor(Target) || !Area->ResolveActorOnDeck(*Boss, Start)
+		|| !Area->ResolveActorOnDeck(*Target, TargetFloor) || TargetFloor.SurfaceId != Start.SurfaceId)
 	{
 		return EBTNodeResult::Failed;
 	}
@@ -61,7 +65,7 @@ EBTNodeResult::Type UBTT_BossStrafe::ExecuteTask(
 	ElapsedMovementTime = 0.0f;
 	Boss->SetBaseMovementSpeed(FMath::Max(10.0f, MoveSpeed));
 	Movement->SetMovementMode(MOVE_Walking);
-	Boss->SetBase(DeckMesh);
+	Boss->SetBase(Area->GetMovementBase(*Boss));
 	return EBTNodeResult::InProgress;
 }
 
@@ -85,6 +89,18 @@ void UBTT_BossStrafe::TickTask(
 		FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
 		return;
 	}
+	const UDeckWalkAreaComponent* Area = HostShip->GetDeckWalkAreaComponent();
+	const FVector LookAhead = Area ? Area->ToLocal(Area->GetActorFeetWorld(*Boss))
+		+ CachedLocalMoveDirection * FMath::Max(75.0f, MoveSpeed * DeltaSeconds) : FVector::ZeroVector;
+	FDeckWalkLocation Current, Next;
+	if (!Area || !Area->ResolveActorOnDeck(*Boss, Current)
+		|| !Area->ResolveLocalFloor(LookAhead, Current.SurfaceId, Next)
+		|| !Area->IsSupportedSegment(Current, LookAhead) || !Area->IsLocationAvailable(Next, *Boss))
+	{
+		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+		return;
+	}
+	Boss->SetBase(Area->GetMovementBase(*Boss));
 
 	const FVector WorldDirection = DeckMesh->GetComponentTransform()
 		.TransformVectorNoScale(CachedLocalMoveDirection)
@@ -114,7 +130,7 @@ void UBTT_BossStrafe::OnTaskFinished(
 FString UBTT_BossStrafe::GetStaticDescription() const
 {
 	return FString::Printf(
-		TEXT("Apply one tangential input for %.2f s at %.0f cm/s\nNo clearance or arrival failure"),
+		TEXT("Apply tangential deck movement for %.2f s at %.0f cm/s; require supported floor and clearance"),
 		StrafeDuration,
 		MoveSpeed);
 }

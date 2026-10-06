@@ -138,7 +138,7 @@ void UEnemyShipTorpedoBuoyancyTestSubsystem::SpawnServerProbe()
 	UClass* TorpedoClass = StaticLoadClass(
 		AEnemyShipTorpedo::StaticClass(),
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Blueprints/BP_ES_Torpedo.BP_ES_Torpedo_C"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_ES_Torpedo.BP_ES_Torpedo_C"));
 	if (!TorpedoClass)
 	{
 		TorpedoClass = AEnemyShipTorpedo::StaticClass();

@@ -53,7 +53,7 @@ void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIS
 
 	AEnemyShip* EnemyShip = Cast<AEnemyShip>(GetPawn());
 	AShip* PlayerShip = Cast<AShip>(SensedActor);
-	if (!EnemyShip || EnemyShip->IsCrewDefeated() || !PlayerShip || PlayerShip == EnemyShip
+	if (!EnemyShip || EnemyShip->IsCrewDefeated() || EnemyShip->IsStoryGateDormant() || !PlayerShip || PlayerShip == EnemyShip
 		|| PlayerShip->IsEnemyShipForEffects()
 		|| !PlayerShip->ActorHasTag(TEXT("Player"))
 		|| PlayerShip->ActorHasTag(TEXT("Enemy")))
@@ -113,7 +113,7 @@ void ANavalAIController::OnUnPossess()
 void ANavalAIController::SetTargetShip(AShip* InTargetShip)
 {
 	AEnemyShip* EnemyShip = Cast<AEnemyShip>(GetPawn());
-	if (EnemyShip && EnemyShip->IsCrewDefeated()) InTargetShip = nullptr;
+	if (EnemyShip && (EnemyShip->IsCrewDefeated() || EnemyShip->IsStoryGateDormant())) InTargetShip = nullptr;
 	if (InTargetShip == EnemyShip || (InTargetShip && InTargetShip->IsEnemyShipForEffects()))
 	{
 		return;
@@ -176,7 +176,7 @@ void ANavalAIController::RefreshTargetShip()
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_NavalAI_TargetSearch);
 	AEnemyShip* EnemyShip = Cast<AEnemyShip>(GetPawn());
 	UEnemyShipNavigationComponent* Navigation = EnemyShip ? EnemyShip->GetNavigationComponent() : nullptr;
-	if (!EnemyShip || !Navigation || EnemyShip->IsCrewDefeated())
+	if (!EnemyShip || !Navigation || EnemyShip->IsCrewDefeated() || EnemyShip->IsStoryGateDormant())
 	{
 		SetTargetShip(nullptr);
 		return;

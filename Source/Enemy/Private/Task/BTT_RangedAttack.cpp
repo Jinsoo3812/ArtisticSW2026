@@ -68,7 +68,7 @@ void UBTT_RangedAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeM
 
 	ARangedEnemy* Enemy = CachedEnemy.Get();
 	if (!Enemy || !CachedTarget.IsValid() || Enemy->GetCombatTarget() != CachedTarget.Get()
-		|| !Enemy->CanAttackCurrentTarget(true))
+		|| !Enemy->CanAttackCurrentTarget(false))
 	{
 		FinishAttackTask(EBTNodeResult::Failed);
 		return;
@@ -145,7 +145,7 @@ EBTNodeResult::Type UBTT_RangedAttack::TryActivateCachedAttack()
 	UAbilitySystemComponent* AbilitySystem = CachedAbilitySystem.Get();
 	if (!Enemy || !AbilitySystem || !CachedTarget.IsValid()
 		|| Enemy->GetCombatTarget() != CachedTarget.Get()
-		|| !Enemy->CanAttackCurrentTarget(true))
+		|| !Enemy->CanAttackCurrentTarget(false))
 	{
 		return EBTNodeResult::Failed;
 	}

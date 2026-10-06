@@ -12,11 +12,14 @@
 #include "StoryConditionalSpawner.h"
 #include "ItemSpawn/GlobalLootSpawnManager.h"
 #include "EngineUtils.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
 ALootSpawnPointBase::ALootSpawnPointBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = false;
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -35,7 +38,70 @@ void ALootSpawnPointBase::ResetSpawnPoint(bool bDestroySpawnedActor)
 
 bool ALootSpawnPointBase::CanBeActivated() const
 {
-	return bEnabled && !bActivated && PointWeight > 0.f;
+	return bEnabled && !bActivated && PointWeight > 0.f
+		&& (!GetWorld() || !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot());
+}
+
+void ALootSpawnPointBase::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomLootPointState State;
+	State.bActivated = bActivated;
+	if (IsValid(SpawnedActor))
+	{
+		const USWRoomSnapshotComponent* Id = SpawnedActor->FindComponentByClass<USWRoomSnapshotComponent>();
+		if (Id && Id->PersistenceClass != ESWRoomPersistenceClass::Transient)
+			State.SpawnedActorId = Id->StableId;
+		if ((!Id || Id->PersistenceClass != ESWRoomPersistenceClass::Transient) && !State.SpawnedActorId.IsValid())
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Loot");
+			Issue.FieldKey = TEXT("SpawnedActorId");
+			Issue.Reason = FString::Printf(TEXT("Spawned actor has no stable ID: %s"), *SpawnedActor->GetPathName());
+		}
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Loot;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Loot");
+		Issue.FieldKey = TEXT("PointState");
+		Issue.Reason = TEXT("Loot point serialization failed");
+	}
+}
+
+bool ALootSpawnPointBase::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomLootPointState State;
+	if (Part.Domain != ESWRoomDomain::Loot || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| (!State.bActivated && State.SpawnedActorId.IsValid()))
+	{
+		OutError = TEXT("Invalid loot point state");
+		return false;
+	}
+	bActivated = State.bActivated;
+	SpawnedActor = nullptr;
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool ALootSpawnPointBase::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (PendingRoomState.SpawnedActorId.IsValid())
+	{
+		if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.SpawnedActorId)) SpawnedActor = *Found;
+		else
+		{
+			OutError = FString::Printf(TEXT("Loot point spawned actor missing: %s"), *PendingRoomState.SpawnedActorId.ToString());
+			return false;
+		}
+	}
+	return true;
 }
 
 void ALootSpawnPointBase::MarkActivated(AActor* InSpawnedActor)
@@ -312,6 +378,11 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 
 	SpawnedChest->SetBossEncounterReserved(bBossEncounterReserved);
 	if (ABaseCharacter* Boss = BossGuard.Get()) SpawnedChest->AddBossGuardCharacter(Boss);
+	if (SpawnMode == EChestSpawnMode::Guarded && Environment == EChestEnvironment::ShipDeck)
+	{
+		SpawnedChest->SetStoryGateDormant(EffectiveOwningShip
+			&& EffectiveOwningShip->IsStoryGateDormantForDeckContent());
+	}
 	SpawnedChest->FinishSpawning(GetActorTransform());
 
 	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(EffectiveOwningShip))

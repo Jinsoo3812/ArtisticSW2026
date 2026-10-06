@@ -13,9 +13,13 @@
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Ship.h"
 #include "TimerManager.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
+#include "MultiGameMode.h"
 
 AEnemyShipTimeStopField::AEnemyShipTimeStopField()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickGroup = TG_PrePhysics;
 	bReplicates = true;
@@ -46,7 +50,7 @@ void AEnemyShipTimeStopField::InitializeTimeStop(float InRadius, float InDuratio
 void AEnemyShipTimeStopField::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (bReleased)
+	if (bReleased || (HasAuthority() && GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()))
 	{
 		return;
 	}
@@ -61,6 +65,123 @@ void AEnemyShipTimeStopField::Tick(float DeltaSeconds)
 #endif
 
 	ApplyAllTargets();
+}
+
+void AEnemyShipTimeStopField::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomTimeStopFieldState State;
+	State.FreezeSourceId = FreezeSourceId;
+	State.EffectRadius = EffectRadius;
+	State.EffectDurationSeconds = EffectDurationSeconds;
+	State.ExpirationRemaining = GetWorldTimerManager().IsTimerActive(ExpirationTimerHandle)
+		? FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(ExpirationTimerHandle)) : 0.f;
+	State.bReleased = bReleased;
+	const AMultiGameMode* Mode = GetWorld() ? Cast<AMultiGameMode>(GetWorld()->GetAuthGameMode()) : nullptr;
+	for (const FEnemyShipTimeStopTarget& Target : AffectedTargets)
+	{
+		if (!IsValid(Target.Actor)) continue;
+		FSWRoomTimeStopTargetState Saved;
+		Saved.Anchor = Target.Anchor;
+		Saved.TargetType = static_cast<uint8>(Target.Type);
+		if (Target.Type == EEnemyShipTimeStopTargetType::PlayerCharacter)
+		{
+			const ABasePlayer* Player = Cast<ABasePlayer>(Target.Actor);
+			Saved.PlayerIndex = Mode && Player ? Mode->GetPlayerIndex(Player->GetController()) : INDEX_NONE;
+		}
+		else if (const USWRoomSnapshotComponent* Id = Target.Actor->FindComponentByClass<USWRoomSnapshotComponent>())
+			Saved.ActorId = Id->StableId;
+		if ((Target.Type == EEnemyShipTimeStopTargetType::PlayerCharacter && Saved.PlayerIndex == INDEX_NONE)
+			|| (Target.Type == EEnemyShipTimeStopTargetType::PlayerShip && !Saved.ActorId.IsValid()))
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Area");
+			Issue.FieldKey = FName(*(TEXT("TimeStopTarget:") + Target.Actor->GetPathName()));
+			Issue.Reason = TEXT("Time-stop target lacks stable room identity");
+			continue;
+		}
+		State.Targets.Add(MoveTemp(Saved));
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Area;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Area");
+		Issue.FieldKey = TEXT("TimeStopState");
+		Issue.Reason = TEXT("Time-stop field serialization failed");
+	}
+}
+
+bool AEnemyShipTimeStopField::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomTimeStopFieldState State;
+	if (Part.Domain != ESWRoomDomain::Area || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| !State.FreezeSourceId.IsValid() || !FMath::IsFinite(State.EffectRadius) || State.EffectRadius <= 0.f
+		|| !FMath::IsFinite(State.EffectDurationSeconds) || State.EffectDurationSeconds <= 0.f
+		|| !FMath::IsFinite(State.ExpirationRemaining) || State.ExpirationRemaining < 0.f)
+	{
+		OutError = TEXT("Invalid time-stop field state");
+		return false;
+	}
+	for (const FSWRoomTimeStopTargetState& Target : State.Targets)
+		if (Target.Anchor.ContainsNaN() || Target.TargetType > static_cast<uint8>(EEnemyShipTimeStopTargetType::PlayerCharacter))
+		{
+			OutError = TEXT("Invalid time-stop target");
+			return false;
+		}
+	GetWorldTimerManager().ClearTimer(ExpirationTimerHandle);
+	ReleaseAllTargets();
+	AffectedTargets.Reset();
+	FreezeSourceId = State.FreezeSourceId;
+	EffectRadius = State.EffectRadius;
+	EffectDurationSeconds = State.EffectDurationSeconds;
+	bReleased = State.bReleased;
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AEnemyShipTimeStopField::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	const AMultiGameMode* Mode = Cast<AMultiGameMode>(GetWorld()->GetAuthGameMode());
+	for (const FSWRoomTimeStopTargetState& Saved : PendingRoomState.Targets)
+	{
+		AActor* Actor = nullptr;
+		if (Saved.TargetType == static_cast<uint8>(EEnemyShipTimeStopTargetType::PlayerShip))
+		{
+			if (AActor* const* Found = RegisteredActors.Find(Saved.ActorId)) Actor = *Found;
+		}
+		else if (Mode)
+		{
+			for (TActorIterator<ABasePlayer> It(GetWorld()); It; ++It)
+				if (Mode->GetPlayerIndex(It->GetController()) == Saved.PlayerIndex) { Actor = *It; break; }
+		}
+		if (!Actor)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Time-stop restore omitted missing target Id=%s Player=%d"),
+				*Saved.ActorId.ToString(), Saved.PlayerIndex);
+			continue;
+		}
+		FEnemyShipTimeStopTarget& Target = AffectedTargets.AddDefaulted_GetRef();
+		Target.Actor = Actor;
+		Target.Anchor = Saved.Anchor;
+		Target.Type = static_cast<EEnemyShipTimeStopTargetType>(Saved.TargetType);
+	}
+	if (!bReleased)
+	{
+		ApplyAllTargets();
+		if (PendingRoomState.ExpirationRemaining <= 0.f)
+			ExpirationTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &AEnemyShipTimeStopField::FinishTimeStop);
+		else
+			GetWorldTimerManager().SetTimer(ExpirationTimerHandle, this, &AEnemyShipTimeStopField::FinishTimeStop,
+				PendingRoomState.ExpirationRemaining, false);
+	}
+	ForceNetUpdate();
+	return true;
 }
 
 void AEnemyShipTimeStopField::EndPlay(const EEndPlayReason::Type EndPlayReason)

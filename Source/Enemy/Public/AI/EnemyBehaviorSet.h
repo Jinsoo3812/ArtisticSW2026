@@ -21,6 +21,9 @@ public:
 	UBehaviorTree* FindSubtree(EEnemyAIState State) const;
 
 	const TArray<FEnemyStateBehavior>& GetStateBehaviors() const { return StateBehaviors; }
+#if WITH_EDITOR
+	void ConfigureEditorSubtree(EEnemyAIState State, FGameplayTag InjectionTag, UBehaviorTree* Tree);
+#endif
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|AI", meta = (TitleProperty = "State"))

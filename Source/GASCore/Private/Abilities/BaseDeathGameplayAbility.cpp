@@ -54,6 +54,8 @@ void UBaseDeathGameplayAbility::ActivateAbility(
 	ApplyDeathState();
 
 	K2_OnDeathStarted(EventData);
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathGAAfterBlueprintStart Avatar=%s Active=%d Health=%s"),
+		*GetNameSafe(GetAvatarActorFromActorInfo()), IsActive(), *GetNameSafe(CachedHealthComponent));
 
 	if (PlayDeathMontage())
 	{
@@ -71,6 +73,8 @@ void UBaseDeathGameplayAbility::ActivateAbility(
 		// OnCompleted. Finish gameplay at their duration, leaving the pose held.
 		const bool bHoldsFinalPose = !DeathMontage->bEnableAutoBlendOut;
 		const float CompletionTimeout = Duration + (bHoldsFinalPose ? 0.0f : DeathCompletionGracePeriod);
+		UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathGATimerScheduled Avatar=%s Duration=%.3f Timeout=%.3f HoldsPose=%d World=%s"),
+			*GetNameSafe(GetAvatarActorFromActorInfo()), Duration, CompletionTimeout, bHoldsFinalPose, *GetNameSafe(GetWorld()));
 		if (UWorld* World = GetWorld())
 		{
 			World->GetTimerManager().SetTimer(
@@ -107,17 +111,21 @@ void UBaseDeathGameplayAbility::EndAbility(
 	}
 
 	K2_OnDeathFinished(bWasCancelled);
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathGAEnd Avatar=%s Cancelled=%d Finished=%d Health=%s"),
+		*GetNameSafe(GetAvatarActorFromActorInfo()), bWasCancelled, bDeathFinished, *GetNameSafe(CachedHealthComponent));
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UBaseDeathGameplayAbility::OnDeathMontageCompleted()
 {
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathMontageCompleted Avatar=%s"), *GetNameSafe(GetAvatarActorFromActorInfo()));
 	FinishDeathWithCancel(false);
 }
 
 void UBaseDeathGameplayAbility::OnDeathMontageBlendOut()
 {
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathMontageBlendOut Avatar=%s FinishOnEnd=%d"), *GetNameSafe(GetAvatarActorFromActorInfo()), bFinishDeathWhenMontageEnds);
 	if (bFinishDeathWhenMontageEnds)
 	{
 		FinishDeathWithCancel(false);
@@ -126,11 +134,13 @@ void UBaseDeathGameplayAbility::OnDeathMontageBlendOut()
 
 void UBaseDeathGameplayAbility::OnDeathMontageInterrupted()
 {
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathMontageInterrupted Avatar=%s"), *GetNameSafe(GetAvatarActorFromActorInfo()));
 	FinishDeathWithCancel(true);
 }
 
 void UBaseDeathGameplayAbility::OnDeathMontageCancelled()
 {
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathMontageCancelled Avatar=%s"), *GetNameSafe(GetAvatarActorFromActorInfo()));
 	FinishDeathWithCancel(true);
 }
 
@@ -238,6 +248,8 @@ void UBaseDeathGameplayAbility::FinishDeath()
 
 void UBaseDeathGameplayAbility::FinishDeathWithCancel(bool bWasCancelled)
 {
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathGAFinishEntered Avatar=%s Cancelled=%d AlreadyFinished=%d Active=%d Health=%s"),
+		*GetNameSafe(GetAvatarActorFromActorInfo()), bWasCancelled, bDeathFinished, IsActive(), *GetNameSafe(CachedHealthComponent));
 	if (bDeathFinished)
 	{
 		return;

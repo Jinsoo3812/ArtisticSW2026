@@ -5,7 +5,36 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Storage/StorageComponent.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "StorageChest.generated.h"
+
+USTRUCT()
+struct FSWRoomChestSlot
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGameplayTag ItemTag;
+	UPROPERTY(SaveGame) int32 Count = 0;
+};
+
+USTRUCT()
+struct FSWRoomChestState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 SlotCount = 0;
+	UPROPERTY(SaveGame) int32 ColumnCount = 0;
+	UPROPERTY(SaveGame) TArray<FSWRoomChestSlot> Slots;
+	UPROPERTY(SaveGame) bool bSlotsFromSharedProgress = false;
+	UPROPERTY(SaveGame) bool bLocked = false;
+	UPROPERTY(SaveGame) bool bHasBeenOpened = false;
+	UPROPERTY(SaveGame) bool bGuardFailed = false;
+	UPROPERTY(SaveGame) bool bRequiresGuardClear = false;
+	UPROPERTY(SaveGame) bool bBossEncounterReserved = false;
+	UPROPERTY(SaveGame) bool bEnablePhysicsAndBuoyancy = false;
+	UPROPERTY(SaveGame) int32 LootSeed = 0;
+	UPROPERTY(SaveGame) FSoftObjectPath ChestDefinitionPath;
+	UPROPERTY(SaveGame) bool bEmptyDestroyTimerPending = false;
+	UPROPERTY(SaveGame) float EmptyDestroyRemaining = 0.f;
+};
 
 class UInteractableComponent;
 class USceneComponent;
@@ -19,12 +48,18 @@ class UItemData;
 struct FProgressionComputedDrop;
 
 UCLASS()
-class CLASSFEATURE_API AStorageChest : public AActor
+class CLASSFEATURE_API AStorageChest : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AStorageChest();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomChestState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void BeginPlay() override;
@@ -53,6 +88,8 @@ public:
 	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
 	bool IsDistanceOptimizationEnabled() const { return bEnableDistanceOptimization; }
 	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
+	AShip* GetOwningShip() const { return OwningShip; }
+	void SetStoryGateDormant(bool bDormant);
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
 	void ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems);
@@ -140,14 +177,14 @@ protected:
 	float PhysicsMassKg = 25.0f;
 
 	/** Only independent floating chests can sleep. Deck/attached chests are always excluded. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization")
+	UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization")
 	bool bEnableDistanceOptimization = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization",
 		meta = (EditCondition = "bEnableDistanceOptimization", ClampMin = "0.0", Units = "cm"))
 	float DistanceOptimizationRange = 100000.0f;
 
-	UPROPERTY(ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly,
+	UPROPERTY(SaveGame, ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly,
 		Category = "Storage Chest|Optimization")
 	bool bDistanceOptimizationDormant = false;
 
@@ -182,6 +219,11 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_Locked, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Lock")
 	bool bLocked = false;
+	UPROPERTY(ReplicatedUsing = OnRep_StoryGateDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Story")
+	bool bStoryGateDormant = false;
+	bool bStoryGatePresentationApplied = false;
+	bool bStoryGatePreviousHidden = false;
+	bool bStoryGatePreviousCollision = false;
 
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Lock")
 	bool bGuardFailed = false;
@@ -206,6 +248,8 @@ protected:
 	float EmptyDestroyDelay = 1.0f;
 
 	FTimerHandle EmptyDestroyTimerHandle;
+	FSWRoomChestState PendingRoomState;
+	bool bHasPendingRoomState = false;
 	FTimerHandle DistanceOptimizationTimerHandle;
 	float DistanceOptimizationStableTime = 0.0f;
 	bool bHasBeenOpened = false;
@@ -224,6 +268,8 @@ protected:
 
 	UFUNCTION()
 	void OnRep_DistanceOptimizationDormant();
+	UFUNCTION() void OnRep_StoryGateDormant();
+	void ApplyStoryGatePresentation();
 
 	void InitializeGuardState();
 	void RecalculateGuardLock();

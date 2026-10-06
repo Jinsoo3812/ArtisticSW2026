@@ -8,6 +8,8 @@
 class UBuoyancyComponent;
 class UPrimitiveComponent;
 class UWaterBodyComponent;
+class FChestLaunchPhysicsDiagnostic;
+class FSWPhysicsStepBuoyancy;
 
 /** Last game-thread buoyancy solve, retained so owning actors can emit correlated diagnostics. */
 struct WATERANDSHIP_API FSWBuoyancyRuntimeDiagnostic
@@ -23,8 +25,14 @@ struct WATERANDSHIP_API FSWBuoyancyRuntimeDiagnostic
 	float ImmersionDepth = 0.0f;
 	float RelativeVelocityZ = 0.0f;
 	float BuoyantForceZ = 0.0f;
+	FString WaterBodyName;
+	float DampingForce = 0.0f;
 	FString SimulatingComponentName;
 	double WorldTimeSeconds = 0.0;
+	double ServerTimeSeconds = 0.0;
+	float WaveReferenceTime = 0.0f;
+	float EffectiveWaveTime = 0.0f;
+	FString WaveClass;
 };
 
 UENUM(BlueprintType)
@@ -50,6 +58,9 @@ public:
 	USWBuoyancyComponent();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void SetComponentTickEnabled(bool bEnabled) override;
+	virtual void OnUnregister() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	UFUNCTION(BlueprintCallable, Category = "SW Buoyancy")
@@ -66,6 +77,12 @@ public:
 	ESWBuoyancyExecutionMode GetExecutionMode() const { return ExecutionMode; }
 	const FSWBuoyancyRuntimeDiagnostic& GetLastRuntimeDiagnostic() const { return LastRuntimeDiagnostic; }
 	int32 GetCachedWaterBodyCount() const { return WaterBodies.Num(); }
+
+	/** Native chest opt-in: retain bounded history and log only anomalous upward motion. */
+	bool bMonitorChestLaunch = false;
+
+	/** Native opt-in: GT queries water; authority Chaos steps recompute and apply forces. */
+	bool bUsePhysicsStepBuoyancy = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SW Buoyancy")
 	ESWBuoyancyExecutionMode ExecutionMode = ESWBuoyancyExecutionMode::ServerAuthority;
@@ -85,9 +102,32 @@ public:
 	bool bImportLegacyWaterBuoyancy = false;
 
 private:
+	void StopPhysicsStepBuoyancy();
+	FSWPhysicsStepBuoyancy* PhysicsStepBuoyancy = nullptr;
+	uint32 PhysicsStepBuoyancySequence = 0;
 	bool ShouldApplyForces() const;
-	bool QueryWaterSurface(const FVector& Position, float& OutWaterHeight, FVector& OutWaterVelocity) const;
+	bool QueryWaterSurface(const FVector& Position, float& OutWaterHeight, FVector& OutWaterVelocity, FString& OutWaterBodyName, const UWaterBodyComponent*& OutWaterBody) const;
 	UPrimitiveComponent* ResolveSimulatingComponent() const;
+	void MonitorChestLaunch(UPrimitiveComponent* Body, float DeltaTime);
+	void UpdateChestPhysicsDiagnostic(UPrimitiveComponent* Body);
+	FChestLaunchPhysicsDiagnostic* ChestPhysicsDiagnostic = nullptr;
+	uint32 ChestDiagnosticSequence = 0;
+	uint32 ChestDiagnosticRequest = 0;
+	struct FChestLaunchSample
+	{
+		FSWBuoyancyRuntimeDiagnostic Solve;
+		FVector Location = FVector::ZeroVector;
+		FVector Velocity = FVector::ZeroVector;
+		float DeltaTime = 0.0f;
+	};
+	FChestLaunchSample PreviousLaunchSample;
+	FChestLaunchSample LaunchHistory[8];
+	int32 LaunchHistoryCount = 0;
+	int32 LaunchHistoryNext = 0;
+	uint32 PreviousLaunchReasons = 0;
+	bool bHasPreviousLaunchSample = false;
+	double NextLaunchLogTime = 0.0;
+	double NextLaunchHistoryTime = 0.0;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UWaterBodyComponent>> WaterBodies;

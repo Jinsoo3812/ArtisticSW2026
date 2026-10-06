@@ -137,6 +137,7 @@ namespace EnemyShipAvoidance
 			&& (OtherNavigation->GetCurrentState() == ENavalCombatState::Approach
 				|| OtherNavigation->GetCurrentState() == ENavalCombatState::Orbit);
 		if (&Ship == &Other
+			|| Ship.IsStoryGateDormant() || Other.IsStoryGateDormant()
 			|| Ship.SquadID != Other.SquadID
 			|| !Navigation || !OtherNavigation
 			|| !bShipInCombatNavigation || !bOtherInCombatNavigation
@@ -221,7 +222,7 @@ void UShipSwarmSubsystem::EvaluateDistanceOptimization()
 				SquadPair.Value.RemoveAtSwap(Index);
 				continue;
 			}
-			if (!EnemyShip->IsDistanceOptimizationEnabled() || EvaluatedShips.Contains(EnemyShip))
+			if (EnemyShip->IsStoryGateDormant() || !EnemyShip->IsDistanceOptimizationEnabled() || EvaluatedShips.Contains(EnemyShip))
 			{
 				continue;
 			}
@@ -443,7 +444,7 @@ FEnemyShipAvoidanceDecision UShipSwarmSubsystem::EvaluateAvoidance(AEnemyShip* S
 				+ FMath::Max(0.0f, Settings->UncertaintyGrowthPerSecond) * Time;
 			if (EnemyShipAvoidance::Overlaps(SelfForecast, ObstacleForecast, Margin))
 			{
-				if (Time < Decision.EarliestCollisionTime)
+				if (!Decision.bOverrideTurnInput || Time < Decision.EarliestCollisionTime)
 				{
 					Decision.bShouldYield = true;
 					Decision.EarliestCollisionTime = Time;
