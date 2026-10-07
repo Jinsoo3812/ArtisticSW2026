@@ -557,6 +557,11 @@ void ABasePlayerController::BindHUDToCurrentPlayer()
 		return;
 	}
 
+	// Pawn changes are the common transition point for helm and cannon control.
+	// Clear the prompt even when the client receives the possession through
+	// replication and the previous player pawn does not run UnPossessed locally.
+	HideInteractionPrompt();
+
 	if (ABasePlayer* BasePlayer = Cast<ABasePlayer>(GetPawn()))
 	{
 		if (PlayerHUDWidget)
@@ -567,6 +572,24 @@ void ABasePlayerController::BindHUDToCurrentPlayer()
 		{
 			StatusWindowWidget->InitializeForPlayer(BasePlayer);
 		}
+	}
+}
+
+void ABasePlayerController::ShowInteractionPrompt(
+	const FInteractionUIInfo& UIInfo,
+	UPrimitiveComponent* TargetComponent)
+{
+	if (IsLocalController() && PlayerHUDWidget)
+	{
+		PlayerHUDWidget->ShowInteractionPrompt(UIInfo, TargetComponent);
+	}
+}
+
+void ABasePlayerController::HideInteractionPrompt()
+{
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->HideInteractionPrompt();
 	}
 }
 

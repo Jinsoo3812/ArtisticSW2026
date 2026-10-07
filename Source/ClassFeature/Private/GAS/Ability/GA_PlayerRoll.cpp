@@ -72,11 +72,6 @@ void UGA_PlayerRoll::ActivateAbility(
 	bInvulnerabilityActive = false;
 	bRecoveryRequested = false;
 
-	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
-	{
-		Player->ResetConsumableQuickSlotInputs();
-	}
-
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		FinishRoll(true);

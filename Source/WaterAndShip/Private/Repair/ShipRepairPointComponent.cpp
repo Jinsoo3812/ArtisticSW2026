@@ -1,5 +1,6 @@
 #include "Repair/ShipRepairPointComponent.h"
 
+#include "BaseGameplayTags.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -8,6 +9,7 @@
 
 UShipRepairPointComponent::UShipRepairPointComponent()
 {
+	InteractableIdTag = Interactable_Id_Ship_RepairPoint;
 	SetIsReplicatedByDefault(true);
 	InitSphereRadius(85.0f);
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);

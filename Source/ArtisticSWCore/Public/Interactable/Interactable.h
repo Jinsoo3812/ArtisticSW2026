@@ -40,6 +40,9 @@ public:
 	 */
 	virtual const FInteractionUIInfo& GetInteractionUIInfo() const = 0;
 
+	/** World position used by the shared HUD interaction prompt. */
+	virtual FVector GetInteractionPromptWorldLocation() const = 0;
+
 	/**
 	 * 상호작용을 실행합니다.
 	 * @param Instigator 상호작용을 시도한 주체 (주로 Player)

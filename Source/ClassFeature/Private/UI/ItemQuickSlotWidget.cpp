@@ -122,7 +122,7 @@ void UItemQuickSlotWidget::RefreshSlot(
 	{
 		const bool bPressed = bHasAssignedItem
 			&& Player
-			&& Player->GetPressedConsumableQuickSlotIndex() == QuickSlotIndex;
+			&& Player->GetSelectedConsumableQuickSlotIndex() == QuickSlotIndex;
 		PressedHighlightBorder->SetVisibility(
 			bPressed ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}

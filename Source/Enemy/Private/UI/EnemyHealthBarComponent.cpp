@@ -14,6 +14,7 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "UI/EnemyHealthBarWidget.h"
+#include "UObject/ConstructorHelpers.h"
 
 UEnemyHealthBarComponent::UEnemyHealthBarComponent()
 {
@@ -23,7 +24,9 @@ UEnemyHealthBarComponent::UEnemyHealthBarComponent()
 	PrimaryComponentTick.TickInterval = VisibilityEvaluationInterval;
 
 	SetWidgetSpace(EWidgetSpace::Screen);
-	SetWidgetClass(UEnemyHealthBarWidget::StaticClass());
+	static ConstructorHelpers::FClassFinder<UEnemyHealthBarWidget> DefaultHealthBarWidget(
+		TEXT("/Game/Blueprints/02_UI/UI_HUD/WBP_EnemyHealthBarWidget"));
+	SetWidgetClass(DefaultHealthBarWidget.Class);
 	SetDrawAtDesiredSize(false);
 	SetDrawSize(FVector2D(180.0f, 24.0f));
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -39,6 +42,12 @@ void UEnemyHealthBarComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 
 void UEnemyHealthBarComponent::BeginPlay()
 {
+	// Repair legacy Blueprint defaults that still select the native class without a widget tree.
+	if (!GetWidgetClass() || GetWidgetClass() == UEnemyHealthBarWidget::StaticClass())
+	{
+		SetWidgetClass(GetDefault<UEnemyHealthBarComponent>()->GetWidgetClass());
+	}
+
 	Super::BeginPlay();
 	PrimaryComponentTick.TickInterval = FMath::Max(0.02f, VisibilityEvaluationInterval);
 	BindHealthComponent();
