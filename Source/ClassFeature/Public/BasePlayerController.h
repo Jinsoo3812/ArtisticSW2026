@@ -32,6 +32,8 @@ class UStatusWindowWidget;
 class USWRoomMenuWidget;
 class AFacilityHubActor;
 class ASharedShipUpgradeState;
+class UPrimitiveComponent;
+struct FInteractionUIInfo;
 class UGameViewportClient;
 class AShip;
 
@@ -228,6 +230,8 @@ protected:
 
 	/*---- 인벤토리 ----*/
 public:
+	void ShowInteractionPrompt(const FInteractionUIInfo& UIInfo, UPrimitiveComponent* TargetComponent);
+	void HideInteractionPrompt();
 
 	void ToggleInventory();
 	void ToggleStatus();

@@ -11,8 +11,8 @@ void ASWConnectionLobbyPlayerController::BeginPlay()
 	UClass* WidgetClass = WidgetPath.TryLoadClass<USWConnectionLobbyWidget>();
 	if (!WidgetClass)
 	{
-		UE_LOG(LogSWConnection, Error, TEXT("Lobby widget asset missing; using native class."));
-		WidgetClass = USWConnectionLobbyWidget::StaticClass();
+		UE_LOG(LogSWConnection, Error, TEXT("WBP_ConnectionLobby is missing or invalid. The lobby requires its Designer layout."));
+		return;
 	}
 	LobbyWidget = CreateWidget<USWConnectionLobbyWidget>(this, WidgetClass);
 	if (!LobbyWidget)

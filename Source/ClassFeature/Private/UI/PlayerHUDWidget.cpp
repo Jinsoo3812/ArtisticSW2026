@@ -9,7 +9,7 @@
 #include "Components/Border.h"
 #include "UI/InventoryCursorWidget.h"
 #include "UI/HealthBarWidget.h"
-#include "UI/BowCrosshairWidget.h"
+#include "UI/CrosshairWidget.h"
 #include "UI/SkillQuickSlotWidget.h"
 #include "UI/WeaponQuickSlotWidget.h"
 #include "UI/StorageWindowWidget.h"
@@ -35,10 +35,24 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Interactable.h"
+#include "InteractUserWidget.h"
+#include "UObject/ConstructorHelpers.h"
 
 #include "BaseGameplayTags.h"
 
 #include "BaseItem.h"
+
+UPlayerHUDWidget::UPlayerHUDWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	static ConstructorHelpers::FClassFinder<UInteractUserWidget> InteractionPromptClass(
+		TEXT("/Game/Blueprints/02_UI/UI_Interact/WBP_InteractPrompt"));
+	if (InteractionPromptClass.Succeeded())
+	{
+		InteractionPromptWidgetClass = InteractionPromptClass.Class;
+	}
+}
 
 int32 UPlayerHUDWidget::NativePaint(
 	const FPaintArgs& Args,
@@ -57,6 +71,11 @@ int32 UPlayerHUDWidget::NativePaint(
 		LayerId,
 		InWidgetStyle,
 		bParentEnabled);
+
+	if (CrosshairWidget && CrosshairWidget->IsWaterBombMode())
+	{
+		return PaintedLayerId;
+	}
 
 	const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
 	const float Scale = GetCrosshairResponsiveScale(LocalSize);
@@ -93,6 +112,27 @@ void UPlayerHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	if (!InteractionPromptWidget && InteractionPromptWidgetClass && RootCanvasPanel)
+	{
+		InteractionPromptWidget = CreateWidget<UInteractUserWidget>(
+			GetOwningPlayer(), InteractionPromptWidgetClass);
+		if (InteractionPromptWidget)
+		{
+			UCanvasPanelSlot* PromptSlot = RootCanvasPanel->AddChildToCanvas(InteractionPromptWidget);
+			PromptSlot->SetAutoSize(true);
+			PromptSlot->SetZOrder(30);
+		}
+	}
+	if (InteractionPromptWidget)
+	{
+		if (UCanvasPanelSlot* PromptSlot = Cast<UCanvasPanelSlot>(InteractionPromptWidget->Slot))
+		{
+			PromptSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+			PromptSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+		}
+	}
+	HideInteractionPrompt();
+
 	if (InventoryPanel)
 	{
 		InventoryPanel->SetVisibility(ESlateVisibility::Collapsed);
@@ -120,8 +160,8 @@ void UPlayerHUDWidget::NativeConstruct()
 		}
 	}
 
-	CreateBowCrosshairWidget();
-	RefreshBowCrosshairBinding();
+	CreateCrosshairWidget();
+	RefreshCrosshairBinding();
 
 	if (APlayerController* PlayerController = GetOwningPlayer())
 	{
@@ -172,6 +212,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	RefreshCursorItemWidget();
+	UpdateInteractionPromptPosition(MyGeometry.GetLocalSize());
 
 	ShipPresenceCheckAccumulator += InDeltaTime;
 	if (ShipPresenceCheckAccumulator >= FMath::Max(0.01f, ShipPresenceCheckInterval))
@@ -183,6 +224,8 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 {
+	HideInteractionPrompt();
+
 	if (InPlayer && InPlayer->GetInventoryComponent()) InPlayer->GetInventoryComponent()->LogInventoryDiagnostic(TEXT("HUDBind"));
 	if (CachedPlayer.IsValid())
 	{
@@ -226,7 +269,68 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	RefreshHealth();
 	RefreshShipHealthContext(GetOwningPlayerPawn());
 	RefreshShipHealth();
-	RefreshBowCrosshairBinding();
+	RefreshCrosshairBinding();
+}
+
+void UPlayerHUDWidget::ShowInteractionPrompt(
+	const FInteractionUIInfo& UIInfo,
+	UPrimitiveComponent* TargetComponent)
+{
+	if (!InteractionPromptWidget || !TargetComponent)
+	{
+		return;
+	}
+
+	InteractionPromptTarget = TargetComponent;
+	InteractionPromptWidget->OnUpdateInteractUI(UIInfo);
+	InteractionPromptWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UPlayerHUDWidget::HideInteractionPrompt()
+{
+	InteractionPromptTarget.Reset();
+	if (InteractionPromptWidget)
+	{
+		InteractionPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UPlayerHUDWidget::UpdateInteractionPromptPosition(const FVector2D& ViewportLocalSize)
+{
+	UPrimitiveComponent* TargetComponent = InteractionPromptTarget.Get();
+	if (!InteractionPromptWidget || !TargetComponent)
+	{
+		return;
+	}
+
+	IInteractable* Interactable = Cast<IInteractable>(TargetComponent);
+	APlayerController* PlayerController = GetOwningPlayer();
+	UCanvasPanelSlot* PromptSlot = Cast<UCanvasPanelSlot>(InteractionPromptWidget->Slot);
+	if (!Interactable || !PlayerController || !PromptSlot)
+	{
+		InteractionPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	FVector2D ScreenPosition;
+	const bool bProjected = UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
+		PlayerController,
+		Interactable->GetInteractionPromptWorldLocation(),
+		ScreenPosition,
+		true);
+	const bool bInsideViewport = bProjected
+		&& ScreenPosition.X >= 0.0f
+		&& ScreenPosition.Y >= 0.0f
+		&& ScreenPosition.X <= ViewportLocalSize.X
+		&& ScreenPosition.Y <= ViewportLocalSize.Y;
+	if (!bInsideViewport)
+	{
+		InteractionPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	PromptSlot->SetPosition(ScreenPosition + InteractionPromptScreenOffset);
+	InteractionPromptWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
@@ -371,7 +475,7 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 void UPlayerHUDWidget::HandleQuickSlotsChanged()
 {
 	RefreshQuickSlots();
-	RefreshBowCrosshairBinding();
+	RefreshCrosshairBinding();
 }
 
 void UPlayerHUDWidget::HandleAbilitySystemInitialized()
@@ -449,6 +553,7 @@ void UPlayerHUDWidget::BindSkillStateSource(APawn* ControlledPawn)
 	}
 
 	RefreshEquippedSkillBorders();
+	RefreshCrosshairBinding();
 }
 
 void UPlayerHUDWidget::UnbindSkillStateSource()
@@ -464,6 +569,10 @@ void UPlayerHUDWidget::UnbindSkillStateSource()
 
 	BoundSkillStateCannon.Reset();
 	BoundSkillStateShip.Reset();
+	if (CrosshairWidget)
+	{
+		CrosshairWidget->SetWaterBombMode(false);
+	}
 }
 
 void UPlayerHUDWidget::RefreshEquippedSkillBorders()
@@ -487,6 +596,7 @@ void UPlayerHUDWidget::HandlePossessedPawnChanged(APawn*, APawn* NewPawn)
 void UPlayerHUDWidget::HandleSkillActiveStateChanged(bool)
 {
 	RefreshEquippedSkillBorders();
+	RefreshCrosshairBinding();
 }
 
 void UPlayerHUDWidget::HandleHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
@@ -755,23 +865,25 @@ void UPlayerHUDWidget::HandleShipMaxHealthChanged(const FOnAttributeChangeData&)
 	RefreshShipHealth();
 }
 
-// BowCrossHair를 생성 (실제로 그리는 것은 BowCrossHairWidget.cpp에서 처리) 여기서는 그리는 준비 
-void UPlayerHUDWidget::CreateBowCrosshairWidget()
+// Crosshair를 생성 (실제로 그리는 것은 CrosshairWidget.cpp에서 처리) 여기서는 그리는 준비
+void UPlayerHUDWidget::CreateCrosshairWidget()
 {
-	if (!RootCanvasPanel || !BowCrosshairWidgetClass || BowCrosshairWidget)
+	if (!RootCanvasPanel || CrosshairWidget)
 	{
 		return;
 	}
 
-	BowCrosshairWidget = CreateWidget<UBowCrosshairWidget>(this, BowCrosshairWidgetClass);
-	if (!BowCrosshairWidget)
+	const TSubclassOf<UCrosshairWidget> WidgetClass = CrosshairWidgetClass
+		? CrosshairWidgetClass : TSubclassOf<UCrosshairWidget>(UCrosshairWidget::StaticClass());
+	CrosshairWidget = CreateWidget<UCrosshairWidget>(this, WidgetClass);
+	if (!CrosshairWidget)
 	{
 		return;
 	}
 
-	RootCanvasPanel->AddChild(BowCrosshairWidget);
+	RootCanvasPanel->AddChild(CrosshairWidget);
 
-	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(BowCrosshairWidget->Slot))
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(CrosshairWidget->Slot))
 	{
 		CanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
 		CanvasSlot->SetOffsets(FMargin(0.0f));
@@ -781,9 +893,9 @@ void UPlayerHUDWidget::CreateBowCrosshairWidget()
 }
 
 // 현재 장착 아이템이 활인지 확인하고 bow 컴포넌트와 연결하고 해당 컴포넌트의 이벤트 구독
-void UPlayerHUDWidget::RefreshBowCrosshairBinding()
+void UPlayerHUDWidget::RefreshCrosshairBinding()
 {
-	CreateBowCrosshairWidget();
+	CreateCrosshairWidget();
 
 	UBowComponent* NewBowComponent = nullptr;
 	if (CachedPlayer.IsValid())
@@ -796,11 +908,13 @@ void UPlayerHUDWidget::RefreshBowCrosshairBinding()
 
 	BindBowComponent(NewBowComponent);
 
-	if (BowCrosshairWidget)
+	if (CrosshairWidget)
 	{
-		BowCrosshairWidget->SetBowEquipped(NewBowComponent != nullptr);
-		BowCrosshairWidget->SetBowAiming(NewBowComponent ? NewBowComponent->IsAiming() : false);
-		BowCrosshairWidget->SetDrawAlpha(NewBowComponent ? NewBowComponent->GetDrawAlpha() : 0.0f);
+		const ACannon* Cannon = BoundSkillStateCannon.Get();
+		CrosshairWidget->SetWaterBombMode(Cannon && Cannon->IsWaterBombMode());
+		CrosshairWidget->SetBowEquipped(NewBowComponent != nullptr);
+		CrosshairWidget->SetBowAiming(NewBowComponent ? NewBowComponent->IsAiming() : false);
+		CrosshairWidget->SetDrawAlpha(NewBowComponent ? NewBowComponent->GetDrawAlpha() : 0.0f);
 	}
 }
 
@@ -838,18 +952,18 @@ void UPlayerHUDWidget::UnbindBowComponent()
 //활의 조준 상태가 바뀌었을 때 호출
 void UPlayerHUDWidget::HandleBowAimStateChanged(bool bIsAiming)
 {
-	if (BowCrosshairWidget)
+	if (CrosshairWidget)
 	{
-		BowCrosshairWidget->SetBowAiming(bIsAiming);
+		CrosshairWidget->SetBowAiming(bIsAiming);
 	}
 }
 
 // 활의 차징 정도가 바뀔 때 알려줌
 void UPlayerHUDWidget::HandleBowDrawAlphaChanged(float DrawAlpha)
 {
-	if (BowCrosshairWidget)
+	if (CrosshairWidget)
 	{
-		BowCrosshairWidget->SetDrawAlpha(DrawAlpha);
+		CrosshairWidget->SetDrawAlpha(DrawAlpha);
 	}
 }
 

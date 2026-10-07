@@ -20,7 +20,7 @@ class UCanvasPanel;
 class UInventoryCursorWidget;
 class UHealthBarWidget;
 class UBaseHealthComponent;
-class UBowCrosshairWidget;
+class UCrosshairWidget;
 class UBowComponent;
 class AStorageChest;
 class UStorageWindowWidget;
@@ -31,6 +31,8 @@ class APawn;
 class ACannon;
 class AShip;
 class UPrimitiveComponent;
+class UInteractUserWidget;
+struct FInteractionUIInfo;
 struct FOnAttributeChangeData;
 
 UCLASS()
@@ -39,6 +41,7 @@ class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UPlayerHUDWidget(const FObjectInitializer& ObjectInitializer);
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
@@ -52,6 +55,8 @@ public:
 		ABasePlayer* Player,
 		TSubclassOf<UStorageWindowWidget> StorageWindowClass);
 	void HideStorageWindow();
+	void ShowInteractionPrompt(const FInteractionUIInfo& UIInfo, UPrimitiveComponent* TargetComponent);
+	void HideInteractionPrompt();
 
 protected:
 	virtual int32 NativePaint(
@@ -94,6 +99,18 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCanvasPanel> RootCanvasPanel;
+
+	/** Optional designer instance. A runtime instance is added to RootCanvasPanel when omitted. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UInteractUserWidget> InteractionPromptWidget;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Interaction")
+	TSubclassOf<UInteractUserWidget> InteractionPromptWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Interaction")
+	FVector2D InteractionPromptScreenOffset = FVector2D::ZeroVector;
+
+	TWeakObjectPtr<UPrimitiveComponent> InteractionPromptTarget;
 
 	// When this widget is placed in the HUD designer with this exact name,
 	// its Canvas Slot controls the chest window position.
@@ -142,11 +159,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crosshair|Responsive", meta = (ClampMin = "0.01"))
 	float CrosshairMaxScale = 1.5f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow Crosshair")
-	TSubclassOf<UBowCrosshairWidget> BowCrosshairWidgetClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crosshair")
+	TSubclassOf<UCrosshairWidget> CrosshairWidgetClass;
 
 	UPROPERTY()
-	TObjectPtr<UBowCrosshairWidget> BowCrosshairWidget;
+	TObjectPtr<UCrosshairWidget> CrosshairWidget;
 
 	UPROPERTY()
 	TObjectPtr<UBowComponent> BoundBowComponent;
@@ -155,6 +172,7 @@ protected:
 
 	void RefreshCursorItemWidget();
 	void UpdateCursorItemWidgetPosition();
+	void UpdateInteractionPromptPosition(const FVector2D& ViewportLocalSize);
 	void BindHealthComponent(UBaseHealthComponent* HealthComponent);
 	void UnbindHealthComponent();
 	void RefreshHealth();
@@ -167,8 +185,8 @@ protected:
 	bool IsBeyondShipHealthHideDistance(const APawn* ControlledPawn, const AShip* Ship) const;
 	void HandleShipHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleShipMaxHealthChanged(const FOnAttributeChangeData& Data);
-	void CreateBowCrosshairWidget();
-	void RefreshBowCrosshairBinding();
+	void CreateCrosshairWidget();
+	void RefreshCrosshairBinding();
 	void BindBowComponent(UBowComponent* BowComponent);
 	void UnbindBowComponent();
 	float GetCrosshairResponsiveScale(const FVector2D& LocalSize) const;

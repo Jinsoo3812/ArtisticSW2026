@@ -19,6 +19,7 @@ void USWPackagingAssetManager::ModifyCook(TConstArrayView<const ITargetPlatform*
 		TEXT("/Game/Level/ConnectionLobby"),
 		TEXT("/Game/Level/Lvl_CY"),
 		TEXT("/Game/Blueprints/02_UI/UI_Lobby/WBP_ConnectionLobby"),
+		TEXT("/Game/Blueprints/02_UI/UI_Loading/WBP_LoadingScreen"),
 		TEXT("/Game/Blueprints/02_UI/UI_WorkTable/WBP_WorkspaceScreen"),
 		TEXT("/Game/Input/Actions/IA_RoomMenu"),
 		TEXT("/Game/UI/Room/WBP_RoomMenu"),
