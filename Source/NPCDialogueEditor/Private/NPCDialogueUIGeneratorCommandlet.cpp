@@ -13,6 +13,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "EdGraph/EdGraph.h"
 #include "Engine/Blueprint.h"
+#include "Fonts/CompositeFont.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
@@ -34,9 +35,12 @@ namespace NPCDialogueUIGenerator
 	{
 		// Roboto does not contain Hangul. This engine-shipped fallback covers CJK
 		// and is available both in the editor and packaged builds.
-		return FSlateFontInfo(
+		static const TSharedRef<const FCompositeFont> HangulFont = MakeShared<FStandaloneCompositeFont>(
+			NAME_None,
 			FPaths::EngineContentDir() / TEXT("Slate/Fonts/DroidSansFallback.ttf"),
-			Size);
+			EFontHinting::Default,
+			EFontLoadingPolicy::LazyLoad);
+		return FSlateFontInfo(HangulFont, Size);
 	}
 
 	void ApplyHangulFonts(UWidgetBlueprint* Blueprint)

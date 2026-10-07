@@ -1,4 +1,5 @@
 #include "ShipAI/EnemyShipNavigationComponent.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
@@ -70,6 +71,7 @@ void UEnemyShipNavigationComponent::TickComponent(
 	ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Navigation_Tick);
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	if (!OwnerShip.IsValid())
@@ -362,6 +364,7 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 
 void UEnemyShipNavigationComponent::UpdateAvoidance(float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Navigation_Avoidance);
 	AEnemyShip* Ship = OwnerShip.Get();
 	const bool bCombatNavigation = CurrentState == ENavalCombatState::Approach
 		|| CurrentState == ENavalCombatState::Orbit;

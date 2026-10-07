@@ -1752,13 +1752,19 @@ void ABasePlayerController::ApplyLocalDeathFlow()
  }
  if (bBlocked)
  {
-  if (!DeathFlowWidget) { DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, USWDeathFlowWidget::StaticClass()); DeathFlowWidget->AddToViewport(1000); }
+  if (!DeathFlowWidget && GetLocalPlayer() && GetWorld()->GetGameViewport())
+  {
+   DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, USWDeathFlowWidget::StaticClass());
+   if (DeathFlowWidget) DeathFlowWidget->AddToViewport(1000);
+  }
   if (bGameOver)
   {
    if (!bDeathFlowInputModeApplied || !bDeathFlowGameOverInput)
    {
     bShowMouseCursor = true;
-    FInputModeUIOnly Input; Input.SetWidgetToFocus(DeathFlowWidget->TakeWidget()); SetInputMode(Input);
+    FInputModeUIOnly Input;
+    if (DeathFlowWidget) Input.SetWidgetToFocus(DeathFlowWidget->TakeWidget());
+    SetInputMode(Input);
     bDeathFlowInputModeApplied = true; bDeathFlowGameOverInput = true;
     bRetryFocusApplied = false;
     UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=DeathFlowInputMode Controller=%s Mode=GameOverUI"), *GetName());

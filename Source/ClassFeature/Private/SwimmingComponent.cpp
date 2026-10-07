@@ -1,4 +1,5 @@
 #include "SwimmingComponent.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "SWCharacterMovementComponent.h"
 #include "SWCabinWaterCullComponent.h"
 #include "DrawDebugHelpers.h"
@@ -429,6 +430,7 @@ void USwimmingComponent::ApplySwimmingGameplayState(bool bEntering)
 
 void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Swimming_Tick);
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// Pontoon Debug Visualizer - Active only in editor (PIE)
@@ -618,6 +620,7 @@ FSwimWaterSurfaceSample USwimmingComponent::QueryWaterSurfaceSample(
 	const FVector& Location,
 	TOptional<double> ExplicitServerTime) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Swimming_WaterQuery);
 	FSwimWaterSurfaceSample BestSample;
 	const double QueryServerTime = ExplicitServerTime.IsSet()
 		? ExplicitServerTime.GetValue()

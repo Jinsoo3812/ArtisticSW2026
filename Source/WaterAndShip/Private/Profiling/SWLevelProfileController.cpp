@@ -17,6 +17,7 @@
 #include "ProfilingDebugging/MiscTrace.h"
 #include "RippleSubsystem.h"
 #include "UnrealClient.h"
+#include "ShaderCompiler.h"
 
 ASWLevelProfileController::ASWLevelProfileController()
 {
@@ -40,8 +41,11 @@ void ASWLevelProfileController::BeginPlay()
 	bScreenshot = FParse::Param(CommandLine, TEXT("SWProfileScreenshot"));
 	FParse::Value(CommandLine, TEXT("SWProfileScreenshotName="), ScreenshotName);
 	bFixedWaterCamera = FParse::Param(CommandLine, TEXT("SWProfileFixedWaterCamera"));
+	bUseSavedEditorCamera = FParse::Param(CommandLine, TEXT("SWProfileSavedEditorCamera"));
+	bControlledComparison = FParse::Param(CommandLine, TEXT("SWControlledComparison"));
 	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraZOffset="), FixedCameraZOffset);
 	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraPitch="), FixedCameraPitch);
+	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraYawOffset="), FixedCameraYawOffset);
 	bInjectRipple = FParse::Param(CommandLine, TEXT("SWProfileInjectRipple"));
 	FParse::Value(CommandLine, TEXT("SWProfileRippleLead="), RippleLeadSeconds);
 	FParse::Value(CommandLine, TEXT("SWProfileRippleDistance="), RippleForwardDistance);
@@ -74,6 +78,12 @@ void ASWLevelProfileController::Tick(float DeltaSeconds)
 		ApplyProfileScenario();
 	}
 	const double WorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (bControlledComparison && !bCaptureRequested && GShaderCompilingManager && GShaderCompilingManager->IsCompiling())
+	{
+		// Keep screenshots/CSV out of shader compilation, like the Insights capture.
+		BeginWorldTime = WorldTime;
+		return;
+	}
 	if (bInjectRipple && !bRippleInjected
 		&& WorldTime - BeginWorldTime >= FMath::Max(0.0f, WarmupSeconds - RippleLeadSeconds))
 	{
@@ -217,9 +227,28 @@ void ASWLevelProfileController::ApplyProfileScenario()
 			FVector ViewLocation;
 			FRotator ViewRotation;
 			PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+#if WITH_EDITORONLY_DATA
+			// ELevelViewportType::LVT_Perspective is index 3; avoid a runtime UnrealEd dependency.
+			if (bUseSavedEditorCamera && World->EditorViews.IsValidIndex(3))
+			{
+				ViewLocation = World->EditorViews[3].CamPosition;
+				ViewRotation = World->EditorViews[3].CamRotation;
+			}
+#endif
 			ViewLocation.Z += FixedCameraZOffset;
 			ViewRotation.Pitch = FixedCameraPitch;
+			ViewRotation.Yaw += FixedCameraYawOffset;
 			ViewRotation.Roll = 0.0f;
+			// Optional absolute camera for repeatable captures; never moves the player or saves the map.
+			FVector AbsoluteLocation;
+			if (FParse::Value(FCommandLine::Get(), TEXT("SWProfileCameraX="), AbsoluteLocation.X)
+				&& FParse::Value(FCommandLine::Get(), TEXT("SWProfileCameraY="), AbsoluteLocation.Y)
+				&& FParse::Value(FCommandLine::Get(), TEXT("SWProfileCameraZ="), AbsoluteLocation.Z)
+				&& !AbsoluteLocation.ContainsNaN())
+			{
+				ViewLocation = AbsoluteLocation;
+			}
+			FParse::Value(FCommandLine::Get(), TEXT("SWProfileCameraYaw="), ViewRotation.Yaw);
 
 			FActorSpawnParameters CameraSpawnParameters;
 			CameraSpawnParameters.Name = TEXT("SW_Level_Profile_Fixed_Camera");

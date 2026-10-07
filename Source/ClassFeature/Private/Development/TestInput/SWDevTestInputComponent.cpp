@@ -211,14 +211,16 @@ void USWDevTestInputComponent::OnRep_SessionEnabled(){ RefreshLocalState(); }
 void USWDevTestInputComponent::OnRep_ServerRestoreGeneration(){ RefreshLocalState(); }
 void USWDevTestInputComponent::OnMappingsRebuilt(){ RefreshLocalState(); }
 void USWDevTestInputComponent::KillSelf(){ ExecuteLocal(ESWDevTestAction::KillSelf); }
+void USWDevTestInputComponent::RequestSuicide(){ ExecuteLocal(ESWDevTestAction::KillSelf); }
 void USWDevTestInputComponent::KillBoth(){ ExecuteLocal(ESWDevTestAction::KillBoth); }
 void USWDevTestInputComponent::Sink(){ ExecuteLocal(ESWDevTestAction::SinkPlayerShip); }
 void USWDevTestInputComponent::Final(){ ExecuteLocal(ESWDevTestAction::EnterFinalEncounter); }
 void USWDevTestInputComponent::ExecuteLocal(ESWDevTestAction Action)
 {
  ABasePlayerController* PC=Cast<ABasePlayerController>(GetOwner());
- if (!SWDevTestInput::Allowed() || !bEffective || !PC || PC->IsDevelopmentTestInputBlockedByUI() || PendingRequestId) return;
- PendingRequestId=++NextRequestId; PendingAt=FPlatformTime::Seconds(); ServerExecuteTest(Action,ServerRestoreGeneration,PendingRequestId);
+ if (!SWDevTestInput::Allowed() || !bEffective || !PC || !PC->IsLocalPlayerController() || PC->IsDevelopmentTestInputBlockedByUI() || PendingRequestId) return;
+ PendingRequestId=++NextRequestId; PendingAt=FPlatformTime::Seconds();
+ ServerExecuteTest(Action,ServerRestoreGeneration,PendingRequestId,PC->GetLifeCharacter(),PC->DeathFlowState.WaitingGeneration);
 }
 void USWDevTestInputComponent::ClientTestResult_Implementation(uint64 RequestId,bool bAccepted,const FString& Message)
 {
@@ -226,7 +228,14 @@ void USWDevTestInputComponent::ClientTestResult_Implementation(uint64 RequestId,
  if (APlayerController* PC=Cast<APlayerController>(GetOwner())) PC->ClientMessage(Message);
  if (Widget) Widget->SetResult(Message);
 }
-void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction Action,int32 ExpectedRestoreGeneration,uint64 RequestId)
+bool USWDevTestInputComponent::MatchesCurrentLife(ABasePlayer* ExpectedLifeCharacter, int32 ExpectedWaitingGeneration) const
+{
+ const ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ return PC && IsValid(ExpectedLifeCharacter) && !ExpectedLifeCharacter->IsActorBeingDestroyed()
+  && ExpectedLifeCharacter->GetWorld() == GetWorld() && PC->GetLifeCharacter() == ExpectedLifeCharacter
+  && PC->DeathFlowState.WaitingGeneration == ExpectedWaitingGeneration;
+}
+void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction Action,int32 ExpectedRestoreGeneration,uint64 RequestId,ABasePlayer* ExpectedLifeCharacter,int32 ExpectedWaitingGeneration)
 {
  if (!SWDevTestInput::Allowed()) { ClientTestResult(RequestId,false,TEXT("개발 빌드에서만 사용 가능합니다")); return; }
  ResetWorld(); ABasePlayerController* PC=Cast<ABasePlayerController>(GetOwner());
@@ -245,6 +254,8 @@ void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction
  USWRoomProgressSubsystem* State=SWDevTestInput::Room(GetWorld());
  if (!State || !State->IsDevelopmentTestSessionEnabled(GetWorld())) { Reply(false,TEXT("서버 테스트 허용이 꺼져 있습니다")); return; }
  if (ExpectedRestoreGeneration!=State->GetRestoreGeneration() || !SWDevTestInput::SafeWorld(GetWorld())) { Reply(false,TEXT("현재 전환 중이거나 준비되지 않았습니다")); return; }
+ if ((Action==ESWDevTestAction::KillSelf || Action==ESWDevTestAction::KillBoth)
+  && !MatchesCurrentLife(ExpectedLifeCharacter,ExpectedWaitingGeneration)) { Reply(false,TEXT("사망 요청 후 캐릭터가 교체되었습니다")); return; }
  AMultiGameMode* Mode=GetWorld()->GetAuthGameMode<AMultiGameMode>();
  if (Action!=ESWDevTestAction::KillSelf && !Mode->IsRoomHostController(PC)) { Reply(false,TEXT("호스트만 실행할 수 있습니다")); return; }
  if (PC->IsDevelopmentTestInputBlockedByServerUI()) { Reply(false,TEXT("상자/시설/대화 중입니다")); return; }
@@ -274,7 +285,10 @@ void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction
  {
   if (!Target->IsLifeCharacterAlive()) continue;
   ABasePlayer* Character=Target->GetLifeCharacter();
-  if (!Character || !Character->GetHealthComponent() || Character->GetHealthComponent()->GetDeathState()!=EBaseDeathState::NotDead || Character->GetHealthComponent()->GetHealth()<=0 || !Character->GetAbilitySystemComponent()) { Reply(false,TEXT("사망 대상 상태 오류")); return; }
+  const UBaseHealthComponent* Health = Character ? Character->GetHealthComponent() : nullptr;
+  const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+  if (!Health || Health->IsLifeInitializing() || Health->GetDeathState()!=EBaseDeathState::NotDead
+   || Health->GetHealth()<=0 || !ASC || ASC->GetAvatarActor()!=Character || !ASC->GetSet<UBaseAttributeSet>()) { Reply(false,TEXT("사망 대상 상태 오류")); return; }
   Alive.Add(Target);
  }
  if (Alive.IsEmpty()) { Reply(false,TEXT("이미 사망 또는 부활 대기 중입니다")); return; }

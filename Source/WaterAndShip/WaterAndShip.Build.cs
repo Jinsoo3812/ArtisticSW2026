@@ -15,7 +15,8 @@ public class WaterAndShip: ModuleRules
             "Chaos",
 			"NetCore",
             "RHI",
-            "RenderCore"
+            "RenderCore",
+            "Json"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {

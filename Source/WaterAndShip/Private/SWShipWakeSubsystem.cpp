@@ -1,4 +1,5 @@
 #include "SWShipWakeSubsystem.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
@@ -239,6 +240,7 @@ FVector2D USWShipWakeSubsystem::ResolveWakeGridCenter() const
 
 void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Wake_Dispatch);
 	if (!WakeRenderTarget || !WakeFoamSourceRenderTarget || !EventTexture) return;
 	UTexture2D* ActiveGolden = GetActiveGoldenTexture();
 	if (!ActiveGolden) return;
@@ -312,6 +314,7 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 
 void USWShipWakeSubsystem::Tick(const float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Wake_Tick);
 	const double ServerTime = GetServerTime();
 	RemoveExpiredEvents(ServerTime);
 
@@ -511,6 +514,7 @@ void USWShipWakeSubsystem::RemoveExpiredEvents(const double ServerTime)
 
 void USWShipWakeSubsystem::UpdateEventTexture()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Wake_Upload);
 	if (!EventTexture || UploadedRevision == Revision.Load()) return;
 	TArray<FSWShipWakeEvent> Snapshot;
 	GetEventsSnapshot(Snapshot);

@@ -100,6 +100,9 @@ public:
 	TWeakObjectPtr<ABasePlayer> LifeCharacter;
 	TWeakObjectPtr<APawn> AppliedLifePawn;
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FPlayerDeathCameraTest;
+#endif
 	bool bApplyingLifeProgress = false;
 	void TickDeathFlow(float DeltaTime);
 	void TickShipMotionDiagnostics();
