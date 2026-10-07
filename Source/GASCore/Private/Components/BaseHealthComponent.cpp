@@ -47,7 +47,7 @@ void UBaseHealthComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent, bool bStartDeathIfOutOfHealth)
+void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent)
 {
 	if (!InAbilitySystemComponent || AbilitySystemComponent == InAbilitySystemComponent)
 	{
@@ -90,7 +90,7 @@ void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* 
 
 	if (AActor* Owner = GetOwningActor())
 	{
-		if (bStartDeathIfOutOfHealth && Owner->HasAuthority() && GetHealth() <= 0.0f)
+		if (Owner->HasAuthority() && GetHealth() <= 0.0f)
 		{
 			StartDeath();
 		}

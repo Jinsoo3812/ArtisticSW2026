@@ -133,13 +133,6 @@ public:
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
 
-private:
-	/** Retire only this pawn's subscriptions; the PlayerState ASC belongs to the next life too. */
-	void RetireLifeAbilityBindings();
-	bool bLifeAbilityBindingsRetired = false;
-
-public:
-
 	virtual void ApplyLocalDeathRagdoll() override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:

@@ -49,11 +49,6 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 
-#if WITH_DEV_AUTOMATION_TESTS
-	friend class FPlayerCorpseLifecycleTest;
-	friend class FPlayerDeathDevelopmentTest;
-#endif
-
 public:
 	bool RegisterPlayerRespawnShip(AActor* Ship);
 	AActor* GetPlayerRespawnShip() const { return PlayerRespawnShip.Get(); }

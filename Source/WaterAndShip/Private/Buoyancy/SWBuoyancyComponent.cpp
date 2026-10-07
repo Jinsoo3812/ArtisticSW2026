@@ -1,5 +1,4 @@
 #include "Buoyancy/SWBuoyancyComponent.h"
-#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "BuoyancyComponent.h"
 #include "BuoyancyTypes.h"
@@ -81,7 +80,6 @@ void USWBuoyancyComponent::TickComponent(
 	ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Buoyancy_Tick);
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	LastRuntimeDiagnostic = FSWBuoyancyRuntimeDiagnostic();
@@ -425,7 +423,6 @@ bool USWBuoyancyComponent::QueryWaterSurface(
 	FString& OutWaterBodyName,
 	const UWaterBodyComponent*& OutWaterBody) const
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Buoyancy_WaterQuery);
 	bool bFound = false;
 	OutWaterHeight = -BIG_NUMBER;
 	OutWaterVelocity = FVector::ZeroVector;

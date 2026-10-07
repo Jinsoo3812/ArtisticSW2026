@@ -264,8 +264,7 @@ void ABasePlayer::BeginPlay()
 		FollowCamera->PostProcessSettings.VignetteIntensity = 0.0f;
 	}
 
-	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
-		SkillComponent && !bLifeAbilityBindingsRetired && (!HealthComponent || !HealthComponent->IsDead()))
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
 		CachedPlayerSkillComponent = SkillComponent;
 		SkillComponent->RegisterInventorySource(InventoryComponent);
@@ -277,7 +276,6 @@ void ABasePlayer::BeginPlay()
 		if (HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
 		{
 			ApplyLocalDeathRagdoll();
-			RetireLifeAbilityBindings();
 		}
 	}
 
@@ -376,8 +374,8 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABasePlayer::HandleDeathFinished);
+		HealthComponent->UninitializeFromAbilitySystem();
 	}
-	RetireLifeAbilityBindings();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -393,10 +391,7 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
-	if (InHealthComponent != HealthComponent || !HealthComponent
-		|| HealthComponent->IsLifeInitializing()
-		|| HealthComponent->GetDeathState() != EBaseDeathState::DeathFinished
-		|| bLifeAbilityBindingsRetired) return;
+	if (InHealthComponent && InHealthComponent->IsLifeInitializing()) return;
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathFinished Player=%s Authority=%d Controller=%s PlayerState=%s Health=%s"),
 		*GetName(), HasAuthority(), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), *GetNameSafe(InHealthComponent));
 	if (HasAuthority())
@@ -411,21 +406,6 @@ void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 	ApplyLocalDeathRagdoll();
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollAfterApply Player=%s NetMode=%d Simulating=%d AnyBodySimulating=%d Mesh=%s"),
 		*GetName(), static_cast<int32>(GetNetMode()), GetMesh() && GetMesh()->IsSimulatingPhysics(), GetMesh() && GetMesh()->IsAnySimulatingPhysics(), *GetNameSafe(GetMesh()));
-	RetireLifeAbilityBindings();
-}
-
-void ABasePlayer::RetireLifeAbilityBindings()
-{
-	bLifeAbilityBindingsRetired = true;
-	if (UAbilitySystemComponent* ASC = CachedAbilitySystemComponent.Get())
-	{
-		const FGameplayTag InteractionTags[] = {Interaction_PickUp, Interaction_ShipBoard, Interaction_CannonBoard};
-		for (const FGameplayTag& Tag : InteractionTags)
-		{
-			if (auto* Callback = ASC->GenericGameplayEventCallbacks.Find(Tag)) Callback->RemoveAll(this);
-		}
-	}
-	if (HealthComponent) HealthComponent->UninitializeFromAbilitySystem();
 }
 
 void ABasePlayer::ApplyLocalDeathRagdoll()
@@ -771,8 +751,6 @@ void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 Pr
 void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	// Physics components keep ticking, but a retired pawn must not read the next life's combat state.
-	if (bLifeAbilityBindingsRetired) return;
 
 	if (bAutomaticSwimDiveHeld)
 	{
@@ -1259,13 +1237,6 @@ void ABasePlayer::UnPossessed()
 void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
-	// A late corpse update must not replace the living pawn's ASC avatar or inventory source.
-	if (bLifeAbilityBindingsRetired || (HealthComponent
-		&& HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished))
-	{
-		RetireLifeAbilityBindings();
-		return;
-	}
 
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
 

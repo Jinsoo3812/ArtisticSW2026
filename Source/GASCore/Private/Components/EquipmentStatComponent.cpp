@@ -3,7 +3,6 @@
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
-#include "GASGameplayEffectCompatibility.h"
 
 UEquipmentStatComponent* UEquipmentStatComponent::GetOrCreate(AActor* Owner)
 {
@@ -34,7 +33,7 @@ bool UEquipmentStatComponent::Equip(UAbilitySystemComponent* ASC, AActor* Item, 
 	if (!Definition || !EffectClass->IsChildOf(UGASStrengthEquipmentGameplayEffect::StaticClass())
 		|| Definition->DurationPolicy != EGameplayEffectDurationType::Infinite
 		|| Definition->Modifiers.Num() != 1 || !Definition->Executions.IsEmpty()
-		|| GASGameplayEffectCompatibility::GetStackingType(*Definition) != EGameplayEffectStackingType::None) return false;
+		|| Definition->StackingType != EGameplayEffectStackingType::None) return false;
 	const FGameplayModifierInfo& Modifier = Definition->Modifiers[0];
 	if (Modifier.Attribute != UBaseAttributeSet::GetStrengthAttribute() || Modifier.ModifierOp != EGameplayModOp::Additive
 		|| Modifier.ModifierMagnitude.GetMagnitudeCalculationType() != EGameplayEffectMagnitudeCalculation::SetByCaller

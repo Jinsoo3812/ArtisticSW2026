@@ -2,8 +2,6 @@
 
 ## 개요
 
-2026-10-04 후속 수정: [Sprint Stop의 정지 직전 Gait 보존](MotionMatching_Sprint_Stop_Gait_Fix_2026-10-04.md). 입력 해제로 실제 Sprint가 종료된 뒤에도 Stop은 직전 지상 Gait로 선택하고 재생 동안 유지한다. 이 수정은 공통 C++ 부모에 적용되며 남녀 ABP의 추가 노드 변경은 필요하지 않다.
-
 본 문서는 `ArtisticSW2026` 프로젝트의 플레이어 애니메이션(`ABP_Player_Woman`, `ABP_Player_Man`) 및 `UMotionMatchingAnimInstance` C++ 코드에서 발생했던 주요 이슈 4가지의 원인 분석과 해결 내역, 아키텍처 개선 사항을 기록한 문서이다.
 
 ---
@@ -143,44 +141,3 @@
 - [x] 이동/방향 전환 시 Foot Placement 과도 접지 완충 (`UnplantAngle = 18도`, `LocomotionFootPlacementAlpha = 0.75f`)
 - [x] Additive Lean 구현 및 Run(`0.1`) / Sprint(`1.0`) 가속도 기반 기울기 분리
 - [ ] (선택 사항) 제자리 착지 후 WASD 이동 시 `TransitionToStart` 원샷을 경유하도록 `EvaluateStateControllerPresentationState()` 전이 흐름 보완 고려
-
-## 4. 배 위 Foot Placement 잠금 분리 (2026-10-04)
-
-배가 파도로 움직일 때 월드 접지점을 유지하려는 발 잠금이 다리를 끌어당겼다. Foot Placement와 Leg IK는 계속 사용하고, 배 위에서만 Plant Settings의 `Lock Type`을 `Unlocked`로 선택한다. 육지에서는 기존 일반/정지 프리셋을 복원해 언덕의 발 높이·경사 정렬과 골반 보정을 유지한다.
-
-### 4.1. 공통 C++ 처리와 AnimBP 설정
-
-남녀 ABP는 모두 `UMotionMatchingAnimInstance`를 부모로 사용한다. 성별 분기 없이 동일한 Getter로 설정을 받는다.
-
-- 일반 보행은 Walking/NavWalking 상태의 Movement Base 소유자와 부착 부모를 통해 `AShip`을 판정한다. 베이스가 `BuoyancyRoot`여도 동작하며, 낙하 중 오래된 베이스는 배 위 보행으로 취급하지 않는다.
-- 조종자는 이동이 꺼지고 컨트롤러 소유 관계가 바뀌므로 플레이어의 부착 부모 계층으로 판정한다. 배에 부착된 대포 등 중간 액터도 지원한다.
-- 설정은 게임 스레드에서 모션 매칭의 거리별 평가 생략 전에 갱신하고, 애니메이션 Getter는 프록시 스냅샷만 읽는다. 전체 `FAnimThreadSafeData` 재생성 때도 배 컨텍스트와 Plant/Interpolation Settings를 보존해 기본 잠금 값으로 덮어쓰지 않는다.
-- 추가 월드 액터 순회, 프레임별 충돌 쿼리, RPC, 복제 프로퍼티를 만들지 않는다. 클라이언트는 기존 이동 베이스와 복제된 부착 관계로 시각 설정을 선택하며 전용 서버의 프레임별 애니메이션 평가 생략은 유지한다.
-
-`ABP_Player_Woman`과 `ABP_Player_Man`의 **Foot Placement → Pelvis Settings → Actor Movement Compensation Mode**는 모두 `Component Space`로 설정한다. UE 5.7 엔진 설명상 `Sudden Motion Only`는 움직이는 발판을 지원하지 않는다. 두 ABP의 단순·복잡 트레이스 채널은 `FootPlacement`를 사용한다.
-
-Plant Settings, Interpolation Settings, Alpha의 기존 C++ Getter 연결을 유지한다. ABP나 클래스 기본 프리셋의 Lock Type을 항상 Unlocked로 고정하지 않는다. 잠금 선택은 배 컨텍스트에만 적용하고 Alpha·보간·Leg IK는 기존 튜닝을 사용한다.
-
-### 4.2. 충돌 응답과 기존 BP 호환
-
-기존 `FootPlacement` 채널을 그대로 사용한다. 기본 Block 응답으로 인해 피격용 선체와 상호작용 볼륨까지 발 트레이스에 잡히지 않도록 프로파일 응답을 명시한다.
-
-| 프로파일/컴포넌트 | FootPlacement 응답 | 역할 |
-| --- | --- | --- |
-| ShipDeck / DeckMesh_Simple·Complex | Block | 발 접지 및 경사 보정 대상 |
-| PlayerShipDamage / EnemyShipDamage | Ignore | 피격 판정용 선체 |
-| Interactable | Ignore | 조타·앵커 등 상호작용 쿼리 볼륨 |
-| ShipHullPhysics / BuoyancyRoot | Ignore, PhysicsOnly | 기존 배 물리 루트 |
-
-`DefaultEngine.ini`의 프로파일과 Ship 생성자에서 기본값을 설정하고, BeginPlay에서 갑판·피격 메시 및 Interactable 컴포넌트 응답을 재적용한다. 기존 BP에 저장된 컴포넌트 템플릿에도 적용하기 위한 일회성 처리다. Pawn·Arrow·대포 응답과 배 물리/복제 정책은 유지한다.
-
-### 4.3. 검증 결과와 재현 방법
-
-- 엔진의 직접 `UnrealBuildTool.exe`로 `ArtisticSW2026Editor Win64 Development` 빌드 성공.
-- `ArtisticSW.Animation.FootPlacement.ShipContext` 성공(오류/경고 0): 육지 프리셋, 갑판/물리 루트, 정지, 이동이 꺼진 조종자, 중간 장비 부착, 하선, 낙하 중 오래된 베이스, 전체 NativeUpdateAnimation 이후 스냅샷 보존 및 충돌 프로파일 검사.
-- `ArtisticSW.Animation.FootPlacement.PlayerGraphContract` 성공(오류 0): 저장된 남녀 ABP의 공통 부모, Foot Placement 노드 존재, Component Space 보정 및 단순·복잡 FootPlacement 채널 검사. 로드 시 기존 Foley Notify/실험용 Pose Search 참조 누락 등의 경고 183건은 남아 있다. 이 변경에서는 관련 없는 애니메이션 에셋을 수정하지 않았다.
-- Play_Test의 실제 멀티플레이 PIE 클라이언트에서 여캐 AutonomousProxy/Walking, Kelvin Movement Base, `Unlocked`, Alpha 0.75를 확인했다. 전역 잠금은 true였고 양쪽 발의 단순·복잡 구 트레이스(반경 10cm, 시작 +40cm/끝 -100cm)가 모두 `DeckMesh_Simple`을 적중했다. 피격 메시와 조타/앵커 볼륨의 Ignore 응답도 확인했다. 사용자가 수정 후 정상 동작을 확인했다.
-
-자동화 실행은 `Automation RunTests ArtisticSW.Animation.FootPlacement`를 사용한다. 보고서는 `Saved/Automation/ShipFootPlacement/index.json`, 로그는 `Saved/Logs/ShipFootPlacementAutomation.log`에 생성되며 커밋에는 포함하지 않는다. 조사용 임시 Python 스크립트는 정리했고 제품 코드에 진단 로그·콘솔 명령·디버그 드로잉을 추가하지 않았다.
-
-PIE 비교 시 `a.AnimNode.FootPlacement.Enable.Lock 1`을 사용한다. `0`은 육지까지 전역 잠금을 해제하므로 조건부 동작을 검증할 수 없다. 모든 위치·조종 전환·원격 플레이어의 시각 품질 검증을 완료한 것은 아니며, 추가 화면 검증은 언덕, 배 정지/보행, 조종/해제, 점프/착지와 소유/원격 캐릭터를 비교한다.

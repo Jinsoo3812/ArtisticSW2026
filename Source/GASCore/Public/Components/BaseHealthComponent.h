@@ -79,8 +79,7 @@ public:
 
 	// Call after ASC actor info is initialized. This binds Health, MaxHealth, and Dead tag changes.
 	UFUNCTION(BlueprintCallable, Category = "Health")
-	// Player respawn can defer the zero-health check until it resets the persistent ASC.
-	void InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent, bool bStartDeathIfOutOfHealth = true);
+	void InitializeWithAbilitySystem(UAbilitySystemComponent* InAbilitySystemComponent);
 
 	// Unbinds ASC delegates. Call before the owner is destroyed or when replacing ASC.
 	UFUNCTION(BlueprintCallable, Category = "Health")

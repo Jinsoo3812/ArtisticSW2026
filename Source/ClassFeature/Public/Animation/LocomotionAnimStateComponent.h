@@ -93,10 +93,6 @@ struct FReplicatedLocomotionState
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     bool bIsSprinting = false;
 
-    /** Last sampled grounded movement gait, retained when input/sprint are released. */
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bLastGroundMoveWasSprinting = false;
-
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     bool bHasMoveInput = false;
 
@@ -127,7 +123,6 @@ struct FReplicatedLocomotionState
     bool operator==(const FReplicatedLocomotionState& Other) const
     {
         return bIsSprinting == Other.bIsSprinting &&
-               bLastGroundMoveWasSprinting == Other.bLastGroundMoveWasSprinting &&
                bHasMoveInput == Other.bHasMoveInput &&
                MoveInput.Equals(Other.MoveInput, 0.05f) &&
                LandMoveDirection.Equals(Other.LandMoveDirection, 0.05f) &&
@@ -152,7 +147,6 @@ class CLASSFEATURE_API ULocomotionAnimStateComponent : public UActorComponent
 
 public:
     ULocomotionAnimStateComponent();
-    friend class FStopGaitIntegrationTest;
 
     virtual void BeginPlay() override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -317,14 +311,6 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
     bool bStopRequested;
-
-    /** Gait captured for the pending/direct Stop, independent of live sprint input. */
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
-    bool bStopWasSprinting = false;
-
-    /** Authority/local ground frame history, also supplied by remote snapshots. */
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
-    bool bLastGroundMoveWasSprinting = false;
 
     /**
      * Latches a locally controlled grounded movement episode until its Stop

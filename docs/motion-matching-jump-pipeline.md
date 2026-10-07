@@ -1,7 +1,5 @@
 # Motion Matching Jump Pipeline
 
-> 이 문서는 기존 PSD 기반 점프 잠금 경로를 설명한다. 현재 Chooser + Blend Stack 점프 시작 경로와 공중 방향 재선택 정책은 [점프 중 방향 전환과 재생 연속성](JumpAir_Direction_Continuity_2026-10-01.md)을 따른다. 아래의 재선택 금지·단일 플레이어 정책을 현재 Chooser 경로에 적용하지 않는다.
-
 ## 목표
 
 점프 시작은 한 번 선택한 non-loop asset을 끝까지 유지하고, 공중 조향 입력은 JumpStart asset 재선택이 아니라 CharacterMovement의 수평 이동에만 반영한다.

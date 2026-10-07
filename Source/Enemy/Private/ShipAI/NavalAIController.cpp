@@ -2,7 +2,6 @@
 
 
 #include "ShipAI/NavalAIController.h"
-#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISense.h"
 #include "Perception/AISenseConfig_Sight.h"
@@ -66,7 +65,6 @@ void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIS
 
 void ANavalAIController::Tick(float DeltaSeconds)
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(SW_NavalAI_Tick);
 	Super::Tick(DeltaSeconds);
 	if (!HasAuthority())
 	{
@@ -173,7 +171,6 @@ AShip* ANavalAIController::FindClosestPlayerShip() const
 
 void ANavalAIController::RefreshTargetShip()
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(SW_NavalAI_TargetSearch);
 	AEnemyShip* EnemyShip = Cast<AEnemyShip>(GetPawn());
 	UEnemyShipNavigationComponent* Navigation = EnemyShip ? EnemyShip->GetNavigationComponent() : nullptr;
 	if (!EnemyShip || !Navigation || EnemyShip->IsCrewDefeated() || EnemyShip->IsStoryGateDormant())

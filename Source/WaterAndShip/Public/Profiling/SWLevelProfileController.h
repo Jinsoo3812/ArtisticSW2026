@@ -35,11 +35,8 @@ private:
 	bool bScreenshot = false;
 	FString ScreenshotName;
 	bool bFixedWaterCamera = false;
-	bool bUseSavedEditorCamera = false;
-	bool bControlledComparison = false;
 	float FixedCameraZOffset = 400.0f;
 	float FixedCameraPitch = -18.0f;
-	float FixedCameraYawOffset = 0.0f;
 	bool bInjectRipple = false;
 	bool bRippleInjected = false;
 	float RippleLeadSeconds = 0.75f;

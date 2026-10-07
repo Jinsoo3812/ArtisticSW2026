@@ -31,7 +31,6 @@ public class ClassFeatureEditor : ModuleRules
 			"GASCore",
 			"WaterAndShip",
 			"Water",
-			"Landscape",
 			"GeometryCore",
 			"MeshConversion",
 			"AssetRegistry",
