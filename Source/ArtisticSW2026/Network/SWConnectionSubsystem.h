@@ -12,6 +12,7 @@ class SWidget;
 class UNetDriver;
 class UGameViewportClient;
 class UWorld;
+class USWLoadingScreenWidget;
 
 UCLASS()
 class ARTISTICSW2026_API USWConnectionSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
@@ -55,7 +56,7 @@ public:
 private:
 	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString);
 	void HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& ErrorString);
-	void HandlePreLoadMap(const FString& MapName);
+	void HandlePreLoadMap(const FWorldContext& WorldContext, const FString& MapName);
 	void HandlePostLoadMap(UWorld* LoadedWorld);
 	void TransitionTo(ESWConnectionState NewState);
 	void RecordFailure(ESWConnectionFailureReason Reason, const FString& EngineFailureType, const FString& EngineMessage);
@@ -73,6 +74,7 @@ private:
 	FSWConnectionFailure LastFailure;
 	int32 AttemptSerial = 0;
 	int32 ActiveAttemptId = 0;
+	double DiagnosticConnectStartedAt = 0.0;
 	bool bConnectionAttemptActive = false;
 	bool bIntentionalDisconnect = false;
 	TWeakObjectPtr<UWorld> ReadinessWorld;
@@ -83,6 +85,11 @@ private:
 	static constexpr float ReadinessTimeoutSeconds = 30.0f;
 	static constexpr int32 RequiredConsecutiveReadyTicks = 3;
 	TSharedPtr<SWidget> LoadingOverlayWidget;
+	UPROPERTY(Transient)
+	TSubclassOf<USWLoadingScreenWidget> LoadingWidgetClass;
+	UPROPERTY(Transient)
+	TObjectPtr<USWLoadingScreenWidget> LoadingWidget;
+	FString LoadingDestination;
 	TSharedPtr<STextBlock> LoadingStatusText;
 	TWeakObjectPtr<UGameViewportClient> LoadingViewport;
 	bool bLoadingPresentationVisible = false;

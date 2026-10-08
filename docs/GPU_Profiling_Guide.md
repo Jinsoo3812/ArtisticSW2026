@@ -47,7 +47,9 @@ RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 
 ---
 
 ### 2.2. 언리얼 엔진 최적 프로파일링 실행법
-에디터(PIE) 상태로 캡처하면 Slate UI, 기즈모, 수십 개의 에디터 전용 패스가 섞이므로 **독립 클라이언트(`-game`)**로 실행해야 합니다.
+에디터(PIE) 캡처에는 Slate UI, 기즈모, 에디터 전용 패스가 섞일 수 있으므로 출시 성능 검증은 **Development 패키지의 독립 클라이언트**에서 수행합니다.
+
+`Lvl_CY`의 UE 5.7 uncooked `-game` 실행에서는 저장된 Landscape Nanite 데이터가 로드 중 무효화되는 현상이 관찰됐습니다. 아래 `-game` 명령만으로 Nanite가 유효하다고 판단하지 말고 실제 로드 상태를 확인합니다. 현재 지형 Nanite A/B 검증은 별도 에디터 PIE와 메타데이터를 사용하는 [Lvl_CY 측정 절차](Lvl_CY_Insights_Profiling.md)를 따릅니다. PIE에서는 배경 뷰포트 Realtime을 끄고 중복 렌더링 여부도 확인합니다.
 
 #### 📌 추천 실행 명령어 (PowerShell / CMD)
 ```powershell

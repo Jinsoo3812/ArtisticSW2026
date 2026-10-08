@@ -180,7 +180,7 @@ void UEnemyShipObstacleBuoyancyTestSubsystem::SpawnProbe()
 	UClass* ObstacleClass = StaticLoadClass(
 		AEnemyShipObstacle::StaticClass(),
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Blueprints/BP_ES_Obstacle.BP_ES_Obstacle_C"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_ES_Obstacle.BP_ES_Obstacle_C"));
 	if (!ObstacleClass)
 	{
 		ObstacleClass = AEnemyShipObstacle::StaticClass();

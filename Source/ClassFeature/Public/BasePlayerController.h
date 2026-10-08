@@ -32,6 +32,8 @@ class UStatusWindowWidget;
 class USWRoomMenuWidget;
 class AFacilityHubActor;
 class ASharedShipUpgradeState;
+class UPrimitiveComponent;
+struct FInteractionUIInfo;
 class UGameViewportClient;
 class AShip;
 
@@ -100,11 +102,17 @@ public:
 	TWeakObjectPtr<ABasePlayer> LifeCharacter;
 	TWeakObjectPtr<APawn> AppliedLifePawn;
 private:
+
 	UFUNCTION(Server, Reliable)
 	void ServerEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
 	UFUNCTION(Client, Reliable)
 	void ClientEnemyShipDebugTeleportResult(const FString& Message);
 	double NextEnemyShipDebugTeleportTime = 0.0;
+	
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FPlayerDeathCameraTest;
+#endif
+
 	bool bApplyingLifeProgress = false;
 	void TickDeathFlow(float DeltaTime);
 	void TickShipMotionDiagnostics();
@@ -235,6 +243,8 @@ protected:
 
 	/*---- 인벤토리 ----*/
 public:
+	void ShowInteractionPrompt(const FInteractionUIInfo& UIInfo, UPrimitiveComponent* TargetComponent);
+	void HideInteractionPrompt();
 
 	void ToggleInventory();
 	void ToggleStatus();

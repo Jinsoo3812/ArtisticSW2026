@@ -46,6 +46,7 @@ private:
 	FTSTicker::FDelegateHandle RestoreTickerHandle;
 	TWeakObjectPtr<UWorld> PendingWorld;
 	double RestoreDeadline = 0.0;
+	double DiagnosticLastRestoreLogAt = 0.0;
 	bool bReturning = false;
 	enum class ERoomTransitionReason : uint8 { Return, FinalDeparture, GameOverRetry };
 	ERoomTransitionReason TransitionReason = ERoomTransitionReason::Return;

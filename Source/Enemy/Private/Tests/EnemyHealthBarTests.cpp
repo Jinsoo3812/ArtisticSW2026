@@ -14,8 +14,11 @@ bool FEnemyHealthBarVisibilityStateTest::RunTest(const FString& Parameters)
 	const UEnemyHealthBarComponent* ComponentDefaults = GetDefault<UEnemyHealthBarComponent>();
 	TestTrue(TEXT("Enemy health bar reveal state replicates"), ComponentDefaults->GetIsReplicated());
 	TestTrue(
-		TEXT("Enemy health bars use the dedicated enemy widget class"),
-		ComponentDefaults->GetWidgetClass() == UEnemyHealthBarWidget::StaticClass());
+		TEXT("Enemy health bars use the authored enemy widget Blueprint by default"),
+		ComponentDefaults->GetWidgetClass()
+			&& ComponentDefaults->GetWidgetClass()->IsChildOf(UEnemyHealthBarWidget::StaticClass())
+			&& ComponentDefaults->GetWidgetClass()->GetPathName()
+				== TEXT("/Game/Blueprints/02_UI/UI_HUD/WBP_EnemyHealthBarWidget.WBP_EnemyHealthBarWidget_C"));
 	TestEqual(
 		TEXT("A depleted health bar remains visible for 0.1 seconds by default"),
 		ComponentDefaults->GetDeathHideDelay(),

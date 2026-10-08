@@ -11,7 +11,7 @@ class ABombardmentPreview;
 class USkeletalMeshComponent;
 class UMaterialParameterCollection;
 
-/** Hold the skill key to aim, press left mouse to throw, or right mouse/release the skill key to cancel. */
+/** Press the skill key to keep aiming, left mouse to throw, or right mouse to cancel. */
 UCLASS(Blueprintable)
 class CLASSFEATURE_API UGA_GravityVortexThrow : public UPlayerSkillGameplayAbility
 {
@@ -128,9 +128,6 @@ protected:
 
 	UFUNCTION()
 	void OnRightClickPressed(FGameplayEventData Payload);
-
-	UFUNCTION()
-	void OnActivationInputReleased(float TimeHeld);
 
 	UFUNCTION()
 	void DrawAimTrajectory();

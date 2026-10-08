@@ -509,6 +509,27 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
     
     MoveInputHeldTime = bHasMoveInput ? MoveInputHeldTime + DeltaTime : 0.f;
 
+    const bool bActionMontageActive = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
+         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
+
+    // Sample a completed input frame, not individual W/Shift callbacks. Both
+    // can be released in either order before this component ticks. Preserve
+    // the last moving frame when input disappears. Proxies use the authority's
+    // history so a coalesced release snapshot cannot erase the sprint gait.
+    if (ShouldUseLocalInput() || (CachedBasePlayer && CachedBasePlayer->HasAuthority()))
+    {
+        const UCharacterMovementComponent* Movement = CachedBasePlayer->GetCharacterMovement();
+        if (!Movement || !Movement->IsMovingOnGround() || bActionMontageActive)
+        {
+            bLastGroundMoveWasSprinting = false;
+        }
+        else if (bHasMoveInput)
+        {
+            bLastGroundMoveWasSprinting = bIsSprinting;
+        }
+    }
+
     if (IsDedicatedServer())
     {
         MoveInputTurnAngle = 0.f;
@@ -581,10 +602,6 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         bStartWasSprinting = false;
     }
 
-    const bool bActionMontageActive = CachedBasePlayer &&
-        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
-         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
-
     if (bActionMontageActive)
     {
         ResetLocomotionActionState(TEXT("ActionMontageActive"));
@@ -615,19 +632,23 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
     bStopRequested = bStopRequested || bNewStopRequest;
     if (bNewStopRequest)
     {
+        bStopWasSprinting = bIsLanding && bLandWasMoving
+            ? bLandWasSprinting : bLastGroundMoveWasSprinting;
         const FString StopEvent = FString::Printf(
             TEXT("Stop requested InputRelease Ground=%.1f PreviousState=%s"),
             GroundSpeed,
             *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)));
         RecordStateControllerDebugEvent(StopEvent);
         EmitStopDebug(FString::Printf(
-            TEXT("[SC_STOP_COMPONENT] Event=Requested Input=%d PrevInput=%d Ground=%.1f State=%s Episode=%d Pending=%d"),
+            TEXT("[SC_STOP_COMPONENT] Event=Requested Input=%d PrevInput=%d Ground=%.1f State=%s Episode=%d Pending=%d StopSprint=%d LiveSprint=%d"),
             bHasMoveInput ? 1 : 0,
             bPrevHasMoveInput ? 1 : 0,
             GroundSpeed,
             *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)),
             bGroundMoveEpisodeActive ? 1 : 0,
-            bStopRequested ? 1 : 0));
+            bStopRequested ? 1 : 0,
+            bStopWasSprinting ? 1 : 0,
+            bIsSprinting ? 1 : 0));
     }
     CurrentStartToLoopDelay = 0.f;
     bUseStartDatabase = ShouldUseLocalInput() && bHasMoveInput && !bGroundStartFinished;
@@ -843,6 +864,7 @@ void ULocomotionAnimStateComponent::ClearMovementRequests()
 {
     bStartRequested = false;
     bStopRequested = false;
+    bStopWasSprinting = false;
     bGroundMoveEpisodeActive = false;
     bUseStartDatabase = false;
     bUseLoopDatabase = false;
@@ -1458,6 +1480,7 @@ void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicated
     LastFallSpeed = Snapshot.LastFallSpeed;
 
     bIsSprinting = Snapshot.bIsSprinting;
+    bLastGroundMoveWasSprinting = Snapshot.bLastGroundMoveWasSprinting;
     bHasMoveInput = Snapshot.bHasMoveInput;
     CachedMoveInput = Snapshot.bHasMoveInput ? Snapshot.MoveInput.GetClampedToMaxSize(1.f) : FVector2D::ZeroVector;
     MoveInput = CachedMoveInput;
@@ -2052,6 +2075,8 @@ void ULocomotionAnimStateComponent::ResetLocomotionActionState(const TCHAR* Reas
     bPendingGroundStartFinish = false;
     bGroundStartFinished = true;
     bStopRequested = false;
+    bStopWasSprinting = false;
+    bLastGroundMoveWasSprinting = false;
     bGroundMoveEpisodeActive = false;
     bLandingRequested = false;
     bIsLanding = false;
@@ -2100,6 +2125,7 @@ void ULocomotionAnimStateComponent::InterruptLandingForStop()
     bWasAirborneLastFrame = false;
     AirborneDuration = 0.f;
     bStopRequested = true;
+    bStopWasSprinting = bLandWasMoving && bLandWasSprinting;
     bGroundMoveEpisodeActive = true;
     ForceStateTransition(ELocomotionState::Stop);
 }

@@ -1,7 +1,6 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
-#include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
@@ -25,7 +24,7 @@ UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_Skill_GravityVortex);
 	SetAssetTags(AssetTags);
-	// Keep the two hold-to-aim skills mutually exclusive regardless of which
+	// Keep the two aiming skills mutually exclusive regardless of which
 	// one was activated first. Area Slow already owns the reciprocal block.
 	ActivationBlockedTags.AddTag(State_Aiming);
 }
@@ -93,13 +92,6 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		RightClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnRightClickPressed);
 		RightClickTask->ReadyForActivation();
-	}
-
-	UAbilityTask_WaitInputRelease* InputReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
-	if (InputReleaseTask)
-	{
-		InputReleaseTask->OnRelease.AddDynamic(this, &UGA_GravityVortexThrow::OnActivationInputReleased);
-		InputReleaseTask->ReadyForActivation();
 	}
 
 	if (Player->IsLocallyControlled() && (bDrawAimTrajectory || bUpdateAimTrajectoryVisual))
@@ -183,14 +175,6 @@ void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 }
 
 void UGA_GravityVortexThrow::OnRightClickPressed(FGameplayEventData Payload)
-{
-	if (IsActive() && !bThrowRequested)
-	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
-	}
-}
-
-void UGA_GravityVortexThrow::OnActivationInputReleased(float TimeHeld)
 {
 	if (IsActive() && !bThrowRequested)
 	{

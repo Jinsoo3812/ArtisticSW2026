@@ -4,6 +4,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
+#include "BaseAttributeSet.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -22,11 +23,11 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FGravityVortexHoldInputTest,
-	"ArtisticSW.GravityVortex.HoldInputLifecycle",
+	FGravityVortexSelectionInputTest,
+	"ArtisticSW.GravityVortex.SelectionInputLifecycle",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
+bool FGravityVortexSelectionInputTest::RunTest(const FString& Parameters)
 {
 	// Creating a project game world initializes the existing ItemSubsystem,
 	// whose current QuestItem authoring emits these unrelated known errors.
@@ -82,6 +83,7 @@ bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 	}
 
 	Player->bBypassSkillRequirementsForTesting = true;
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
 	PlayerController->Possess(Player);
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
@@ -93,7 +95,7 @@ bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 
 	Player->OnGravityVortexSkillPressed();
 	TestTrue(
-		TEXT("Pressing and holding the skill key enters Gravity Vortex aiming mode"),
+		TEXT("Pressing the skill key enters Gravity Vortex aiming mode"),
 		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
 
 	Player->OnMouseInputPressed(Key_Default_Mouse_RightClick);
@@ -107,8 +109,25 @@ bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
 
 	Player->OnGravityVortexSkillReleased();
+	TestTrue(
+		TEXT("Releasing E preserves Gravity Vortex aiming mode"),
+		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
+	Player->OnGravityVortexSkillPressed();
 	TestFalse(
-		TEXT("Releasing the held skill key cancels Gravity Vortex aiming mode"),
+		TEXT("Pressing E again cancels unused Gravity Vortex aiming mode"),
+		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
+	Player->OnGravityVortexSkillReleased();
+	Player->OnGravityVortexSkillPressed();
+	TestTrue(
+		TEXT("Gravity Vortex can be selected again after E cancels it"),
+		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
+	Player->OnMouseInputPressed(Key_Default_Mouse_RightClick);
+	TestFalse(
+		TEXT("Right click still cancels after E has been released"),
+		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
+	Player->OnGravityVortexSkillPressed();
+	PlayerController->UnPossess();
+	TestFalse(TEXT("Leaving on-foot control cancels the selected on-foot skill"),
 		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
 
 	CleanupWorld();

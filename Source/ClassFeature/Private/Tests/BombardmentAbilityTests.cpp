@@ -4,6 +4,7 @@
 
 #include "Skills/Abilities/GA_Bombardment.h"
 #include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
@@ -43,6 +44,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("BombardmentAbilityShipWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
 	{
@@ -70,6 +72,7 @@ bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
 	PlayerController->Possess(Player);
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();

@@ -6,6 +6,7 @@
 #include "SkillQuickSlotWidget.generated.h"
 
 class ABasePlayer;
+class UAbilitySystemComponent;
 class UBorder;
 class UImage;
 class UWidget;
@@ -35,8 +36,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Quick Slot")
 	FGameplayTag GetFrontSkillTag() const { return FrontSkillTag; }
 
-	/** Kept for HUD compatibility; active-state borders are no longer part of this widget. */
-	void RefreshEquippedState(APawn* ControlledPawn) {}
+	/** Bring the skill belonging to the currently controlled pawn to the front. */
+	void RefreshEquippedState(APawn* ControlledPawn);
 
 protected:
 	virtual void NativeConstruct() override;
@@ -68,6 +69,10 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> GravityVortexLockOverlay;
 
+	/** Selection component/variable: GravityVortexSelectedOverlay. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> GravityVortexSelectedOverlay;
+
 	/** Panel component: WaterBombSlotPanel (direct SkillSlotCanvas child). */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> WaterBombSlotPanel;
@@ -83,6 +88,10 @@ protected:
 	/** Border component: WaterBombLockOverlay. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> WaterBombLockOverlay;
+
+	/** Selection component/variable: WaterBombSelectedOverlay. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> WaterBombSelectedOverlay;
 
 	/** Panel component: BombardmentSlotPanel (direct SkillSlotCanvas child). */
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -100,14 +109,22 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> BombardmentLockOverlay;
 
+	/** Selection component/variable: BombardmentSelectedOverlay. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> BombardmentSelectedOverlay;
+
 private:
 	UFUNCTION()
 	void HandleSkillChanged(FGameplayTag SkillTag);
 
 	void UnbindPlayer();
+	void BindSkillAbilitySystem();
+	void HandleActiveSkillTagChanged(FGameplayTag SkillTag, int32 NewCount);
 	void RefreshSkill(FGameplayTag SkillTag, UImage* IconImage, UBorder* LockOverlay) const;
 	UImage* FindCooldownImage(FGameplayTag SkillTag) const;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
+	TWeakObjectPtr<UAbilitySystemComponent> BoundSkillAbilitySystem;
+	FDelegateHandle GravityVortexTagChangedHandle;
 	FGameplayTag FrontSkillTag;
 };

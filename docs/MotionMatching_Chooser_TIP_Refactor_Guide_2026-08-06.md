@@ -1,6 +1,7 @@
 # Motion Matching, Chooser Table & Turn In Place (TIP) 대개편 초정밀 구현 종합 마스터 가이드
 
 - **작성일자**: 2026-08-06
+- **후속 수정 (2026-10-04)**: Sprint Stop은 해제 후의 `bIsSprinting` 대신 정지 직전 지상 Gait를 선택하고 재생 동안 유지한다. 기존 이동 스냅샷에 지상 Gait 기록을 포함한다. 아래 초기 구현 예시보다 [Sprint Stop Gait 보존 문서](MotionMatching_Sprint_Stop_Gait_Fix_2026-10-04.md)의 현재 동작을 우선 참고한다.
 - **대상 브랜치**: `MM_Refactor_And_TIP`
 - **대상 프로젝트**: `ArtisticSW2026` (`ClassFeature` 모듈, `UMotionMatchingAnimInstance`, `ULocomotionAnimStateComponent`, `ABasePlayer`)
 - **문서 목적**: 현재 `ArtisticSW2026`의 C++ 하드코딩 PoseSearchDatabase 분기 방식을 완벽히 해체하고, `Project_J` (GASP 기반 Chooser Table + State Controller + One-Shot Sequence Evaluator + Turn In Place + Offset Root Bone) 시스템을 소스 코드 단위부터 AnimGraph 노드 배치까지 100% 복사/구현할 수 있도록 수록한 완전 종합 마스터 가이드라인.

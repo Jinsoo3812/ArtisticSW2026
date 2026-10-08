@@ -32,7 +32,6 @@
 #include "Interactable.h"
 #include "CollisionChannels.h"
 #include "AbilitySystemBlueprintLibrary.h"
-#include "Components/WidgetComponent.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "UI/ShipRepairProgressWidget.h"
 #include "InteractUserWidget.h"
@@ -265,7 +264,8 @@ void ABasePlayer::BeginPlay()
 		FollowCamera->PostProcessSettings.VignetteIntensity = 0.0f;
 	}
 
-	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
+		SkillComponent && !bLifeAbilityBindingsRetired && (!HealthComponent || !HealthComponent->IsDead()))
 	{
 		CachedPlayerSkillComponent = SkillComponent;
 		SkillComponent->RegisterInventorySource(InventoryComponent);
@@ -277,6 +277,7 @@ void ABasePlayer::BeginPlay()
 		if (HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
 		{
 			ApplyLocalDeathRagdoll();
+			RetireLifeAbilityBindings();
 		}
 	}
 
@@ -375,8 +376,8 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABasePlayer::HandleDeathFinished);
-		HealthComponent->UninitializeFromAbilitySystem();
 	}
+	RetireLifeAbilityBindings();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -392,7 +393,10 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
-	if (InHealthComponent && InHealthComponent->IsLifeInitializing()) return;
+	if (InHealthComponent != HealthComponent || !HealthComponent
+		|| HealthComponent->IsLifeInitializing()
+		|| HealthComponent->GetDeathState() != EBaseDeathState::DeathFinished
+		|| bLifeAbilityBindingsRetired) return;
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathFinished Player=%s Authority=%d Controller=%s PlayerState=%s Health=%s"),
 		*GetName(), HasAuthority(), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), *GetNameSafe(InHealthComponent));
 	if (HasAuthority())
@@ -407,6 +411,21 @@ void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 	ApplyLocalDeathRagdoll();
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollAfterApply Player=%s NetMode=%d Simulating=%d AnyBodySimulating=%d Mesh=%s"),
 		*GetName(), static_cast<int32>(GetNetMode()), GetMesh() && GetMesh()->IsSimulatingPhysics(), GetMesh() && GetMesh()->IsAnySimulatingPhysics(), *GetNameSafe(GetMesh()));
+	RetireLifeAbilityBindings();
+}
+
+void ABasePlayer::RetireLifeAbilityBindings()
+{
+	bLifeAbilityBindingsRetired = true;
+	if (UAbilitySystemComponent* ASC = CachedAbilitySystemComponent.Get())
+	{
+		const FGameplayTag InteractionTags[] = {Interaction_PickUp, Interaction_ShipBoard, Interaction_CannonBoard};
+		for (const FGameplayTag& Tag : InteractionTags)
+		{
+			if (auto* Callback = ASC->GenericGameplayEventCallbacks.Find(Tag)) Callback->RemoveAll(this);
+		}
+	}
+	if (HealthComponent) HealthComponent->UninitializeFromAbilitySystem();
 }
 
 void ABasePlayer::ApplyLocalDeathRagdoll()
@@ -752,6 +771,8 @@ void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 Pr
 void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	// Physics components keep ticking, but a retired pawn must not read the next life's combat state.
+	if (bLifeAbilityBindingsRetired) return;
 
 	if (bAutomaticSwimDiveHeld)
 	{
@@ -1209,6 +1230,22 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 void ABasePlayer::UnPossessed()
 {
+	// Tap-to-select aiming must end when input ownership moves to a ship/cannon.
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		const FGameplayTagContainer OnFootSkillTags(GameplayAbility_Skill_GravityVortex);
+		CachedAbilitySystemComponent->CancelAbilities(&OnFootSkillTags);
+	}
+	// Interaction scanning belongs to the on-foot player pawn. When control moves
+	// to a ship or cannon, clear the last prompt before this pawn loses access to
+	// its player controller and stop the timer until PawnClientRestart resumes it.
+	if (ABasePlayerController* PlayerController = GetController<ABasePlayerController>())
+	{
+		PlayerController->HideInteractionPrompt();
+	}
+
+	GetWorldTimerManager().ClearTimer(InteractionScanTimerHandle);
+
 	ResetAutomaticSwimDiveInput();
 
 	if (AnimStateComponent)
@@ -1222,6 +1259,13 @@ void ABasePlayer::UnPossessed()
 void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
+	// A late corpse update must not replace the living pawn's ASC avatar or inventory source.
+	if (bLifeAbilityBindingsRetired || (HealthComponent
+		&& HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished))
+	{
+		RetireLifeAbilityBindings();
+		return;
+	}
 
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
 
@@ -1270,9 +1314,8 @@ void ABasePlayer::PawnClientRestart()
 			// DefaultIMC 등록
 			if(DefaultIMC)
 			{
-				// QuickSlotIMC may contain legacy item-key mappings. Keep the
-				// skill-bearing DefaultIMC above it so a quick slot cannot consume
-				// Keyboard 3 before IA_GravityVortex receives it.
+				// Preserve skill input priority for custom mapping contexts.
+				// The shipped mappings use E for skills and 1-5 for quick slots.
 				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
 					DefaultIMCPriority,
 					QuickSlotIMCPriority,
@@ -1616,6 +1659,7 @@ void ABasePlayer::OnShipRepairInteractionReleased()
 void ABasePlayer::OnShipRepairInteractionPressed()
 {
 	if (!CanMutateLifeGameplay()) return;
+	if (HasSelectedQuickSlotConsumable()) return;
 	if (IsLocallyControlled())
 	{
 		bShipRepairInputHeld = true;
@@ -1675,9 +1719,22 @@ void ABasePlayer::ClientEndShipRepair_Implementation(UShipRepairPointComponent* 
 
 int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
 {
-	return PressedConsumableQuickSlotIndices.IsEmpty()
-		? INDEX_NONE
-		: PressedConsumableQuickSlotIndices.Last();
+	return GetSelectedConsumableQuickSlotIndex();
+}
+
+bool ABasePlayer::HasSelectedQuickSlotConsumable() const
+{
+	if (!QuickSlots.IsValidIndex(SelectedConsumableQuickSlotIndex) || !InventoryComponent)
+	{
+		return false;
+	}
+	const FQuickSlotReference& Slot = QuickSlots[SelectedConsumableQuickSlotIndex];
+	const UItemSubsystem* Items = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	return Slot.SlotType == EQuickSlotType::Consumable && !Slot.IsEmpty()
+		&& !Slot.ItemTag.MatchesTag(Item_Tool)
+		&& !Slot.ItemTag.MatchesTag(Item_Id_Material_ShipMaterials)
+		&& InventoryComponent->GetMaterialCount(Slot.ItemTag) > 0
+		&& Items && Items->GetCategoryTag(Slot.ItemTag).MatchesTag(Item_Category_Consumable);
 }
 
 void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
@@ -1693,41 +1750,52 @@ void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
 		return;
 	}
 
-	PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex);
-	PressedConsumableQuickSlotIndices.Add(QuickSlotIndex);
+	SelectedConsumableQuickSlotIndex = QuickSlotIndex;
 	OnConsumableQuickSlotInputChanged.Broadcast();
+	if (!HasAuthority())
+	{
+		ServerSelectConsumableQuickSlot(QuickSlotIndex);
+		return;
+	}
+
+	// Repair materials and tools must be held before their existing F interaction.
+	// Consumables are only selected here; F is the sole use request.
+	const FGameplayTag ItemTag = QuickSlots[QuickSlotIndex].ItemTag;
+	if (ItemTag.MatchesTag(Item_Tool) || ItemTag.MatchesTag(Item_Id_Material_ShipMaterials))
+	{
+		EquipInventoryItem(ItemTag);
+	}
 }
 
 void ABasePlayer::EndConsumableQuickSlotInput(const int32 QuickSlotIndex)
 {
-	if (PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex) == 0)
-	{
-		return;
-	}
+	// Releasing 3/4/5 neither clears selection nor uses the item.
+}
 
-	OnConsumableQuickSlotInputChanged.Broadcast();
-	ActivateQuickSlot(QuickSlotIndex);
+void ABasePlayer::ServerSelectConsumableQuickSlot_Implementation(const int32 QuickSlotIndex)
+{
+	BeginConsumableQuickSlotInput(QuickSlotIndex);
 }
 
 void ABasePlayer::ResetConsumableQuickSlotInputs()
 {
-	if (!PressedConsumableQuickSlotIndices.IsEmpty())
+	if (SelectedConsumableQuickSlotIndex != INDEX_NONE)
 	{
-		PressedConsumableQuickSlotIndices.Empty();
+		SelectedConsumableQuickSlotIndex = INDEX_NONE;
 		OnConsumableQuickSlotInputChanged.Broadcast();
 	}
 }
 
 void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 {
+	if (!CanPerformCombatAction() || !QuickSlots.IsValidIndex(QuickSlotIndex)) return;
+	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
+	{
+		ResetConsumableQuickSlotInputs();
+	}
 	if (!HasAuthority())
 	{
 		ServerActivateQuickSlot(QuickSlotIndex);
-		return;
-	}
-
-	if (!QuickSlots.IsValidIndex(QuickSlotIndex))
-	{
 		return;
 	}
 
@@ -1950,6 +2018,13 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
+	// A selected consumable owns F, including when an interactable is in reach.
+	if (bInteractionInput && HasSelectedQuickSlotConsumable())
+	{
+		ActivateQuickSlot(SelectedConsumableQuickSlotIndex);
+		return;
+	}
+
 	const bool bIsNonCombatInteraction = InputTag.MatchesTag(Key_Default_F);
 	if (!bIsNonCombatInteraction && !CanPerformCombatAction())
 	{
@@ -1970,6 +2045,13 @@ void ABasePlayer::OnGravityVortexSkillPressed()
 {
 	if (!bEnableGravityVortexSkillInput)
 	{
+		return;
+	}
+	if (CachedAbilitySystemComponent.IsValid()
+		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex))
+	{
+		const FGameplayTagContainer SkillTags(GameplayAbility_Skill_GravityVortex);
+		CachedAbilitySystemComponent->CancelAbilities(&SkillTags);
 		return;
 	}
 	if (!CanPerformCombatAction())
@@ -2305,100 +2387,53 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 
 void ABasePlayer::PerformInteractionScan()
 {
+	// A replicated possession change can detach the local controller without
+	// calling this pawn's UnPossessed override on the client. Let the old pawn's
+	// scan timer shut itself down instead of polling throughout ship/cannon use.
+	if (!IsLocallyControlled())
+	{
+		GetWorldTimerManager().ClearTimer(InteractionScanTimerHandle);
+		return;
+	}
+
 	TArray<FHitResult> HitResults;
 	PerformInteractTrace(HitResults);
 
-	TArray<UWidgetComponent*> CurrentHoveredWidgets;
-	TMap<UWidgetComponent*, FInteractionUIInfo> CurrentWidgetUIInfo;
-
-	// 현재 트레이스에 걸린 모든 위젯 수집
+	IInteractable* BestInteractable = nullptr;
+	UPrimitiveComponent* BestInteractableComponent = nullptr;
+	float ClosestDistanceSq = MAX_flt;
+	const FVector StartLocation = GetActorLocation();
 	for (const FHitResult& Hit : HitResults)
 	{
 		UPrimitiveComponent* HitComponent = Hit.GetComponent();
-		if (!HitComponent)
-		{
-			continue;
-		}
-
-		IInteractable* Interactable = Cast<IInteractable>(HitComponent);
-		if (!Interactable)
-		{
-			continue;
-		}
-
+		IInteractable* Interactable = HitComponent ? Cast<IInteractable>(HitComponent) : nullptr;
 		AActor* HitActor = Hit.GetActor();
-		if (!HitActor)
+		if (Interactable && HitActor)
 		{
-			continue;
-		}
-
-		TArray<UWidgetComponent*> WidgetComponents;
-		HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
-		for (UWidgetComponent* WidgetComp : WidgetComponents)
-		{
-			if (!WidgetComp)
+			const FVector SelectionPoint = Hit.bStartPenetrating
+				? HitActor->GetActorLocation()
+				: FVector(Hit.ImpactPoint);
+			const float SelectionDistanceSq = FVector::DistSquared(StartLocation, SelectionPoint);
+			if (SelectionDistanceSq < ClosestDistanceSq)
 			{
-				continue;
-			}
-
-			if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
-			{
-				CurrentHoveredWidgets.AddUnique(WidgetComp);
-				if (!CurrentWidgetUIInfo.Contains(WidgetComp))
-				{
-					CurrentWidgetUIInfo.Add(WidgetComp, Interactable->GetInteractionUIInfo());
-				}
+				ClosestDistanceSq = SelectionDistanceSq;
+				BestInteractable = Interactable;
+				BestInteractableComponent = HitComponent;
 			}
 		}
 	}
 
-	// 기존 캐시에는 있지만 현재 스캔되지 않은 위젯은 숨김 처리 후 캐시에서 제거
-	for (int32 i = CachedHoveredWidgets.Num() - 1; i >= 0; --i)
+	if (ABasePlayerController* PlayerController = GetController<ABasePlayerController>())
 	{
-		if (CachedHoveredWidgets[i].IsValid())
+		if (BestInteractable && BestInteractableComponent)
 		{
-			UWidgetComponent* CachedWidget = CachedHoveredWidgets[i].Get();
-			if (!CurrentHoveredWidgets.Contains(CachedWidget))
-			{
-				CachedWidget->SetHiddenInGame(true);
-				CachedHoveredWidgets.RemoveAt(i);
-			}
+			PlayerController->ShowInteractionPrompt(
+				BestInteractable->GetInteractionUIInfo(),
+				BestInteractableComponent);
 		}
 		else
 		{
-			// 유효하지 않은 포인터 정리
-			CachedHoveredWidgets.RemoveAt(i);
-		}
-	}
-
-	// 새로 스캔된 위젯 표시 및 캐시에 등록
-	for (UWidgetComponent* Widget : CurrentHoveredWidgets)
-	{
-		if (Widget)
-		{
-			bool bAlreadyCached = false;
-			for (const auto& Cached : CachedHoveredWidgets)
-			{
-				if (Cached.Get() == Widget)
-				{
-					bAlreadyCached = true;
-					break;
-				}
-			}
-
-			if (!bAlreadyCached)
-			{
-				Widget->SetHiddenInGame(false);
-				CachedHoveredWidgets.Add(Widget);
-
-				if (const FInteractionUIInfo* UIInfo = CurrentWidgetUIInfo.Find(Widget))
-				{
-					if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
-					{
-						InteractWidget->OnUpdateInteractUI(*UIInfo);
-					}
-				}
-			}
+			PlayerController->HideInteractionPrompt();
 		}
 	}
 }

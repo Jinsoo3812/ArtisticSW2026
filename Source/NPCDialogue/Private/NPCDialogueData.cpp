@@ -1,6 +1,8 @@
 #include "NPCDialogueData.h"
 
+#if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#endif
 
 bool UNPCDialogueData::ResolveReply(AActor* Player, UStoryFacadeSubsystem* Story,
 	const FNPCDialogueRule& Rule, const FNPCDialogueLine& Line,
@@ -24,6 +26,7 @@ const FNPCDialogueRule* UNPCDialogueData::FindRule(FName RuleId) const
 	});
 }
 
+#if WITH_EDITOR
 EDataValidationResult UNPCDialogueData::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = CombineDataValidationResults(
@@ -134,3 +137,4 @@ EDataValidationResult UNPCDialogueData::IsDataValid(FDataValidationContext& Cont
 
 	return Result;
 }
+#endif

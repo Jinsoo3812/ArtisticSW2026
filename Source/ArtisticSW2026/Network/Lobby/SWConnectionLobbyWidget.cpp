@@ -1,107 +1,142 @@
 #include "Network/Lobby/SWConnectionLobbyWidget.h"
-#include "Network/SWConnectionSubsystem.h"
+#include "Components/Button.h"
+#include "Components/EditableTextBox.h"
+#include "Components/TextBlock.h"
+#include "Components/WidgetSwitcher.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/KismetSystemLibrary.h"
-#include "Styling/CoreStyle.h"
-#include "Widgets/Layout/SBorder.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SScrollBox.h"
-#include "Widgets/SBoxPanel.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SEditableTextBox.h"
-#include "Widgets/Text/STextBlock.h"
 
-TSharedRef<SWidget> USWConnectionLobbyWidget::RebuildWidget()
+USWRoomSubsystem* USWConnectionLobbyWidget::GetRoom() const
 {
-	SAssignNew(Content, SVerticalBox);
-	RebuildContent();
-	return SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
-		.BorderBackgroundColor(FLinearColor(0.025f, 0.04f, 0.07f))
-		.Padding(36)
-		[
-			SNew(SScrollBox) + SScrollBox::Slot()
-			[
-				SNew(SBox).WidthOverride(560).HAlign(HAlign_Center)[Content.ToSharedRef()]
-			]
-		];
+	return GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr;
+}
+
+void USWConnectionLobbyWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (CreateButton) CreateButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenCreate);
+	if (ContinueButton) ContinueButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenContinue);
+	if (JoinButton) JoinButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenJoin);
+	if (QuitButton) QuitButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Quit);
+	if (AutoHostButton) AutoHostButton->OnClicked.AddUniqueDynamic(this, &ThisClass::SubmitAuto);
+	if (ManualHostButton) ManualHostButton->OnClicked.AddUniqueDynamic(this, &ThisClass::SubmitManual);
+	if (JoinSubmitButton) JoinSubmitButton->OnClicked.AddUniqueDynamic(this, &ThisClass::SubmitJoin);
+	if (ConnectHostButton) ConnectHostButton->OnClicked.AddUniqueDynamic(this, &ThisClass::ConnectHost);
+	if (ConfirmCreateButton) ConfirmCreateButton->OnClicked.AddUniqueDynamic(this, &ThisClass::ConfirmCreate);
+	if (ConfirmCancelButton) ConfirmCancelButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Back);
+	if (BackButton) BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::Back);
+	if (RoomCodeOutput) RoomCodeOutput->SetIsReadOnly(true);
 }
 
 void USWConnectionLobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	if (USWRoomSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomSubsystem>())
-		Room->OnRoomChanged.AddDynamic(this, &USWConnectionLobbyWidget::HandleRoomChanged);
-	RebuildContent();
+	if (USWRoomSubsystem* Room = GetRoom()) Room->OnRoomChanged.AddUniqueDynamic(this, &ThisClass::HandleRoomChanged);
+	Refresh();
 }
 
 void USWConnectionLobbyWidget::NativeDestruct()
 {
-	if (GetGameInstance())
-		if (USWRoomSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomSubsystem>())
-			Room->OnRoomChanged.RemoveDynamic(this, &USWConnectionLobbyWidget::HandleRoomChanged);
+	if (USWRoomSubsystem* Room = GetRoom()) Room->OnRoomChanged.RemoveDynamic(this, &ThisClass::HandleRoomChanged);
 	Super::NativeDestruct();
 }
 
-void USWConnectionLobbyWidget::HandleRoomChanged(ESWRoomState State, FText Message)
+void USWConnectionLobbyWidget::HandleRoomChanged(ESWRoomState State, FText Message) { Refresh(); }
+
+void USWConnectionLobbyWidget::Refresh()
 {
-	if (StatusText.IsValid()) StatusText->SetText(Message);
-	RebuildContent();
+	USWRoomSubsystem* Room = GetRoom();
+	const bool bCanHost = Room && Room->CanHost();
+	const bool bHostForm = Panel == EPanel::Create || Panel == EPanel::Continue;
+	const bool bCanSubmit = Room && (Room->GetRoomState() == ESWRoomState::Idle || Room->GetRoomState() == ESWRoomState::Failed);
+	auto Show = [](UWidget* Widget, bool bShow)
+	{
+		if (Widget) Widget->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+	Show(HomePanel, Panel == EPanel::Home);
+	Show(FormPanel, bHostForm || Panel == EPanel::Join);
+	const ESlateVisibility ConfirmVisibility = Panel == EPanel::ConfirmCreate
+		? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden;
+	if (ConfirmPanel) ConfirmPanel->SetVisibility(ConfirmVisibility);
+	if (ConfirmPanel1) ConfirmPanel1->SetVisibility(ConfirmVisibility);
+	if (LobbySwitcher)
+	{
+		UWidget* Page = Panel == EPanel::Home ? HomePanel.Get()
+			: Panel == EPanel::ConfirmCreate ? ConfirmPanel.Get() : FormPanel.Get();
+		// HomePanel is nested inside SizeBox/Canvas; select the direct switcher child.
+		while (Page && Page->GetParent() != LobbySwitcher) Page = Page->GetParent();
+		if (Page) LobbySwitcher->SetActiveWidget(Page);
+	}
+	Show(NameSection, Panel != EPanel::Continue);
+	Show(JoinSection, Panel == EPanel::Join);
+	Show(HostSection, bHostForm);
+	Show(ManualIPSection, bHostForm && Room && Room->NeedsManualPublicIP());
+	Show(HostedRoomSection, bHostForm && Room && !Room->GetRoomCode().IsEmpty());
+	Show(ContinueButton, bCanHost && Room->HasSavedRoom());
+	if (CreateButton) CreateButton->SetIsEnabled(bCanHost);
+	if (AutoHostButton) AutoHostButton->SetIsEnabled(bCanHost && bCanSubmit);
+	if (ManualHostButton) ManualHostButton->SetIsEnabled(bCanHost && bCanSubmit);
+	if (JoinSubmitButton) JoinSubmitButton->SetIsEnabled(bCanSubmit);
+	if (ConnectHostButton) ConnectHostButton->SetIsEnabled(Room && Room->GetRoomState() == ESWRoomState::StartingServer && !Room->GetRoomCode().IsEmpty());
+	if (RoomCodeOutput) RoomCodeOutput->SetText(FText::FromString(Room ? Room->GetRoomCode() : FString()));
+	if (StatusText) StatusText->SetText(Room ? Room->GetRoomMessage() : FText::GetEmpty());
 }
 
-void USWConnectionLobbyWidget::RebuildContent()
+void USWConnectionLobbyWidget::OpenCreate()
 {
-	if (!Content.IsValid()) return;
-	const FString SavedName = NameInput.IsValid() ? NameInput->GetText().ToString() : FString();
-	const FString SavedCode = CodeInput.IsValid() ? CodeInput->GetText().ToString() : FString();
-	const FString SavedIP = PublicIPInput.IsValid() ? PublicIPInput->GetText().ToString() : FString();
-	Content->ClearChildren();
-	Content->AddSlot().AutoHeight().Padding(0, 15)[SNew(STextBlock).Text(FText::FromString(TEXT("ArtisticSW2026"))).ColorAndOpacity(FLinearColor::White)];
-	USWRoomSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr;
-	if (Panel == EPanel::Home)
+	if (USWRoomSubsystem* Room = GetRoom(); Room && Room->CanHost()) { Panel = EPanel::Create; Refresh(); }
+}
+void USWConnectionLobbyWidget::OpenContinue()
+{
+	if (USWRoomSubsystem* Room = GetRoom(); Room && Room->CanHost() && Room->HasSavedRoom()) { Panel = EPanel::Continue; Refresh(); }
+}
+void USWConnectionLobbyWidget::OpenJoin() { Panel = EPanel::Join; Refresh(); }
+void USWConnectionLobbyWidget::Back()
+{
+	if (USWRoomSubsystem* Room = GetRoom()) Room->CancelPendingOperation();
+	Panel = EPanel::Home;
+	PendingCreateName.Reset();
+	PendingCreateIP.Reset();
+	Refresh();
+}
+
+void USWConnectionLobbyWidget::SubmitHosting(const FString& PublicIP)
+{
+	USWRoomSubsystem* Room = GetRoom();
+	if (!Room || !Room->CanHost()) return;
+	if (Room->GetRoomState() != ESWRoomState::Idle && Room->GetRoomState() != ESWRoomState::Failed) return;
+	if (Panel == EPanel::Continue) Room->ContinueRoom(FString(), PublicIP);
+	else if (Panel == EPanel::Create && NameInput)
 	{
-		Content->AddSlot().AutoHeight().Padding(0, 10)[SNew(SButton).IsEnabled(Room && Room->CanHost()).Text(FText::FromString(TEXT("방 만들기"))).OnClicked_Lambda([this]() { Panel = EPanel::Create; RebuildContent(); return FReply::Handled(); })];
-		if (Room && Room->CanHost() && Room->HasSavedRoom())
-			Content->AddSlot().AutoHeight().Padding(0, 10)[SNew(SButton).Text(FText::FromString(TEXT("이어하기"))).OnClicked_Lambda([this]() { Panel = EPanel::Continue; RebuildContent(); return FReply::Handled(); })];
-		Content->AddSlot().AutoHeight().Padding(0, 10)[SNew(SButton).Text(FText::FromString(TEXT("방 들어가기"))).OnClicked_Lambda([this]() { Panel = EPanel::Join; RebuildContent(); return FReply::Handled(); })];
-		Content->AddSlot().AutoHeight().Padding(0, 10)[SNew(SButton).Text(FText::FromString(TEXT("게임 종료"))).OnClicked_Lambda([this]() { if (USWRoomSubsystem* R = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) R->CancelPendingOperation(); UKismetSystemLibrary::QuitGame(GetWorld(), GetOwningPlayer(), EQuitPreference::Quit, false); return FReply::Handled(); })];
-	}
-	else if (Panel == EPanel::ConfirmCreate)
-	{
-		Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(STextBlock).Text(FText::FromString(TEXT("기존 방 정보와 진행 상황이 삭제됩니다. 새 방을 만드시겠습니까?"))).AutoWrapText(true)];
-		Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SButton).Text(FText::FromString(TEXT("새 방 만들기"))).OnClicked_Lambda([this]() { Panel = EPanel::Create; RebuildContent(); if (USWRoomSubsystem* R = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) R->CreateRoom(PendingCreateName, PendingCreateIP); return FReply::Handled(); })];
-		Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SButton).Text(FText::FromString(TEXT("취소"))).OnClicked_Lambda([this]() { Panel = EPanel::Home; RebuildContent(); return FReply::Handled(); })];
-	}
-	else
-	{
-		if (Panel != EPanel::Continue)
+		if (Room->HasSavedRoom())
 		{
-			Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(STextBlock).Text(FText::FromString(TEXT("이름")))];
-			Content->AddSlot().AutoHeight().Padding(0, 8)[SAssignNew(NameInput, SEditableTextBox).Text(FText::FromString(SavedName))];
+			PendingCreateName = NameInput->GetText().ToString();
+			PendingCreateIP = PublicIP;
+			Panel = EPanel::ConfirmCreate;
 		}
-		if (Panel == EPanel::Join)
-		{
-			Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(STextBlock).Text(FText::FromString(TEXT("참가 코드")))];
-			Content->AddSlot().AutoHeight().Padding(0, 8)[SAssignNew(CodeInput, SEditableTextBox).Text(FText::FromString(SavedCode))];
-			Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SButton).Text(FText::FromString(TEXT("입장"))).OnClicked_Lambda([this]() { if (USWRoomSubsystem* R = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) R->JoinRoom(NameInput->GetText().ToString(), CodeInput->GetText().ToString()); return FReply::Handled(); })];
-		}
-		else
-		{
-			Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SButton).Text(FText::FromString(Room && Room->NeedsManualPublicIP() ? TEXT("공인 IP 자동 재시도") : Panel == EPanel::Continue ? TEXT("자동으로 이어하기") : TEXT("자동으로 방 만들기"))).OnClicked_Lambda([this]() { if (USWRoomSubsystem* R = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) { if (Panel == EPanel::Continue) R->ContinueRoom(FString(), FString()); else if (R->HasSavedRoom()) { PendingCreateName = NameInput->GetText().ToString(); PendingCreateIP.Empty(); Panel = EPanel::ConfirmCreate; RebuildContent(); } else R->CreateRoom(NameInput->GetText().ToString(), FString()); } return FReply::Handled(); })];
-			if (Room && Room->NeedsManualPublicIP())
-			{
-				Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(STextBlock).Text(FText::FromString(TEXT("자동 조회 실패 시에만 공인 IPv4 직접 입력")))];
-				Content->AddSlot().AutoHeight().Padding(0, 8)[SAssignNew(PublicIPInput, SEditableTextBox).Text(FText::FromString(SavedIP))];
-				Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SButton).Text(FText::FromString(Panel == EPanel::Continue ? TEXT("입력한 IP로 이어하기") : TEXT("입력한 IP로 방 만들기"))).OnClicked_Lambda([this]() { if (USWRoomSubsystem* R = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) { if (Panel == EPanel::Continue) R->ContinueRoom(FString(), PublicIPInput->GetText().ToString()); else if (R->HasSavedRoom()) { PendingCreateName = NameInput->GetText().ToString(); PendingCreateIP = PublicIPInput->GetText().ToString(); Panel = EPanel::ConfirmCreate; RebuildContent(); } else R->CreateRoom(NameInput->GetText().ToString(), PublicIPInput->GetText().ToString()); } return FReply::Handled(); })];
-			}
-			if (Room && !Room->GetRoomCode().IsEmpty())
-			{
-				Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(STextBlock).Text(FText::FromString(TEXT("참가 코드 (선택해 복사)")))];
-				Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SEditableTextBox).Text(FText::FromString(Room->GetRoomCode())).IsReadOnly(true)];
-				Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SButton).Text(FText::FromString(TEXT("서버 접속"))).OnClicked_Lambda([this]() { if (USWRoomSubsystem* R = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) R->ConnectHostedRoom(); return FReply::Handled(); })];
-			}
-		}
-		Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(SButton).Text(FText::FromString(TEXT("취소 / 뒤로"))).OnClicked_Lambda([this]() { if (USWRoomSubsystem* R = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) R->CancelPendingOperation(); Panel = EPanel::Home; RebuildContent(); return FReply::Handled(); })];
+		else Room->CreateRoom(NameInput->GetText().ToString(), PublicIP);
 	}
-	Content->AddSlot().AutoHeight().Padding(0, 12)[SAssignNew(StatusText, STextBlock).Text(Room ? Room->GetRoomMessage() : FText::GetEmpty()).ColorAndOpacity(FLinearColor::White)];
-	Content->AddSlot().AutoHeight().Padding(0, 8)[SNew(STextBlock).Text(FText::FromString(TEXT("호스트: 공유기 UDP 7777 포트 전달과 Windows 방화벽 허용이 필요합니다. CGNAT에서는 연결할 수 없습니다."))).AutoWrapText(true)];
+	Refresh();
+}
+void USWConnectionLobbyWidget::SubmitAuto() { SubmitHosting(FString()); }
+void USWConnectionLobbyWidget::SubmitManual() { if (PublicIPInput) SubmitHosting(PublicIPInput->GetText().ToString()); }
+void USWConnectionLobbyWidget::ConfirmCreate()
+{
+	if (Panel != EPanel::ConfirmCreate) return;
+	Panel = EPanel::Create;
+	if (USWRoomSubsystem* Room = GetRoom()) Room->CreateRoom(PendingCreateName, PendingCreateIP);
+	PendingCreateName.Reset();
+	PendingCreateIP.Reset();
+	Refresh();
+}
+void USWConnectionLobbyWidget::SubmitJoin()
+{
+	if (Panel != EPanel::Join || !NameInput || !CodeInput) return;
+	if (USWRoomSubsystem* Room = GetRoom()) Room->JoinRoom(NameInput->GetText().ToString(), CodeInput->GetText().ToString());
+}
+void USWConnectionLobbyWidget::ConnectHost() { if (USWRoomSubsystem* Room = GetRoom()) Room->ConnectHostedRoom(); }
+void USWConnectionLobbyWidget::Quit()
+{
+	if (USWRoomSubsystem* Room = GetRoom()) Room->CancelPendingOperation();
+	UKismetSystemLibrary::QuitGame(GetWorld(), GetOwningPlayer(), EQuitPreference::Quit, false);
 }

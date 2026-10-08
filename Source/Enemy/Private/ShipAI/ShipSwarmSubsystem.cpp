@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShipAI/ShipSwarmSubsystem.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipAvoidanceSettings.h"
@@ -192,6 +193,7 @@ void UShipSwarmSubsystem::Deinitialize()
 
 void UShipSwarmSubsystem::EvaluateDistanceOptimization()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Swarm_DistanceOptimization);
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client)
 	{
@@ -355,6 +357,7 @@ void UShipSwarmSubsystem::RecalculateSquadOrbitDistances(FName SquadID)
 
 FEnemyShipAvoidanceDecision UShipSwarmSubsystem::EvaluateAvoidance(AEnemyShip* Ship)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Swarm_Avoidance);
 	FEnemyShipAvoidanceDecision Decision;
 	const UEnemyShipNavigationComponent* Navigation = IsValid(Ship)
 		? Ship->GetNavigationComponent()

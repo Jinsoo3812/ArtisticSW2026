@@ -1,4 +1,5 @@
 #include "Network/SWConnectionSubsystem.h"
+#include "Network/SWLoadingScreenWidget.h"
 
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -8,6 +9,9 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWRoomLoadDiagnostics.h"
+#include "HAL/PlatformTime.h"
+#include "ProfilingDebugging/MiscTrace.h"
 #include "Network/SWInputDiag.h"
 #include "SWRoomName.h"
 #include "Room/SWRoomReadyState.h"
@@ -50,10 +54,13 @@ void USWConnectionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		NetworkFailureHandle = GEngine->OnNetworkFailure().AddUObject(this, &USWConnectionSubsystem::HandleNetworkFailure);
 		TravelFailureHandle = GEngine->OnTravelFailure().AddUObject(this, &USWConnectionSubsystem::HandleTravelFailure);
 	}
-	PreLoadMapHandle = FCoreUObjectDelegates::PreLoadMap.AddUObject(this, &USWConnectionSubsystem::HandlePreLoadMap);
+	PreLoadMapHandle = FCoreUObjectDelegates::PreLoadMapWithContext.AddUObject(this, &USWConnectionSubsystem::HandlePreLoadMap);
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &USWConnectionSubsystem::HandlePostLoadMap);
 	ConnectionState = ESWConnectionState::Idle;
 	LastFailure = FSWConnectionFailure();
+	// Load the presentation (and its photo references) before map travel blocks the game thread.
+	LoadingWidgetClass = LoadClass<USWLoadingScreenWidget>(nullptr,
+		TEXT("/Game/Blueprints/02_UI/UI_Loading/WBP_LoadingScreen.WBP_LoadingScreen_C"));
 }
 
 void USWConnectionSubsystem::Deinitialize()
@@ -65,7 +72,7 @@ void USWConnectionSubsystem::Deinitialize()
 		if (NetworkFailureHandle.IsValid()) GEngine->OnNetworkFailure().Remove(NetworkFailureHandle);
 		if (TravelFailureHandle.IsValid()) GEngine->OnTravelFailure().Remove(TravelFailureHandle);
 	}
-	if (PreLoadMapHandle.IsValid()) FCoreUObjectDelegates::PreLoadMap.Remove(PreLoadMapHandle);
+	if (PreLoadMapHandle.IsValid()) FCoreUObjectDelegates::PreLoadMapWithContext.Remove(PreLoadMapHandle);
 	if (PostLoadMapHandle.IsValid()) FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
 	NetworkFailureHandle.Reset();
 	TravelFailureHandle.Reset();
@@ -84,6 +91,9 @@ void USWConnectionSubsystem::Tick(float DeltaTime)
 	const uint8 ReadinessMask = BuildReadinessMask();
 	if (ReadinessMask != LastLoggedReadinessMask)
 	{
+		if (SWRoomLoadDiagnostics::IsEnabled())
+			UE_LOG(LogTemp, Display, TEXT("[SWLoadDiag] Real=%.6f Phase=Client.Readiness Attempt=%d Mask=0x%02X RoomWorldReady=%d Debug=%s"),
+				FPlatformTime::Seconds(), ActiveAttemptId, ReadinessMask, (ReadinessMask & RoomWorldReady) != 0, *GetReadinessDebugStatus());
 		UE_LOG(LogSWConnection, Display, TEXT("Readiness changed. AttemptId=%d Mask=0x%02X Elapsed=%.2f"), ActiveAttemptId, ReadinessMask, ReadinessElapsedSeconds);
 		LastLoggedReadinessMask = ReadinessMask;
 	}
@@ -148,6 +158,9 @@ bool USWConnectionSubsystem::ConnectDirect(const FString& Address)
 	LastFailure = FSWConnectionFailure();
 	AttemptSerial = AttemptSerial >= MAX_int32 ? 1 : AttemptSerial + 1;
 	ActiveAttemptId = AttemptSerial;
+	DiagnosticConnectStartedAt = SWRoomLoadDiagnostics::IsEnabled() ? FPlatformTime::Seconds() : 0.0;
+	SWRoomLoadDiagnostics::Mark(TEXT("Client.ConnectRequested"));
+	if (SWRoomLoadDiagnostics::IsEnabled()) TRACE_BEGIN_REGION(TEXT("SW.ClientConnect"));
 	FSWInputDiag::BeginAttempt(GetGameInstance(), ActiveAttemptId, PendingHostKey.IsValid());
 	bConnectionAttemptActive = true;
 	bIntentionalDisconnect = false;
@@ -180,6 +193,7 @@ void USWConnectionSubsystem::DisconnectToDefaultMap()
 		return;
 	}
 	StopReadinessCheck();
+	LoadingDestination = TEXT("/Game/Level/ConnectionLobby");
 	ShowLoadingPresentation();
 	bIntentionalDisconnect = true;
 	bConnectionAttemptActive = false;
@@ -215,12 +229,16 @@ void USWConnectionSubsystem::HandleTravelFailure(UWorld* World, ETravelFailure::
 	RecordFailure(Reason, ETravelFailure::ToString(FailureType), ErrorString);
 }
 
-void USWConnectionSubsystem::HandlePreLoadMap(const FString& MapName)
+void USWConnectionSubsystem::HandlePreLoadMap(const FWorldContext& WorldContext, const FString& MapName)
 {
+	if (WorldContext.OwningGameInstance != GetGameInstance()) return;
 	if (bConnectionAttemptActive || bIntentionalDisconnect)
 	{
+		LoadingDestination = MapName;
 		ShowLoadingPresentation();
 		TransitionTo(ESWConnectionState::LoadingMap);
+		// Submit the updated destination photo before synchronous map loading starts.
+		if (FSlateApplication::IsInitialized()) FSlateApplication::Get().Tick(ESlateTickType::TimeAndWidgets);
 		return;
 	}
 
@@ -229,8 +247,10 @@ void USWConnectionSubsystem::HandlePreLoadMap(const FString& MapName)
 	if (ConnectionState == ESWConnectionState::Playing && CurrentWorld && CurrentWorld->GetNetMode() == NM_Client)
 	{
 		bConnectionAttemptActive = true;
+		LoadingDestination = MapName;
 		ShowLoadingPresentation();
 		TransitionTo(ESWConnectionState::LoadingMap);
+		if (FSlateApplication::IsInitialized()) FSlateApplication::Get().Tick(ESlateTickType::TimeAndWidgets);
 	}
 }
 
@@ -369,6 +389,14 @@ void USWConnectionSubsystem::CompleteReadiness()
 {
 	if (!bReadinessCheckActive || BuildReadinessMask() != AllReady) return;
 	const float CompletedElapsedSeconds = ReadinessElapsedSeconds;
+	if (SWRoomLoadDiagnostics::IsEnabled())
+	{
+		TRACE_END_REGION(RoomLoadingReason == ERoomLoadingReason::Return ? TEXT("SW.ClientReturn") : TEXT("SW.ClientConnect"));
+		SWRoomLoadDiagnostics::MarkMemory(TEXT("Client.Playing"));
+	}
+	if (SWRoomLoadDiagnostics::IsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWLoadDiag] Real=%.6f Phase=Client.Playing Attempt=%d TotalMs=%.3f"),
+			FPlatformTime::Seconds(), ActiveAttemptId, DiagnosticConnectStartedAt > 0.0 ? (FPlatformTime::Seconds() - DiagnosticConnectStartedAt) * 1000.0 : -1.0);
 	FGuid ReadyRoomRunId;
 	if (UWorld* World = ReadinessWorld.Get())
 		for (TActorIterator<ASWRoomReadyState> It(World); It; ++It)
@@ -416,6 +444,11 @@ bool USWConnectionSubsystem::BeginRoomReturnPresentation()
 {
 	if (ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
 	RoomLoadingReason = ERoomLoadingReason::Return;
+	// Hosted return currently restarts this same level.
+	LoadingDestination = GetGameInstance()->GetWorld()->GetOutermost()->GetName();
+	DiagnosticConnectStartedAt = SWRoomLoadDiagnostics::IsEnabled() ? FPlatformTime::Seconds() : 0.0;
+	SWRoomLoadDiagnostics::Mark(TEXT("Client.ReturnPresentation"));
+	if (SWRoomLoadDiagnostics::IsEnabled()) TRACE_BEGIN_REGION(TEXT("SW.ClientReturn"));
 	bConnectionAttemptActive = true;
 	ShowLoadingPresentation();
 	if (!bLoadingPresentationVisible)
@@ -433,6 +466,8 @@ bool USWConnectionSubsystem::BeginRoomFinalDeparturePresentation(int32 AttemptId
 	if (ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
 	FinalDepartureAttemptId = AttemptId;
 	RoomLoadingReason = ERoomLoadingReason::FinalDeparture;
+	// Final departure also uses ?Restart; PreLoadMap supplies the authoritative destination.
+	LoadingDestination = GetGameInstance()->GetWorld()->GetOutermost()->GetName();
 	bConnectionAttemptActive = true;
 	ShowLoadingPresentation();
 	if (!bLoadingPresentationVisible)
@@ -463,17 +498,30 @@ void USWConnectionSubsystem::ShowLoadingPresentation()
 	if (bLoadingPresentationVisible)
 	{
 		if (UGameViewportClient* Viewport = LoadingViewport.Get()) Viewport->SetIgnoreInput(true);
+		if (LoadingWidget) LoadingWidget->SetDestination(LoadingDestination);
 		UpdateLoadingPresentationText();
 		return;
 	}
-	if (!GEngine || !GEngine->GameViewport)
+	UGameViewportClient* Viewport = GetGameInstance() ? GetGameInstance()->GetGameViewportClient() : nullptr;
+	if (!Viewport)
 	{
 		UE_LOG(LogSWConnection, Warning, TEXT("Loading presentation unavailable because the game viewport is missing."));
 		return;
 	}
 
-	UGameViewportClient* Viewport = GEngine->GameViewport;
 	bViewportIgnoredInputBeforeLoading = Viewport->IgnoreInput();
+	if (LoadingWidgetClass)
+	{
+		LoadingWidget = CreateWidget<USWLoadingScreenWidget>(GetGameInstance(), LoadingWidgetClass);
+	}
+	if (LoadingWidget)
+	{
+		LoadingOverlayWidget = LoadingWidget->TakeWidget();
+		LoadingWidget->SetDestination(LoadingDestination);
+	}
+	else
+	{
+	UE_LOG(LogSWConnection, Warning, TEXT("WBP_LoadingScreen unavailable; using fallback loading presentation."));
 	TSharedPtr<STextBlock> StatusText;
 	LoadingOverlayWidget = SNew(SOverlay)
 		+ SOverlay::Slot()
@@ -490,6 +538,7 @@ void USWConnectionSubsystem::ShowLoadingPresentation()
 			.ColorAndOpacity(FLinearColor::White)
 		];
 	LoadingStatusText = StatusText;
+	}
 	LoadingViewport = Viewport;
 	Viewport->AddViewportWidgetContent(LoadingOverlayWidget.ToSharedRef(), 10000);
 	Viewport->SetIgnoreInput(true);
@@ -503,6 +552,8 @@ void USWConnectionSubsystem::HideLoadingPresentation()
 	if (Viewport && LoadingOverlayWidget.IsValid()) Viewport->RemoveViewportWidgetContent(LoadingOverlayWidget.ToSharedRef());
 	if (Viewport) Viewport->SetIgnoreInput(bViewportIgnoredInputBeforeLoading);
 	LoadingOverlayWidget.Reset();
+	LoadingWidget = nullptr;
+	LoadingDestination.Reset();
 	LoadingStatusText.Reset();
 	LoadingViewport.Reset();
 	bLoadingPresentationVisible = false;
@@ -511,18 +562,17 @@ void USWConnectionSubsystem::HideLoadingPresentation()
 
 void USWConnectionSubsystem::UpdateLoadingPresentationText()
 {
-	if (!LoadingStatusText.IsValid()) return;
+	FText StatusText;
 	if (RoomLoadingReason == ERoomLoadingReason::FinalDeparture)
 	{
-		LoadingStatusText->SetText(NSLOCTEXT("SWConnection", "FinalDeparture", "울돌목으로 출항 중..."));
-		return;
+		StatusText = NSLOCTEXT("SWConnection", "FinalDeparture", "울돌목으로 출항 중...");
 	}
-	if (RoomLoadingReason == ERoomLoadingReason::Return)
+	else if (RoomLoadingReason == ERoomLoadingReason::Return)
 	{
-		LoadingStatusText->SetText(NSLOCTEXT("SWConnection", "Returning", "귀환 준비 중..."));
-		return;
+		StatusText = NSLOCTEXT("SWConnection", "Returning", "귀환 준비 중...");
 	}
-	FText StatusText;
+	else
+	{
 	switch (ConnectionState)
 	{
 	case ESWConnectionState::Connecting: StatusText = NSLOCTEXT("SWConnection", "Connecting", "Connecting..."); break;
@@ -530,5 +580,7 @@ void USWConnectionSubsystem::UpdateLoadingPresentationText()
 	case ESWConnectionState::LoadingMap:
 	default: StatusText = NSLOCTEXT("SWConnection", "Loading", "Loading..."); break;
 	}
-	LoadingStatusText->SetText(StatusText);
+	}
+	if (LoadingWidget) LoadingWidget->SetStatus(StatusText);
+	if (LoadingStatusText.IsValid()) LoadingStatusText->SetText(StatusText);
 }
