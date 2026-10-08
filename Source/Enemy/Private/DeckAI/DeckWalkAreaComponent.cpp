@@ -11,6 +11,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ShipAI/EnemyShip.h"
+#include "Misc/ScopeExit.h"
 
 struct FDeckWalkRuntime
 {
@@ -153,6 +154,8 @@ void UDeckWalkAreaComponent::Rebuild()
 	bReady = false;
 	LocationClaims.Reset();
 	++Revision;
+	OnReadinessChanged.Broadcast(false, Revision);
+	ON_SCOPE_EXIT { OnReadinessChanged.Broadcast(bReady, Revision); };
 	Runtime.Reset(new FDeckWalkRuntime());
 	if (!ResolveSources())
 	{

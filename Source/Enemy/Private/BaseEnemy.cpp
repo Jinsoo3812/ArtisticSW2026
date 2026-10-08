@@ -31,6 +31,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Perception/AISense_Damage.h"
 #include "UI/EnemyHealthBarComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
 
 void ABaseEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
 {
@@ -51,11 +52,21 @@ void ABaseEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 	State.BaseMovementSpeed = BaseMovementSpeed;
 	State.SpawnMovementSpeedMultiplier = SpawnMovementSpeedMultiplier;
 	State.CorpseLifeRemaining = GetLifeSpan();
+	State.SpawnStatsRow = SpawnStatsRow;
+	State.bBalanceApplied = bBalanceApplied;
+	State.bBalanceReady = bBalanceReady;
+	State.SpawnHealthMultiplier = SpawnHealthMultiplier;
+	State.BalancedAttackInterval = BalancedAttackInterval;
+	State.BalancedMeleeAttackerLimit = BalancedMeleeAttackerLimit;
+	State.BalanceAttackDelayRemaining = FMath::Max(0., BalanceAttackReadyTime - GetWorld()->GetTimeSeconds());
+	State.Strength = AbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+	State.MoveSpeedMultiplier = AbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute());
+	State.AttackSpeedMultiplier = AbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute());
 	if (const USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(AbilitySystemComponent))
 		RoomASC->CaptureRoomEffects(State.ActiveEffects, OutIssues);
 	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
 	Part.Domain = ESWRoomDomain::Enemy;
-	Part.Version = 1;
+	Part.Version = 2;
 	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
 	{
 		OutParts.Pop();
@@ -68,7 +79,7 @@ void ABaseEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 
 bool ABaseEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 {
-	if (Part.Domain != ESWRoomDomain::Enemy || Part.Version != 1)
+	if (Part.Domain != ESWRoomDomain::Enemy || (Part.Version != 1 && Part.Version != 2))
 	{
 		OutError = TEXT("Unsupported enemy domain or version");
 		return false;
@@ -88,6 +99,25 @@ bool ABaseEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutEr
 		OutError = TEXT("Enemy attributes unavailable");
 		return false;
 	}
+	if (Part.Version >= 2)
+	{
+		if (!FMath::IsFinite(State.SpawnHealthMultiplier) || State.SpawnHealthMultiplier <= 0.f
+			|| !FMath::IsFinite(State.BalancedAttackInterval) || State.BalancedAttackInterval < 0.f
+			|| !FMath::IsFinite(State.BalanceAttackDelayRemaining) || State.BalanceAttackDelayRemaining < 0.f
+			|| !FMath::IsFinite(State.Strength) || !FMath::IsFinite(State.MoveSpeedMultiplier) || State.MoveSpeedMultiplier < 0.f
+			|| !FMath::IsFinite(State.AttackSpeedMultiplier) || State.AttackSpeedMultiplier < 0.f)
+		{ OutError = TEXT("Invalid restored enemy balance state"); return false; }
+		SpawnStatsRow = State.SpawnStatsRow;
+		bBalanceApplied = State.bBalanceApplied;
+		bBalanceReady = State.bBalanceReady;
+		SpawnHealthMultiplier = State.SpawnHealthMultiplier;
+		BalancedAttackInterval = State.BalancedAttackInterval;
+		BalancedMeleeAttackerLimit = State.BalancedMeleeAttackerLimit;
+		BalanceAttackReadyTime = GetWorld()->GetTimeSeconds() + State.BalanceAttackDelayRemaining;
+		AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), State.Strength);
+		AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute(), State.MoveSpeedMultiplier);
+		AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute(), State.AttackSpeedMultiplier);
+	}
 	bDeathHandled = State.bDeathHandled;
 	bHasDropped = State.bHasDropped;
 	bWaveRemoveNotified = State.bWaveRemoveNotified;
@@ -98,7 +128,7 @@ bool ABaseEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutEr
 	if (State.bDeathHandled)
 	{
 		HandleDeathFinishedPresentation();
-		SetLifeSpan(FMath::Max(State.CorpseLifeRemaining, KINDA_SMALL_NUMBER));
+		if (bDestroyAfterDeathFinished) SetLifeSpan(FMath::Max(State.CorpseLifeRemaining, KINDA_SMALL_NUMBER));
 	}
 	PendingRoomState = MoveTemp(State);
 	bHasPendingRoomState = true;
@@ -116,6 +146,25 @@ bool ABaseEnemy::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActor
 	}
 	PendingRoomState = FSWRoomEnemyState();
 	return true;
+}
+
+bool ABaseEnemy::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+	float TimeToleranceSeconds, TArray<FString>& OutFields) const
+{
+	if (Expected.Domain == ESWRoomDomain::Enemy && Actual.Domain == Expected.Domain && Expected.Version == 1 && Actual.Version == 2)
+	{
+		FSWRoomEnemyState Before, After;
+		if (!FSWRoomStructCodec::Read(Expected.Bytes, Before) || !FSWRoomStructCodec::Read(Actual.Bytes, After))
+		{ OutFields.Add(TEXT("Field=Payload Expected=Readable Actual=Invalid")); return false; }
+		// The v1 contract did not contain balance metadata. Compare every field it DID declare.
+		After.SpawnStatsRow = Before.SpawnStatsRow;
+		After.bBalanceApplied = Before.bBalanceApplied; After.bBalanceReady = Before.bBalanceReady;
+		After.SpawnHealthMultiplier = Before.SpawnHealthMultiplier; After.BalancedAttackInterval = Before.BalancedAttackInterval;
+		After.BalancedMeleeAttackerLimit = Before.BalancedMeleeAttackerLimit; After.BalanceAttackDelayRemaining = Before.BalanceAttackDelayRemaining;
+		After.Strength = Before.Strength; After.MoveSpeedMultiplier = Before.MoveSpeedMultiplier; After.AttackSpeedMultiplier = Before.AttackSpeedMultiplier;
+		return FSWRoomStructCodec::CompareSaveGameStruct(FSWRoomEnemyState::StaticStruct(), &Before, &After, TimeToleranceSeconds, OutFields);
+	}
+	return FSWRoomStructCodec::Compare<FSWRoomEnemyState>(Expected, Actual, TimeToleranceSeconds, OutFields);
 }
 
 ABaseEnemy::ABaseEnemy()
@@ -552,6 +601,7 @@ void ABaseEnemy::InitializeFromWaveSpawn(float HealthMultiplier, float SpeedMult
 
 bool ABaseEnemy::ConfigureSpawnBalance(const FDataTableRowHandle& Row, float HealthMultiplier, float SpeedMultiplier)
 {
+	if (const ADeckEnemy* Deck = Cast<ADeckEnemy>(this); Deck && HasActorBegunPlay() && Deck->IsPoolActive()) return false;
 	if (!HasAuthority() || bBalanceApplied || !FMath::IsFinite(HealthMultiplier) || HealthMultiplier <= 0.f
 		|| !FMath::IsFinite(SpeedMultiplier) || SpeedMultiplier <= 0.f)
 	{

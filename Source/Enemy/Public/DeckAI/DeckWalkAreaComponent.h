@@ -28,6 +28,8 @@ class ENEMY_API UDeckWalkAreaComponent : public UActorComponent
 	friend class FDeckFixedAnchorLifecycleTest;
 #endif
 public:
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnReadinessChanged, bool, int32);
+	FOnReadinessChanged OnReadinessChanged;
 	UDeckWalkAreaComponent();
 	virtual ~UDeckWalkAreaComponent() override;
 	virtual void BeginPlay() override;

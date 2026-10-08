@@ -12,6 +12,7 @@
 #include "EngineUtils.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
+#include "Room/SWRoomSnapshotComponent.h"
 
 ANavalAIController::ANavalAIController()
 {
@@ -44,7 +45,7 @@ ANavalAIController::ANavalAIController()
 
 void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIStimulus Stimulus)
 {
-	if (!HasAuthority() || !Stimulus.WasSuccessfullySensed()
+	if (!HasAuthority()
 		|| Stimulus.Type != UAISense::GetSenseID<UAISense_Sight>())
 	{
 		return;
@@ -60,7 +61,36 @@ void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIS
 		return;
 	}
 
-	EnemyShip->NotifyPlayerShipSighted(PlayerShip);
+	if (Stimulus.WasSuccessfullySensed()) EnemyShip->NotifyPlayerShipSighted(PlayerShip);
+	else EnemyShip->NotifyPlayerShipSightLost(PlayerShip);
+}
+
+AShip* ANavalAIController::FindSightedPlayerShip(AShip* Preferred) const
+{
+	if (!HasAuthority() || !PerceptionComp) return nullptr;
+	TArray<AActor*> Actors;
+	PerceptionComp->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), Actors);
+	TArray<AShip*> Ships;
+	for (AActor* Actor : Actors)
+	{
+		AShip* Ship = Cast<AShip>(Actor);
+		if (!IsValid(Ship) || Ship == GetPawn() || Ship->IsSinking()
+			|| Ship->IsEnemyShipForEffects() || !Ship->ActorHasTag(TEXT("Player"))
+			|| Ship->ActorHasTag(TEXT("Enemy"))) continue;
+		if (Ship == Preferred) return Ship;
+		Ships.Add(Ship);
+	}
+	const FVector Origin = GetPawn() ? GetPawn()->GetActorLocation() : FVector::ZeroVector;
+	Ships.Sort([Origin](const AShip& A, const AShip& B)
+	{
+		const double DA = FVector::DistSquared2D(Origin, A.GetActorLocation());
+		const double DB = FVector::DistSquared2D(Origin, B.GetActorLocation());
+		if (DA != DB) return DA < DB;
+		const auto* IA = A.FindComponentByClass<USWRoomSnapshotComponent>();
+		const auto* IB = B.FindComponentByClass<USWRoomSnapshotComponent>();
+		return IA && IB ? IA->StableId < IB->StableId : A.GetPathName() < B.GetPathName();
+	});
+	return Ships.IsEmpty() ? nullptr : Ships[0];
 }
 
 void ANavalAIController::Tick(float DeltaSeconds)

@@ -5,6 +5,7 @@
 #include "Engine/DataTable.h"
 #include "DeckAI/DeckPointReservation.h"
 #include "Room/SWRoomSnapshotTypes.h"
+#include "ShipAI/EnemyShipRuntimeState.h"
 #include "DeckEnemySpawnerComponent.generated.h"
 
 USTRUCT()
@@ -49,6 +50,19 @@ struct FSWRoomDeckSpawnerState
 	UPROPERTY(SaveGame) TArray<FGuid> AliveDeployedEnemyIds;
 	UPROPERTY(SaveGame) TArray<FSWRoomDeckPointState> Points;
 	UPROPERTY(SaveGame) FSWRoomDeckDeploymentTicket DeploymentTicket;
+	// Tagged SaveGame fields: absent in EnemyShip domain v2/v3 and migrated explicitly.
+	UPROPERTY(SaveGame) uint8 LifecycleVersion = 0;
+	UPROPERTY(SaveGame) uint8 RequestState = 0;
+	UPROPERTY(SaveGame) uint32 EncounterGeneration = 1;
+	UPROPERTY(SaveGame) uint32 RequestId = 0;
+	UPROPERTY(SaveGame) FString PlanSignature;
+	UPROPERTY(SaveGame) TArray<uint8> SlotResults;
+	UPROPERTY(SaveGame) TArray<FGuid> SlotEnemyIds;
+	UPROPERTY(SaveGame) FGuid InitialTargetId;
+	UPROPERTY(SaveGame) float ReactionDelayRemaining = 0.f;
+	UPROPERTY(SaveGame) float PendingSightRemaining = 0.f;
+	UPROPERTY(SaveGame) float ReadinessTimeoutRemaining = 0.f;
+	UPROPERTY(SaveGame) float TargetWaitRemaining = 0.f;
 };
 
 class ADeckEnemy;
@@ -82,6 +96,16 @@ enum class EDeckEnemyDeploymentState : uint8
 	Completed,
 	CompletedWithFailures,
 	Failed
+};
+
+UENUM(BlueprintType)
+enum class EDeckEnemySpawnRequestState : uint8
+{
+	None,
+	PendingReadiness,
+	Running,
+	Finished,
+	Cancelled
 };
 
 /**
@@ -119,6 +143,12 @@ public:
 	void Shutdown();
 
 	bool RequestDeployment(AShip* TriggeringPlayerShip, AActor* InitialCombatTarget = nullptr);
+	void RequestReadinessEvaluation();
+	bool CanSuspendForDistanceOptimization() const;
+	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")
+	EDeckEnemySpawnRequestState GetSpawnRequestState() const { return SpawnRequestState; }
+	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")
+	FName GetSpawnWaitReason() const { return LastSpawnReason; }
 
 	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")
 	EDeckEnemyDeploymentState GetDeploymentState() const { return DeploymentState; }
@@ -203,6 +233,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner|Retry", meta = (ClampMin = "0.05", Units = "s"))
 	float SpawnRetryInterval = 0.5f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner|Timing", meta = (ClampMin = "0.1", Units = "s"))
+	float PendingSightLifetime = 5.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner|Timing", meta = (ClampMin = "1.0", Units = "s"))
+	float ReadinessTimeout = 15.f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner")
 	int32 RandomSeed = 1337;
 
@@ -237,7 +272,9 @@ private:
 		FDeckPointReservation& Reservation,
 		AActor* InitialTarget,
 		ADeckEnemy*& OutEnemy,
-		const FTransform* ReservedTransform = nullptr);
+		const FTransform* ReservedTransform = nullptr,
+		const FDataTableRowHandle& StatsRow = FDataTableRowHandle(),
+		int32 AutomaticSlotIndex = INDEX_NONE);
 	bool CreateDeploymentTicket(float DelaySeconds);
 	bool ResolveEnemySpawnTransform(
 		const UDeckWaypointComponent* SpawnWaypoint,
@@ -247,7 +284,16 @@ private:
 	float GetRemainingSpawnStartDelay() const;
 	void BeginDeployment();
 	void DeployNextEnemy();
-	void HandleDeploymentFailure();
+	void HandleDeploymentFailure(FName Reason, bool bRetryable);
+	void EvaluateDeploymentReadiness();
+	void ScheduleDeployment(float Delay, bool bBegin);
+	void PauseDeployment(FName Reason);
+	void HandleHostRuntimeStateChanged(const FEnemyShipRuntimeState& Previous, const FEnemyShipRuntimeState& Current);
+	void HandleWalkAreaReadinessChanged(bool bReady, int32 Revision);
+	void HandleRoomRestoreCompleted();
+	void UnbindLifecycleDelegates();
+	FString GetPlanSignature() const;
+	void SetWaitReason(FName Reason);
 	void FinishDeployment();
 	void EvaluateAllEnemiesDefeated();
 
@@ -285,4 +331,29 @@ private:
 	FSWRoomDeckSpawnerState PendingRoomState;
 	FSWRoomDeckDeploymentTicket DeploymentTicket;
 	bool bHasPendingRoomState = false;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Deck Enemy Spawner", meta = (AllowPrivateAccess = "true"))
+	EDeckEnemySpawnRequestState SpawnRequestState = EDeckEnemySpawnRequestState::None;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Deck Enemy Spawner", meta = (AllowPrivateAccess = "true"))
+	FName LastSpawnReason;
+	TArray<uint8> SlotResults; // 0 pending, 1 activated, 2 permanently failed; never reset by Wake.
+	TArray<FGuid> SlotEnemyIds;
+	uint32 EncounterGeneration = 1;
+	uint32 RequestId = 0;
+	uint32 ExecutionEpoch = 1;
+	double ReactionReadyTime = 0.;
+	double PendingSightExpiry = 0.;
+	double ReadinessExpiry = 0.;
+	double TargetWaitExpiry = 0.;
+	float PausedDeploymentDelay = 0.f;
+	bool bDeploymentPaused = false;
+	bool bActivationInProgress = false;
+	bool bEvaluatingReadiness = false;
+	bool bReadinessEvaluationQueued = false;
+	bool bShuttingDown = false;
+	FName ActivationFailureReason;
+	bool bActivationFailureRetryable = false;
+	FTimerHandle ReadinessTimerHandle;
+	FDelegateHandle HostStateHandle;
+	FDelegateHandle WalkAreaHandle;
+	FDelegateHandle RestoreCompletedHandle;
 };
