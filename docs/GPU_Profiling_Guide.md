@@ -34,14 +34,14 @@
 ### 2.1. RDP 초기 설정
 RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 하드웨어 트레이스를 캡처하는 도구입니다.
 
-![RDP 초기 화면](images/01_rdp_initial.png)
+*참고 화면: RDP 초기 화면 — 이미지 원본(images/01_rdp_initial.png)은 저장소에 포함되어 있지 않다.*
 * `CONNECTION` 탭에서 로컬 시스템(127.0.0.1)에 연결합니다.
 * `Available features`에서 **`Profiling (+)`**을 클릭하여 프로파일링 기능을 활성화합니다.
 
-![DX12 동기화 권한 팝업](images/02_rdp_sync_popup.png)
+*참고 화면: DX12 동기화 권한 팝업 — 이미지 원본(images/02_rdp_sync_popup.png)은 저장소에 포함되어 있지 않다.*
 * **Sync Primitives 권한**: DirectX 12의 GPU 큐 동기화(Signal/Wait, Fence)를 기록하기 위해 `AddUserToGroup.bat` 실행 권한을 묻는 창입니다. `Yes`를 눌러 승인합니다.
 
-![RDP 캡처 준비 완료](images/03_rdp_ready.png)
+*참고 화면: RDP 캡처 준비 완료 — 이미지 원본(images/03_rdp_ready.png)은 저장소에 포함되어 있지 않다.*
 * 상태가 **`Status: Ready`**로 바뀌면 캡처 준비가 완료된 것입니다.
 
 ---
@@ -65,7 +65,7 @@ RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 
 
 게임 내에서 병목 상황으로 이동한 후 단축키 **`Ctrl + Alt + C`**를 누르면 1프레임 스냅샷(`.rgp`)이 생성됩니다.
 
-![RGP 캡처 목록](images/06_rdp_captured_list.png)
+*참고 화면: RGP 캡처 목록 — 이미지 원본(images/06_rdp_captured_list.png)은 저장소에 포함되어 있지 않다.*
 
 > **💡 왜 초 단위 로깅이 아니라 1프레임 캡처인가?**  
 > RGP는 클럭/스레드 단위로 나노초 레벨의 하드웨어를 추적하므로 데이터양이 방대합니다. 따라서 문제의 순간 1프레임을 현미경처럼 정밀 해부하는 스냅샷 방식을 사용합니다.
@@ -73,7 +73,7 @@ RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 
 ---
 
 ### 3.1. 프레임 개요 (Overview) 분석
-![RGP Overview](images/07_rgp_overview_breakdown.png)
+*참고 화면: RGP Overview — 이미지 원본(images/07_rgp_overview_breakdown.png)은 저장소에 포함되어 있지 않다.*
 
 * **하드웨어 사양**: AMD Ryzen 7 7800X3D + **Radeon RX 9070 XT**
 * **Frame duration**: `9.94 ms` (약 100.6 FPS)
@@ -83,7 +83,7 @@ RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 
 ---
 
 ### 3.2. Most Expensive Events (병목의 주범 탐색)
-![Most Expensive Events](images/08_rgp_most_expensive.png)
+*참고 화면: Most Expensive Events — 이미지 원본(images/08_rgp_most_expensive.png)은 저장소에 포함되어 있지 않다.*
 
 * **파레토 법칙 (80/20)**: 상위 5%의 이벤트가 **프레임 전체 시간의 86%를 독점**하고 있음.
 * **압도적인 1위 범인 (Event 1262)**:
@@ -94,11 +94,11 @@ RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 
 ---
 
 ### 3.3. 하드웨어 가동률 (Wavefront Occupancy) 정밀 진단
-![Wavefront Occupancy Timeline](images/09_rgp_occupancy_timeline.png)
+*참고 화면: Wavefront Occupancy Timeline — 이미지 원본(images/09_rgp_occupancy_timeline.png)은 저장소에 포함되어 있지 않다.*
 * 타임라인 중앙의 **길고 평평한 파란색 블록(2.6ms ~ 8.2ms)**이 바로 Event 1262 실행 구간입니다.
 * GPU 파이프라인을 100% 꽉 채우지 못하고 **25~35%의 낮은 점유율로 길게 늘어져서 실행**되고 있습니다.
 
-![선택 구간 통계](images/10_rgp_selection_stats.png)
+*참고 화면: 선택 구간 통계 — 이미지 원본(images/10_rgp_selection_stats.png)은 저장소에 포함되어 있지 않다.*
 * **`Mean wavefront duration: 180.069 μs` (★극단적 수치★)**:
   * 정상적인 언리얼 픽셀 셰이더의 스레드 수명은 **1 ~ 5 μs**입니다.
   * 무려 **180 μs**가 걸린다는 것은 픽셀 셰이더 내부에 거대한 루프, 복잡한 수학 공식, 다수의 텍스처 읽기가 돌고 있다는 확실한 증거입니다.
@@ -108,7 +108,7 @@ RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 
 ### 3.4. Event 1261과 Event 1262의 세부 비교
 | 항목 | Event 1261 | Event 1262 |
 | :--- | :--- | :--- |
-| **스크린샷** | ![Event 1261](images/11_rgp_event1261_detail.png) | ![Event 1262](images/12_rgp_event1262_detail.png) |
+| **스크린샷** | *참고 화면: Event 1261 — 이미지 원본(images/11_rgp_event1261_detail.png)은 저장소에 포함되어 있지 않다.* | *참고 화면: Event 1262 — 이미지 원본(images/12_rgp_event1262_detail.png)은 저장소에 포함되어 있지 않다.* |
 | **Duration** | `1.54 ms` | `5.71 ms` |
 | **PS Hash** | `0x942D7FFB395F7015B4D19C8FB9C0F5D6` | `0x942D7FFB395F7015B4D19C8FB9C0F5D6` (**동일**) |
 | **PSO Hash** | `0xF03FA771C2A50359` | `0xF03FA771C2A50359` (**동일**) |
@@ -124,7 +124,7 @@ RDP는 실행 중인 DirectX 12 / Vulkan 프로세스를 감지하여 초정밀 
 ## 4. 언리얼 머티리얼 통계와 코드 레벨의 원인 규명
 
 ### 4.1. 머티리얼 에디터 통계 확인
-![언리얼 머티리얼 통계](images/13_ue_material_stats.png)
+*참고 화면: 언리얼 머티리얼 통계 — 이미지 원본(images/13_ue_material_stats.png)은 저장소에 포함되어 있지 않다.*
 
 * **`Texture Lookups (Est.): PS(59)` (★가장 치명적인 원인★)**:
   * 픽셀 하나를 그릴 때 **텍스처 메모리를 59번이나 읽고 있습니다.** (일반 머티리얼: 5~10회).

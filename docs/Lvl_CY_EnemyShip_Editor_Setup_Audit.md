@@ -1,5 +1,7 @@
 # Lvl_CY EnemyShip 배치와 에디터 설정 정리
 
+최신 대조: 2026-10-08. 저장된 Lvl_CY를 읽기 전용으로 다시 확인했다. 51척, T1 근접 2명 @0/10, Boss Encounter 비활성, BossSpawnPoint ID=20이다. 세부 스탯·좌표 표는 2026-10-07 조사 기록이며 이번 점검에서 다시 수치 측정하지 않았다. PCG_Biome의 Brush Profile은 현재 `Custom`으로, [PCG 적용 가이드](PCG_Combat_Fix_Editor_Check.md)의 추가 적용 대상이다.
+
 확인일: 2026-10-07. 현재 작업 폴더에 저장된 Lvl_CY를 Unreal Engine 5.7로 직접 불러와 51척의 EnemyShip, 클래스 기본값, 컴포넌트, 아키타입, 스킬 모듈, 참조 DataTable을 조사했다. 에셋과 레벨을 저장하거나 설정을 변경하지 않았다. 플레이 실행 중 수치나 저장되지 않은 다른 에디터의 변경 내용은 조사 범위에 포함하지 않는다.
 
 ## 1. 기준 레벨과 설정의 우선순위
@@ -149,7 +151,7 @@ Normal 아키타입은 `Data/Archetype/Normal`, 특수 아키타입은 `Data/Arc
 - Retry: Max Spawn Retries 3, Spawn Retry Interval 0.5초.
 - Random Seed: 1337.
 
-플레이어 함선 인식뿐 아니라 함선의 항해 상태가 Approach/Orbit로 들어갈 때도 일반 갑판 배치를 요청한다. 최소 시작 지연과 배치 지연이 적용된다. BossEncounter의 Player Ship Sight 트리거와 일반 적 배치는 같은 조건으로 단정하지 않는다.
+일반 갑판 자동 배치는 현재 실제 Player 배 Sight, 함선 Active, 보행면 준비와 최소 시작/반응 지연을 확인한다. Approach/Orbit는 준비 재평가만 요청하며 Sight를 우회하지 않는다. BossEncounter는 별도의 활성·트리거·스토리 조건을 유지한다. 최신 생명주기와 복원 절차는 [스폰 검증 가이드](Deck_Enemy_Spawn_Refactoring_Editor_Test_Guide.md)를 따른다.
 
 보스 소환을 쓰려면 보스의 Summoned Enemy Class와 풀에 준비된 Spawn Plan Enemy Class가 정확히 일치해야 한다. 기본 BP와 T1 파생 BP는 별도 클래스다. 함선/보스 티어 숫자나 Encounter DT 수량만 바꿔서는 풀의 편성이 자동 생성되지 않는다.
 
@@ -163,12 +165,12 @@ Normal 아키타입은 `Data/Archetype/Normal`, 특수 아키타입은 `Data/Arc
 | L_MeleeEnemySpawnPoint_1 | 1 | LowerDeck | True | 680.39 | -0.0 | 351.0 |
 | U_MeleeEnemySpawnPoint_0 | 10 | UpperDeck | True | 0.0 | 0.0 | 678.0 |
 | U_RangedEnemySpawnPoint_1 | 11 | UpperDeck | True | 0.0 | 310.0 | 678.0 |
-| BossSpawnPoint | 12 | UpperDeck | False | -1096.5 | -35.82 | 678.0 |
+| BossSpawnPoint | 20 | UpperDeck | False | -1096.5 | -35.82 | 678.0 |
 | U_RangedEnemySpawnPoint_2 | 12 | UpperDeck | True | -0.0 | -330.0 | 678.0 |
 
-**현재 오류: BossSpawnPoint와 U_RangedEnemySpawnPoint_2의 ID가 둘 다 12다.** 51척 모두 같은 구성이다. 에디터의 Validate Deck Waypoints를 대표 일반함·중간함·최종함에서 실행했고 모두 DuplicatePointId 1개를 보고했다. 현재 일반 Spawn Plan은 0·10만 사용하므로 이 오류만으로 일반 적 두 마리의 생성 실패를 단정하지 않는다. 다만 ID 12를 사용하는 보스/추가 스폰을 구성하기 전에 해결해야 한다.
+**ID 중복은 정리되었다.** 2026-10-08 저장값에서 51척 모두 BossSpawnPoint=20, U_RangedEnemySpawnPoint_2=12다. 이전 DuplicatePointId 결과는 수정 전 조사 기록이다. 일반 Spawn Plan은 0·10을 유지한다.
 
-수정안: BossSpawnPoint는 12를 유지하고 U_RangedEnemySpawnPoint_2에 사용하지 않는 ID(예: 13)를 지정한 뒤, 그 앵커를 참조하는 Spawn Plan과 다른 설정도 같이 맞춘다. 이 문서 작성 과정에서 실제 값을 변경하지 않았다.
+보스 최초 스폰은 Boss Spawn Point Id=20으로 설정한다. 일반 추가 소환은 Can Spawn이 켜진 0·1·10·11·12 앵커를 사용한다. 이번 문서 점검은 에셋 값을 변경하지 않았다.
 
 새 앵커/배 모델을 구성할 때 직접 설정할 것:
 
