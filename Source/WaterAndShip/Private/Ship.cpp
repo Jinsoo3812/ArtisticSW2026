@@ -735,18 +735,18 @@ void AShip::Tick(float DeltaTime)
 			ShipBalanceStableSampleCount);
 	}
 
-	if (GEngine && IsLocallyControlled() && !IsEnemyShipForEffects())
-	{
-		const float SpeedCmPerSecond = GetVelocity().Size2D();
-		GEngine->AddOnScreenDebugMessage(
-			0x53484950,
-			0.0f,
-			FColor::Cyan,
-			FString::Printf(
-				TEXT("Player Ship Speed: %.0f cm/s (%.1f m/s)"),
-				SpeedCmPerSecond,
-				SpeedCmPerSecond / 100.0f));
-	}
+	// if (GEngine && IsLocallyControlled() && !IsEnemyShipForEffects())
+	// {
+		// const float SpeedCmPerSecond = GetVelocity().Size2D();
+		// GEngine->AddOnScreenDebugMessage(
+			// 0x53484950,
+			// 0.0f,
+			// FColor::Cyan,
+			// FString::Printf(
+				// TEXT("Player Ship Speed: %.0f cm/s (%.1f m/s)"),
+				// SpeedCmPerSecond,
+				// SpeedCmPerSecond / 100.0f));
+	// }
 
 	if (IsLocallyControlled() && bBombardmentTargeting)
 	{
