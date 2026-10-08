@@ -3,6 +3,7 @@
 #include "BlendStack/AnimNode_BlendStack.h"
 #include "BoneControllers/AnimNode_OrientationWarping.h"
 #include "BasePlayer.h"
+#include "Components/BaseHealthComponent.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "SwimmingComponent.h"
@@ -2834,19 +2835,22 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.LegSpreadAlpha = CurrentLegSpreadAlpha;
 
     // Smooth Foot Placement Alpha (smoothly eases in/out so feet never snap violently)
-    const bool bSuppressFootPlacement = bIsInAir || bIsDodging;
+    const bool bIsDead = CachedBasePlayer && CachedBasePlayer->GetHealthComponent()
+        && CachedBasePlayer->GetHealthComponent()->IsDead();
+    const bool bSuppressFootPlacement = bIsInAir || bIsDodging || bIsDead;
     const float TargetFootPlacementAlpha = bSuppressFootPlacement
         ? 0.0f
         : (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
             ? TurnInPlaceFootPlacementAlpha
             : LocomotionFootPlacementAlpha);
-    CurrentFootPlacementAlpha = FMath::FInterpTo(CurrentFootPlacementAlpha, TargetFootPlacementAlpha, DeltaSeconds, FootPlacementInterpSpeed);
+    CurrentFootPlacementAlpha = bIsDead ? 0.0f
+        : FMath::FInterpTo(CurrentFootPlacementAlpha, TargetFootPlacementAlpha, DeltaSeconds, FootPlacementInterpSpeed);
     ThreadSafeData.FootPlacementAlpha = CurrentFootPlacementAlpha;
 
     // Leg IK Alpha (0.0 during air/dodge, 1.0 normally; snaps instantly if LegIKInterpSpeed <= 0)
-    const bool bSuppressLegIK = bIsInAir || bIsDodging;
+    const bool bSuppressLegIK = bIsInAir || bIsDodging || bIsDead;
     const float TargetLegIKAlpha = bSuppressLegIK ? 0.0f : 1.0f;
-    if (LegIKInterpSpeed <= 0.0f)
+    if (bIsDead || LegIKInterpSpeed <= 0.0f)
     {
         CurrentLegIKAlpha = TargetLegIKAlpha;
     }

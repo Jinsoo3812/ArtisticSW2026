@@ -197,6 +197,7 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 	DOREPLIFETIME(ABasePlayer, bMountedDamageMode);
+	DOREPLIFETIME(ABasePlayer, bShipDeathMovement);
 }
 
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
@@ -273,7 +274,9 @@ void ABasePlayer::BeginPlay()
 
 	if (HealthComponent)
 	{
+		HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABasePlayer::HandleDeathStarted);
 		HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABasePlayer::HandleDeathFinished);
+		if (HealthComponent->IsDead()) PrepareDeathMovement();
 		if (HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
 		{
 			ApplyLocalDeathRagdoll();
@@ -375,6 +378,7 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (HealthComponent)
 	{
+		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABasePlayer::HandleDeathStarted);
 		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABasePlayer::HandleDeathFinished);
 	}
 	RetireLifeAbilityBindings();
@@ -391,12 +395,65 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 	return false;
 }
 
+bool ABasePlayer::IsMoveInputIgnored() const
+{
+	return bShipDeathMovement || (HealthComponent && HealthComponent->IsDead()) || Super::IsMoveInputIgnored();
+}
+
+void ABasePlayer::HandleDeathStarted(UBaseHealthComponent* InHealthComponent)
+{
+	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) PrepareDeathMovement();
+}
+
+void ABasePlayer::OnRep_ShipDeathMovement()
+{
+	if (bShipDeathMovement) PrepareDeathMovement();
+}
+
+void ABasePlayer::PrepareDeathMovement()
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	if (!Movement || !Capsule || bShipDeathMovementPrepared) return;
+	UPrimitiveComponent* Base = GetMovementBase();
+	if (!bShipDeathMovement)
+	{
+		if (!Movement->IsMovingOnGround() || !IsValid(Base) || !IsValid(Base->GetOwner()) || !Base->GetOwner()->IsA<AShip>()
+			|| Base->GetCollisionProfileName() != TEXT("ShipDeck")) return;
+		bShipDeathMovement = true;
+		if (HasAuthority()) ForceNetUpdate();
+	}
+	bShipDeathMovementPrepared = true;
+	ConsumeMovementInputVector();
+	StopJumping();
+	bSprintInputHeld = false;
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ClearMoveInput();
+		AnimStateComponent->SetSprinting(false);
+	}
+	Movement->StopMovementImmediately();
+	Movement->ClearAccumulatedForces();
+	Movement->bRunPhysicsWithNoController = true;
+	Movement->Activate();
+	Movement->SetComponentTickEnabled(true);
+	Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	if (Movement->MovementMode == MOVE_None) Movement->SetMovementMode(MOVE_Walking);
+	UE_LOG(LogSWRoom, Display, TEXT("[PlayerDeath] ShipCMC Player=%s Authority=%d Base=%s Mode=%d"),
+		*GetName(), HasAuthority(), *GetNameSafe(Base), static_cast<int32>(Movement->MovementMode));
+}
+
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
 	if (InHealthComponent != HealthComponent || !HealthComponent
 		|| HealthComponent->IsLifeInitializing()
-		|| HealthComponent->GetDeathState() != EBaseDeathState::DeathFinished
-		|| bLifeAbilityBindingsRetired) return;
+		|| HealthComponent->GetDeathState() != EBaseDeathState::DeathFinished) return;
+	if (bLifeAbilityBindingsRetired)
+	{
+		ApplyLocalDeathRagdoll();
+		return;
+	}
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathFinished Player=%s Authority=%d Controller=%s PlayerState=%s Health=%s"),
 		*GetName(), HasAuthority(), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), *GetNameSafe(InHealthComponent));
 	if (HasAuthority())
@@ -431,6 +488,7 @@ void ABasePlayer::RetireLifeAbilityBindings()
 void ABasePlayer::ApplyLocalDeathRagdoll()
 {
 	if (bLocalDeathRagdollApplied) return;
+	PrepareDeathMovement();
 	Super::ApplyLocalDeathRagdoll();
 	USkeletalMeshComponent* RagdollMesh = GetMesh();
 	if (!RagdollMesh) return;
@@ -1263,6 +1321,11 @@ void ABasePlayer::OnRep_PlayerState()
 	if (bLifeAbilityBindingsRetired || (HealthComponent
 		&& HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished))
 	{
+		if (HealthComponent && !HealthComponent->IsLifeInitializing()
+			&& HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
+		{
+			ApplyLocalDeathRagdoll();
+		}
 		RetireLifeAbilityBindings();
 		return;
 	}

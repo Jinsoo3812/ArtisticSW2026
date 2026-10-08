@@ -40,6 +40,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Death")
 	virtual void ApplyLocalDeathRagdoll();
 
+	virtual void PrepareDeathMovement() {}
+	virtual bool ShouldKeepCharacterMovementOnDeath() const { return false; }
+
 	/** Restores the presentation state required before a pooled character is reused. */
 	UFUNCTION(BlueprintCallable, Category = "Death|Pooling")
 	virtual void ResetLocalDeathRagdoll();

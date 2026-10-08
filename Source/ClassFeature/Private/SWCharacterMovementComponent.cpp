@@ -5,9 +5,30 @@
 #include "Misc/ScopeExit.h"
 #include "Ship.h"
 #include "SwimmingComponent.h"
+#include "BasePlayer.h"
+#include "Components/BaseHealthComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 
 namespace
 {
+	bool IsDeadPlayerMovement(const ACharacter* Character)
+	{
+		const ABasePlayer* Player = Cast<ABasePlayer>(Character);
+		return Player && (Player->ShouldKeepCharacterMovementOnDeath()
+			|| (Player->GetHealthComponent() && Player->GetHealthComponent()->IsDead()));
+	}
+
+	USkeletalMeshComponent* GetShipDeathRagdoll(ACharacter* Character)
+	{
+		const ABasePlayer* Player = Cast<ABasePlayer>(Character);
+		UPrimitiveComponent* Base = Character ? Character->GetMovementBase() : nullptr;
+		USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+		return Player && Player->ShouldKeepCharacterMovementOnDeath() && IsValid(Base)
+			&& IsValid(Base->GetOwner()) && Base->GetOwner()->IsA<AShip>()
+			&& Base->GetCollisionProfileName() == TEXT("ShipDeck")
+			&& Mesh && Mesh->IsAnySimulatingPhysics() ? Mesh : nullptr;
+	}
+
 	constexpr double MaxSurfaceWaveTimeAgeSeconds = 2.0;
 	constexpr double MaxSurfaceWaveTimeLeadSeconds = 0.25;
 	constexpr double SurfaceWaveTimeDeltaToleranceSeconds = 0.25;
@@ -400,9 +421,49 @@ void USWCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations
 	}
 }
 
+FVector USWCharacterMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const
+{
+	return IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : Super::ConstrainInputAcceleration(InputAcceleration);
+}
+
+void USWCharacterMovementComponent::UpdateBasedMovement(float DeltaSeconds)
+{
+	USkeletalMeshComponent* Mesh = GetShipDeathRagdoll(CharacterOwner);
+	TWeakObjectPtr<UPrimitiveComponent> Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	const FVector OldLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
+	// The engine already transports physics bodies when the base itself simulates.
+	const bool bEngineTransportsBodies = Base.IsValid() && Base->IsSimulatingPhysics();
+	Super::UpdateBasedMovement(DeltaSeconds);
+	if (Mesh && !bEngineTransportsBodies && UpdatedComponent && Base.IsValid()
+		&& CharacterOwner->GetMovementBase() == Base.Get())
+	{
+		const FVector Delta = UpdatedComponent->GetComponentLocation() - OldLocation;
+		if (!Delta.IsNearlyZero()) Mesh->ApplyDeltaToAllPhysicsTransforms(Delta, FQuat::Identity);
+	}
+}
+
+void USWCharacterMovementComponent::SmoothCorrection(const FVector& OldLocation, const FQuat& OldRotation,
+	const FVector& NewLocation, const FQuat& NewRotation)
+{
+	USkeletalMeshComponent* Mesh = GetShipDeathRagdoll(CharacterOwner);
+	const FVector BeforeCorrection = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
+	Super::SmoothCorrection(OldLocation, OldRotation, NewLocation, NewRotation);
+	if (Mesh && UpdatedComponent)
+	{
+		const FVector Delta = UpdatedComponent->GetComponentLocation() - BeforeCorrection;
+		if (!Delta.IsNearlyZero()) Mesh->ApplyDeltaToAllPhysicsTransforms(Delta, FQuat::Identity);
+	}
+}
+
 void USWCharacterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 {
 	Super::UpdateFromCompressedFlags(Flags);
+	if (IsDeadPlayerMovement(CharacterOwner))
+	{
+		CharacterOwner->StopJumping();
+		SetSwimmingVerticalInput(false, false);
+		return;
+	}
 
 	const bool bDive = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
 	const bool bAscend = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
@@ -491,7 +552,8 @@ void USWCharacterMovementComponent::MoveAutonomous(
 		}
 	}
 
-	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags, NewAccel);
+	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags,
+		IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : NewAccel);
 }
 
 void USWCharacterMovementComponent::OnClientTimeStampResetDetected()
@@ -506,6 +568,8 @@ void USWCharacterMovementComponent::OnClientTimeStampResetDetected()
 void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+	if (const ABasePlayer* Player = Cast<ABasePlayer>(CharacterOwner);
+		Player && Player->ShouldKeepCharacterMovementOnDeath()) return;
 
 	if (MovementMode == MOVE_Walking)
 	{
