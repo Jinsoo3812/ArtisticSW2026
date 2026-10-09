@@ -4,12 +4,17 @@
 #include "CollisionQueryParams.h"
 
 class AArrowProjectile;
+class UPrimitiveComponent;
 class UWorld;
 struct FProjectileShotSnapshot;
 
 /** Shared obstacle policy for AI admission and actual arrow movement. Never ignores a carrier ship. */
 namespace ArrowCollisionQuery
 {
+	/** Bounds only: generated meshes owned by a PCG volume remain physical obstacles. */
+	ARTISTICSWCORE_API bool IsPCGVolumeBounds(const UPrimitiveComponent* Component);
+	ARTISTICSWCORE_API bool TraceAimTarget(const UWorld* World, const FVector& Start, const FVector& End,
+		const FCollisionQueryParams& Params, FHitResult& OutHit);
 	/** Camera intent uses a ray; muzzle/flight clearance uses the authored small box. */
 	ARTISTICSWCORE_API bool TraceObstacles(const UWorld* World, const FVector& Start, const FVector& End,
 		const FCollisionQueryParams& Params, FHitResult& OutHit);

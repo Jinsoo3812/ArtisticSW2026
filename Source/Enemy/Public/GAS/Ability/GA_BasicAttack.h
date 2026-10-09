@@ -95,6 +95,8 @@ protected:
 		const FWeaponDefinition& WeaponDefinition,
 		FEnemyBasicAttackExecutionData& OutData) const;
 	virtual void OnAttackCommitted();
+	/** Mobility attacks defer weapon windows until their attack montage starts. */
+	virtual bool IsHitScanAllowed() const { return true; }
 	bool CacheAttackData(
 		ABaseEnemy* EnemyOwner,
 		FEnemyBasicAttackExecutionData& OutData);

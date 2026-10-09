@@ -10,6 +10,14 @@ class UPrimitiveComponent;
 class UDeckWaypointComponent;
 class ACharacter;
 struct FDeckWalkRuntime;
+/** Per-query constraints; never changes the ship's shared graph. */
+struct FDeckWalkPathConstraints
+{
+	const ACharacter* Requester = nullptr;
+	TFunction<bool(const FDeckWalkLocation&, const FDeckWalkLocation&)> CanTraverse;
+	int32 MaximumCollisionQueries = 256;
+	int32* RemainingCollisionQueries = nullptr;
+};
 struct FDeckWalkRuntimeDeleter
 {
 	void operator()(FDeckWalkRuntime* Runtime) const;
@@ -28,6 +36,8 @@ class ENEMY_API UDeckWalkAreaComponent : public UActorComponent
 	friend class FDeckFixedAnchorLifecycleTest;
 #endif
 public:
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnReadinessChanged, bool, int32);
+	FOnReadinessChanged OnReadinessChanged;
 	UDeckWalkAreaComponent();
 	virtual ~UDeckWalkAreaComponent() override;
 	virtual void BeginPlay() override;
@@ -36,6 +46,7 @@ public:
 	void Rebuild();
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck Walk")
 	bool IsReady() const { return bReady; }
+	bool CanPatrolAcrossSurfaces() const { return bPatrolAcrossSurfaces; }
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck Walk")
 	int32 GetSurfaceNodeCount(FName SurfaceId) const;
 	/** Server-side build snapshot; false before resolution or on clients. */
@@ -48,20 +59,32 @@ public:
 
 	bool ResolveWaypoint(const UDeckWaypointComponent& Point, FDeckWalkLocation& Out) const;
 	bool ResolveActorOnDeck(const AActor& Actor, FDeckWalkLocation& Out) const;
+	int32 GetRevision() const { return Revision; }
+	bool IsTrackingSupport(const UPrimitiveComponent* Component) const;
+	/** Returns tracking geometry, not a walk handle; clearance is checked at the selected movement goal. */
+	bool ResolveTrackingProjection(const FVector& LocalSupport, FName PreferredSurface, float XYTolerance,
+		float MaximumHeight, FVector& OutCenter, FName& OutSurface, FName& OutReason) const;
 	bool ResolveLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
 	/** Keeps the requested XY after validating floor, clearance and its connection to the graph. */
 	bool ResolvePreciseLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
 	bool ResolveSpawnTransform(const UDeckWaypointComponent& Point, float CapsuleHalfHeight, FTransform& OutTransform) const;
 	bool FindPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
-		TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces = true) const;
+		TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces = true,
+		const FDeckWalkPathConstraints* Constraints = nullptr) const;
 	bool FindPathInDistanceBand(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
-		const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath) const;
+		const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath,
+		const FDeckWalkPathConstraints* Constraints = nullptr) const;
+	/** Actual movement capsule/responses, including live Pawns and geometry. */
+	bool TraceMovementSegment(const ACharacter& Character, const FVector& WorldStart,
+		const FVector& WorldEnd, FHitResult& OutHit) const;
 	bool PickPatrolPath(const AActor& Actor, FRandomStream& Random, TArray<FDeckWalkLocation>& OutPath) const;
 	bool IsLocationValid(const FDeckWalkLocation& Location) const;
 	void GetReachableLocations(const FDeckWalkLocation& Start, TArray<FDeckWalkLocation>& Out, bool bCrossSurfaces = true) const;
 	bool ResolveLocationTransform(const FDeckWalkLocation& Location, const ACharacter& Character, FTransform& Out) const;
 	bool IsLocationAvailable(const FDeckWalkLocation& Location, const ACharacter& Requester) const;
 	bool TryClaimLocation(const FDeckWalkLocation& Location, ACharacter& Requester);
+	/** Restores a still-valid previous claim if route replacement fails. */
+	void RestoreLocationClaim(const FDeckWalkLocation& Previous, ACharacter& Requester);
 	void ReleaseLocationClaim(const AActor* Requester);
 	bool IsSupportedSegment(const FDeckWalkLocation& Start, const FDeckWalkLocation& End) const;
 	bool IsSupportedSegment(const FDeckWalkLocation& Start, const FVector& LocalEnd) const;
@@ -76,6 +99,9 @@ private:
 	UStaticMeshComponent* GetFrame() const;
 	bool FindNearestNode(const FVector& LocalFloor, FName SurfaceId, float XYTolerance, float ZTolerance, int32& OutNode) const;
 	FDeckWalkLocation MakeLocation(int32 Node) const;
+	bool FindConstrainedPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
+		bool bCrossSurfaces, const TArray<uint8>* AllowedNodes,
+		const FDeckWalkPathConstraints* Constraints, TArray<int32>& OutNodes) const;
 	bool ResolveSources();
 	bool FilterSeedRegions();
 
@@ -88,6 +114,8 @@ private:
 	TArray<FDeckWalkSurfaceConnection> WalkingConnections;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Surfaces")
 	bool bPatrolAcrossSurfaces = false;
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Tracking", meta = (TitleProperty = "SurfaceId"))
+	TArray<FDeckTrackingSupportRegion> TrackingSupportRegions;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Sampling", meta = (ClampMin = "30.0", Units = "cm"))
 	float CellSize = 75.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Sampling", meta = (ClampMin = "0.0", ClampMax = "60.0"))

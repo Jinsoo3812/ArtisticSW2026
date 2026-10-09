@@ -3,11 +3,14 @@
 #include "Misc/AutomationTest.h"
 #include "CollisionChannels.h"
 #include "Components/BoxComponent.h"
+#include "Components/BrushComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Item/Projectiles/ArrowCollisionQuery.h"
 #include "Item/Projectiles/PlayerArrowProjectile.h"
+#include "PCGVolume.h"
+#include "PhysicsEngine/BodySetup.h"
 
 namespace PlayerArrowCollisionTests
 {
@@ -79,6 +82,71 @@ bool FPlayerArrowIgnoresShooterTest::RunTest(const FString& Parameters)
 
 		Arrow->Destroy();
 	}
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FArrowIgnoresPCGBoundsTest,
+	"ArtisticSW.Item.Arrow.IgnoresPCGBounds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FArrowIgnoresPCGBoundsTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
+		EAutomationExpectedErrorFlags::Contains, 0);
+	PlayerArrowCollisionTests::FWorldScope Scope;
+	APCGVolume* Volume = Scope.World->SpawnActor<APCGVolume>();
+	AActor* ProfileBounds = Scope.World->SpawnActor<AActor>();
+	AActor* Wall = Scope.World->SpawnActor<AActor>();
+	AArrowProjectile* Arrow = Scope.World->SpawnActor<AArrowProjectile>();
+	if (!TestNotNull(TEXT("PCG volume"), Volume) || !TestNotNull(TEXT("Profile bounds"), ProfileBounds)
+		|| !TestNotNull(TEXT("Wall"), Wall) || !TestNotNull(TEXT("Arrow"), Arrow)) return false;
+
+	UBrushComponent* Brush = Volume->GetBrushComponent();
+	Brush->UnregisterComponent();
+	Brush->BrushBodySetup = NewObject<UBodySetup>(Brush);
+	FKBoxElem BoundsBox;
+	BoundsBox.X = BoundsBox.Y = BoundsBox.Z = 100.0f;
+	Brush->BrushBodySetup->AggGeom.BoxElems.Add(BoundsBox);
+	Brush->BrushBodySetup->CollisionTraceFlag = CTF_UseSimpleAsComplex;
+	Brush->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Brush->SetCollisionObjectType(ECC_WorldStatic);
+	Brush->SetCollisionResponseToAllChannels(ECR_Block); // Custom profile, including WeaponAim.
+	Brush->RegisterComponent();
+	TestTrue(TEXT("Custom PCG brush is bounds"), ArrowCollisionQuery::IsPCGVolumeBounds(Brush));
+	UBoxComponent* NamedBounds = PlayerArrowCollisionTests::AddBlockingBox(ProfileBounds, FVector(100, 0, 0));
+	NamedBounds->SetCollisionProfileName(TEXT("PCGVolumeBounds"));
+	PlayerArrowCollisionTests::AddBlockingBox(Wall, FVector(300, 0, 0));
+	const FVector End(500, 0, 0);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ArrowPCGBoundsTest));
+	Params.bFindInitialOverlaps = true;
+	FHitResult Hit;
+	TestTrue(TEXT("Raw query starts inside the Custom PCG brush"),
+		Scope.World->SweepSingleByProfile(Hit, FVector::ZeroVector, End, FQuat::Identity, TEXT("ArrowObstacle"),
+			FCollisionShape::MakeBox(FVector(8, 1, 1)), Params) && Hit.GetComponent() == Brush && Hit.bStartPenetrating);
+	TestTrue(TEXT("Flight skips Custom and named bounds, then hits the real wall"),
+		ArrowCollisionQuery::SweepFlight(*Arrow, FVector::ZeroVector, End, FQuat::Identity, Hit) && Hit.GetActor() == Wall);
+	TestTrue(TEXT("Obstacle aim ray also reaches the wall"),
+		ArrowCollisionQuery::TraceObstacles(Scope.World, FVector::ZeroVector, End, Params, Hit) && Hit.GetActor() == Wall);
+	TestTrue(TEXT("WeaponAim skips Custom bounds even when they block its channel"),
+		ArrowCollisionQuery::TraceAimTarget(Scope.World, FVector::ZeroVector, End, Params, Hit) && Hit.GetActor() == Wall);
+
+	// Generated geometry may share its owner with the bounds. Never exclude that entire actor.
+	UBoxComponent* GeneratedMeshCollision = NewObject<UBoxComponent>(Volume);
+	Volume->AddInstanceComponent(GeneratedMeshCollision);
+	GeneratedMeshCollision->SetBoxExtent(FVector(20));
+	GeneratedMeshCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	GeneratedMeshCollision->SetCollisionObjectType(ECC_WorldStatic);
+	GeneratedMeshCollision->SetCollisionResponseToAllChannels(ECR_Block);
+	GeneratedMeshCollision->RegisterComponent();
+	GeneratedMeshCollision->SetWorldLocation(FVector(200, 0, 0));
+	TestFalse(TEXT("PCG generated geometry is not bounds"), ArrowCollisionQuery::IsPCGVolumeBounds(GeneratedMeshCollision));
+	TestTrue(TEXT("Flight still hits generated geometry owned by the same PCG volume"),
+		ArrowCollisionQuery::SweepFlight(*Arrow, FVector::ZeroVector, End, FQuat::Identity, Hit)
+		&& Hit.GetComponent() == GeneratedMeshCollision);
+	GeneratedMeshCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Wall->Destroy();
+	TestFalse(TEXT("Only bounds remain: flight passes through"),
+		ArrowCollisionQuery::SweepFlight(*Arrow, FVector::ZeroVector, End, FQuat::Identity, Hit));
 	return !HasAnyErrors();
 }
 

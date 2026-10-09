@@ -4,6 +4,8 @@
 #include "Components/SceneComponent.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "NiagaraComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 
 ASWPathGameplayCueNotify::ASWPathGameplayCueNotify()
 {
@@ -23,6 +25,8 @@ ASWPathGameplayCueNotify::ASWPathGameplayCueNotify()
 	PathNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("PathNiagara"));
 	PathNiagara->SetupAttachment(SceneRoot);
 	PathNiagara->SetAutoActivate(false);
+	DecalMaterialOverride = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(
+		TEXT("/Game/GameplayCues/Path/Materials/M_EnemyAttackTelegraph.M_EnemyAttackTelegraph")));
 }
 
 void ASWPathGameplayCueNotify::Tick(float DeltaSeconds)
@@ -74,6 +78,9 @@ bool ASWPathGameplayCueNotify::InitializePath(const FGameplayCueParameters& Para
 	SetActorTickEnabled(true);
 	if (PathDecal)
 	{
+		if (UMaterialInterface* Material = DecalMaterialOverride.LoadSynchronous()) PathDecal->SetDecalMaterial(Material);
+		if (UMaterialInstanceDynamic* Material = PathDecal->CreateDynamicMaterialInstance())
+			Material->SetVectorParameterValue(DecalColorParameter, DecalColor);
 		PathDecal->SetVisibility(true);
 	}
 	if (PathNiagara && !PathNiagara->IsActive())

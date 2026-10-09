@@ -5,6 +5,7 @@
 #include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "AI/EnemyTerritoryComponent.h"
 #include "AISystem.h"
 #include "BaseEnemy.h"
@@ -172,6 +173,7 @@ void ABaseAIController::OnUnPossess()
 	DiscardDeferredDeckDecision();
 	if (APawn* ControlledEnemy = GetPawn())
 	{
+		if (auto* Resolver = ControlledEnemy->FindComponentByClass<UDeckCombatTargetResolverComponent>()) Resolver->Reset();
 		if (UEnemyAlarmComponent* Alarm = ControlledEnemy->FindComponentByClass<UEnemyAlarmComponent>()) Alarm->ResetForReuse();
 		if (UDeckEnemyCombatComponent* Combat = ControlledEnemy->FindComponentByClass<UDeckEnemyCombatComponent>()) Combat->ResetCombat();
 	}
@@ -227,6 +229,8 @@ bool ABaseAIController::SetEnemyState(EEnemyAIState NewState)
 	{
 		if (UEnemyAlarmComponent* Alarm = ControlledEnemy->FindComponentByClass<UEnemyAlarmComponent>())
 			Alarm->SetCombatActive(NewState == EEnemyAIState::Combat);
+		if (NewState != OldState && NewState != EEnemyAIState::Combat)
+			if (auto* Resolver = ControlledEnemy->FindComponentByClass<UDeckCombatTargetResolverComponent>()) Resolver->Reset();
 		if (ADeckEnemy* Deck = Cast<ADeckEnemy>(ControlledEnemy); Deck && OldState == EEnemyAIState::Combat && NewState != OldState)
 		{
 			Deck->GetDeckCombatComponent()->ResetCombat();
@@ -267,6 +271,8 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 		Deck->GetDeckCombatComponent()->ClearRecovery();
 		Deck->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
 	}
+	if (CachedTargetActor != TargetActor && GetPawn())
+		if (auto* Resolver = GetPawn()->FindComponentByClass<UDeckCombatTargetResolverComponent>()) Resolver->Reset();
 	CachedTargetActor = TargetActor;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
 	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
@@ -300,6 +306,8 @@ void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 	DiscardDeferredDeckDecision();
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor.Reset();
+	if (GetPawn())
+		if (auto* Resolver = GetPawn()->FindComponentByClass<UDeckCombatTargetResolverComponent>()) Resolver->Reset();
 	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
 	{
 		RangedEnemy->ClearCombatTarget();

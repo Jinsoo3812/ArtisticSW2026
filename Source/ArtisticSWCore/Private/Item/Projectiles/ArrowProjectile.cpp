@@ -361,6 +361,12 @@ float AArrowProjectile::GetFlightGravityZ() const
 	return GetWorld() ? GetWorld()->GetGravityZ() * FlightGravityScale : 0.0f;
 }
 
+float AArrowProjectile::ResolveInitialLaunchSpeed(float BowSpeed) const
+{
+	const float Speed = InitialLaunchSpeed == 0.0f ? BowSpeed : InitialLaunchSpeed;
+	return FMath::IsFinite(Speed) && Speed > 0.0f ? Speed : 0.0f;
+}
+
 FCollisionQueryParams AArrowProjectile::MakeFlightQueryParams() const
 {
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(ArrowCollision), false, this);

@@ -4,6 +4,7 @@
 #include "BaseEnemy.h"
 #include "DeckAI/DeckWalkTypes.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
+#include "BossAI/BossDeckPointSelector.h"
 #include "ShipBossEnemy.generated.h"
 
 USTRUCT()
@@ -31,6 +32,7 @@ class ADeckEnemy;
 class UBossBasicAttackSet;
 class USphereComponent;
 class UDeckWalkRouteComponent;
+class UDeckCombatTargetResolverComponent;
 
 /** Server-authored boss pawn whose tactical positions live on a moving enemy ship. */
 UCLASS(Blueprintable)
@@ -39,7 +41,7 @@ class ENEMY_API AShipBossEnemy : public ABaseEnemy, public IDeckWaypointMovement
 	GENERATED_BODY()
 
 public:
-	AShipBossEnemy();
+	AShipBossEnemy(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
@@ -86,6 +88,8 @@ public:
 	bool HasDestination() const;
 	bool TrySetDestinationLocation(const FDeckWalkLocation& Location, bool bWalking);
 	void ClearDestination();
+	void TrackWalkingTarget(AActor* Target, const FBossDestinationSelectionSettings& Settings);
+	void ReplanWalkingTarget();
 	const FDeckWalkLocation& GetPreviousLocation() const { return PreviousLocation; }
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Point")
@@ -198,6 +202,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Walk Area")
 	TObjectPtr<UDeckWalkRouteComponent> DeckWalkRouteComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Tracking")
+	TObjectPtr<UDeckCombatTargetResolverComponent> DeckTargetResolver;
+
 	/** Visual/cadence variations for the one currently equipped weapon. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Combat")
 	TObjectPtr<UBossBasicAttackSet> BasicAttackSet = nullptr;
@@ -223,4 +230,9 @@ protected:
 	bool bHiddenRelocationActive = false;
 	FSWRoomShipBossState PendingRoomState;
 	bool bHasPendingRoomState = false;
+	TWeakObjectPtr<AActor> WalkingTarget;
+	FBossDestinationSelectionSettings WalkingSettings;
+	FVector PlannedWalkingCenter = FVector::ZeroVector;
+	FName PlannedWalkingSurface;
+	double NextWalkingReplanTime = 0.;
 };

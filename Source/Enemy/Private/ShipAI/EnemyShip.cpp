@@ -54,6 +54,8 @@
 #include "SWCabinWaterCullComponent.h"
 #include "DeckAI/DeckSpawnAnchorValidator.h"
 #include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
+#include "Misc/ScopeExit.h"
 #include "StoryFacadeSubsystem.h"
 #include "Network/SWFinalEncounterDiagnostics.h"
 
@@ -96,7 +98,7 @@ void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 	State.CrewIds.Sort();
 	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
 	Part.Domain = ESWRoomDomain::Enemy;
-	Part.Version = 3;
+	Part.Version = 4;
 	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
 	{
 		OutParts.Pop();
@@ -111,12 +113,14 @@ bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutEr
 {
 	if (Part.Domain == ESWRoomDomain::Ship) return AShip::RestoreRoomDomain(Part, OutError);
 	FSWRoomEnemyShipState State;
-	if (Part.Domain != ESWRoomDomain::Enemy || (Part.Version != 2 && Part.Version != 3)
+	if (Part.Domain != ESWRoomDomain::Enemy || (Part.Version != 2 && Part.Version != 3 && Part.Version != 4)
 		|| !FSWRoomStructCodec::Read(Part.Bytes, State))
 	{
 		OutError = TEXT("Invalid enemy ship state");
 		return false;
 	}
+	if (Part.Version == 4 && State.DeckSpawner.LifecycleVersion != 1)
+	{ OutError = TEXT("Enemy ship snapshot lacks deck lifecycle version"); return false; }
 	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->RestoreRoomState(State.DeckSpawner, OutError)) return false;
 	if (BossEncounterComponent && !BossEncounterComponent->RestoreRoomState(State.BossEncounter, OutError)) return false;
 	bDeathHandled = State.bDeathHandled;
@@ -125,7 +129,7 @@ bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutEr
 	bHasEverHadLivingCrew = State.bHasEverHadLivingCrew;
 	if (IsFinalBossSquadShip())
 	{
-		if (Part.Version == 3) bStoryGateOpen = State.bStoryGateOpen;
+		if (Part.Version >= 3) bStoryGateOpen = State.bStoryGateOpen;
 		else if (UGameInstance* GameInstance = GetGameInstance())
 		{
 			if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
@@ -168,6 +172,28 @@ bool AEnemyShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActor
 	ApplyStoryGatePresentation();
 	ApplyStoryGateToSpawnedChests();
 	return true;
+}
+
+bool AEnemyShip::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+	float TimeToleranceSeconds, TArray<FString>& OutFields) const
+{
+	if (Expected.Domain == ESWRoomDomain::Ship) return AShip::CompareRoomDomain(Expected, Actual, TimeToleranceSeconds, OutFields);
+	if (Expected.Domain == ESWRoomDomain::Enemy && Actual.Domain == Expected.Domain
+		&& (Expected.Version == 2 || Expected.Version == 3) && Actual.Version == 4)
+	{
+		FSWRoomEnemyShipState Before, After;
+		if (!FSWRoomStructCodec::Read(Expected.Bytes, Before) || !FSWRoomStructCodec::Read(Actual.Bytes, After))
+		{ OutFields.Add(TEXT("Field=Payload Expected=Readable Actual=Invalid")); return false; }
+		if (Expected.Version == 2) After.bStoryGateOpen = Before.bStoryGateOpen;
+		auto& A = After.DeckSpawner; const auto& B = Before.DeckSpawner;
+		A.LifecycleVersion = B.LifecycleVersion; A.RequestState = B.RequestState;
+		A.EncounterGeneration = B.EncounterGeneration; A.RequestId = B.RequestId; A.PlanSignature = B.PlanSignature;
+		A.SlotResults = B.SlotResults; A.SlotEnemyIds = B.SlotEnemyIds; A.InitialTargetId = B.InitialTargetId;
+		A.ReactionDelayRemaining = B.ReactionDelayRemaining; A.PendingSightRemaining = B.PendingSightRemaining;
+		A.ReadinessTimeoutRemaining = B.ReadinessTimeoutRemaining; A.TargetWaitRemaining = B.TargetWaitRemaining;
+		return FSWRoomStructCodec::CompareSaveGameStruct(FSWRoomEnemyShipState::StaticStruct(), &Before, &After, TimeToleranceSeconds, OutFields);
+	}
+	return FSWRoomStructCodec::Compare<FSWRoomEnemyShipState>(Expected, Actual, TimeToleranceSeconds, OutFields);
 }
 
 namespace
@@ -276,6 +302,11 @@ void AEnemyShip::ApplyChestSpawnPointSettings()
 void AEnemyShip::BeginPlay()
 {
 	Super::BeginPlay();
+	if (HasAuthority())
+	{
+		if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>())
+			RoomRestoreCompletedHandle = Room->OnRestoreCompleted.AddUObject(this, &AEnemyShip::HandleRoomRestoreCompleted);
+	}
 	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
 	if (BuoyancyRoot)
@@ -407,6 +438,9 @@ void AEnemyShip::BeginPlay()
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEndingPlay = true;
+	PublishRuntimeState();
+	if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>())
+		Room->OnRestoreCompleted.Remove(RoomRestoreCompletedHandle);
 	if (bStoryGateCannonTagAdded)
 	{
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent()) ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
@@ -522,6 +556,11 @@ void AEnemyShip::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 	}
 }
 
+void AEnemyShip::NotifyPlayerShipSightLost(AShip* PlayerShip)
+{
+	if (HasAuthority() && DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->RequestReadinessEvaluation();
+}
+
 bool AEnemyShip::AreAllOwnedDeckEnemiesDefeated() const
 {
 	return DeckEnemySpawnerComponent
@@ -587,8 +626,8 @@ void AEnemyShip::HandleNavigationStateChanged(
 	if (NewState == ENavalCombatState::Approach
 		|| NewState == ENavalCombatState::Orbit)
 	{
-		DeckEnemySpawnerComponent->RequestDeployment(
-			NavigationComponent ? NavigationComponent->GetTargetShip() : nullptr);
+		// Navigation target selection is distance-based; it must not bypass Sight.
+		DeckEnemySpawnerComponent->RequestReadinessEvaluation();
 	}
 }
 
@@ -907,6 +946,7 @@ bool AEnemyShip::CanEnterDistanceOptimizationDormancy() const
 	{
 		return false;
 	}
+	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->CanSuspendForDistanceOptimization()) return false;
 
 	FVector HomeLocation;
 	if (!NavigationComponent->GetResolvedHomeLocation(HomeLocation))
@@ -941,12 +981,8 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 		FlushNetDormancy();
 		SetNetDormancy(DORM_Awake);
 	}
-	else
-	{
-		// This also snaps a ship that stopped anywhere inside its arrival radius to
-		// the exact authored home transform before its physics body is removed.
-		ResetAfterReturnToSpawn();
-	}
+	// Distance suspension preserves encounter/health. Only explicit home-return
+	// completion may reset the ship and its pool for a new encounter.
 
 	bDistanceOptimizationDormant = bDormant;
 	ApplyEffectiveDormancyState();
@@ -1130,7 +1166,14 @@ void AEnemyShip::ApplyStoryGateToSpawnedChests()
 
 void AEnemyShip::ApplyEffectiveDormancyState()
 {
-	const bool bShouldDormant = bDistanceOptimizationDormant || IsStoryGateDormant();
+	if (bApplyingRuntimeState) return;
+	bApplyingRuntimeState = true;
+	ON_SCOPE_EXIT { bApplyingRuntimeState = false; PublishRuntimeState(); };
+	const auto* Room = HasAuthority() ? GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>() : nullptr;
+	const bool bRestoring = Room && Room->IsRestoringSnapshot();
+	const bool bShouldDormant = !HasAuthority() && RuntimeState.Revision != 0
+		? (RuntimeState.Phase == EEnemyShipRuntimePhase::Dormant || RuntimeState.Phase == EEnemyShipRuntimePhase::Restoring)
+		: bDistanceOptimizationDormant || IsStoryGateDormant() || bRestoring;
 	if (bShouldDormant == bEffectiveDormancyApplied) return;
 	if (IsFinalBossSquadShip())
 		FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), bShouldDormant ? TEXT("Dormant") : TEXT("Active"),
@@ -1255,6 +1298,50 @@ void AEnemyShip::ApplyEffectiveDormancyState()
 			}
 		}
 	}
+}
+
+bool AEnemyShip::CanDeployDeckEnemies() const
+{
+	const auto* Room = GetWorld() ? GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>() : nullptr;
+	return HasAuthority() && RuntimeState.Revision != 0 && RuntimeState.IsActive()
+		&& !bEndingPlay && !bApplyingRuntimeState && !bEffectiveDormancyApplied
+		&& !bDistanceOptimizationDormant && !IsStoryGateDormant() && !bDeathHandled && !IsSinking()
+		&& !bCrewDefeated && !(Room && Room->IsRestoringSnapshot());
+}
+
+void AEnemyShip::PublishRuntimeState()
+{
+	if (!HasAuthority() || bApplyingRuntimeState) return;
+	FEnemyShipRuntimeState Next;
+	if (bDistanceOptimizationDormant) Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Distance);
+	if (IsStoryGateDormant()) Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Story);
+	if (const auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>(); Room && Room->IsRestoringSnapshot())
+		Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Restore);
+	if (bEndingPlay || bDeathHandled || IsSinking()) Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Terminal);
+	if (bCrewDefeated) Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::CrewDefeated);
+	Next.Phase = (Next.BlockingReasons & static_cast<uint8>(EEnemyShipRuntimeBlock::Terminal)) ? EEnemyShipRuntimePhase::Terminal
+		: (Next.BlockingReasons & static_cast<uint8>(EEnemyShipRuntimeBlock::Restore)) ? EEnemyShipRuntimePhase::Restoring
+		: bEffectiveDormancyApplied ? EEnemyShipRuntimePhase::Dormant : EEnemyShipRuntimePhase::Active;
+	if (RuntimeState.Revision && RuntimeState.Phase == Next.Phase && RuntimeState.BlockingReasons == Next.BlockingReasons) return;
+	const FEnemyShipRuntimeState Previous = RuntimeState;
+	Next.Revision = RuntimeState.Revision + 1;
+	RuntimeState = Next;
+	FlushNetDormancy();
+	ForceNetUpdate();
+	OnRuntimeStateChanged.Broadcast(Previous, RuntimeState);
+}
+
+void AEnemyShip::OnRep_RuntimeState()
+{
+	ApplyEffectiveDormancyState();
+	OnRuntimePresentationChanged.Broadcast(LastClientRuntimeState, RuntimeState);
+	LastClientRuntimeState = RuntimeState;
+}
+
+void AEnemyShip::HandleRoomRestoreCompleted()
+{
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
 }
 
 void AEnemyShip::Tick(float DeltaTime)
@@ -1460,6 +1547,7 @@ void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 	if (!bDeathHandled)
 	{
 		bDeathHandled = true;
+		PublishRuntimeState();
 		HandleShipDeath();
 	}
 }
@@ -1780,6 +1868,7 @@ void AEnemyShip::EvaluateCrewControlState()
 	}
 
 	bCrewDefeated = true;
+	PublishRuntimeState();
 	DisableEnemyShipAIForCapture();
 	OnCrewDefeated.Broadcast(this);
 	OnRep_CrewDefeated();
@@ -1830,6 +1919,7 @@ void AEnemyShip::DisableEnemyShipAIForCapture()
 
 void AEnemyShip::OnRep_CrewDefeated()
 {
+	PublishRuntimeState();
 	UpdateHelmInteractionAvailability();
 }
 
@@ -1843,5 +1933,6 @@ void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShip, bCrewDefeated);
 	DOREPLIFETIME(AEnemyShip, bDistanceOptimizationDormant);
+	DOREPLIFETIME(AEnemyShip, RuntimeState);
 	DOREPLIFETIME(AEnemyShip, bStoryGateOpen);
 }
