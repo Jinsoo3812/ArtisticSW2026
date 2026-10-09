@@ -11,9 +11,11 @@
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckEnemyCombatComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "AI/EnemyAlarmComponent.h"
 #include "DeckAI/DeckWalkRouteComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckEnemyCharacterMovementComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -22,13 +24,17 @@
 #include "TimerManager.h"
 #include "UI/EnemyHealthBarComponent.h"
 #include "Weapon/BaseWeaponComponent.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
-ADeckEnemy::ADeckEnemy()
+ADeckEnemy::ADeckEnemy(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UDeckEnemyCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	DeckEnemyNavigationComponent = CreateDefaultSubobject<UDeckEnemyNavigationComponent>(
 		TEXT("DeckEnemyNavigationComponent"));
 	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
 	DeckCombatComponent = CreateDefaultSubobject<UDeckEnemyCombatComponent>(TEXT("DeckCombatComponent"));
+	DeckTargetResolver = CreateDefaultSubobject<UDeckCombatTargetResolverComponent>(TEXT("DeckTargetResolver"));
 	bAutoResolveHostShip = false;
 	bDestroyWithHostShip = false;
 	bDestroyAfterDeathFinished = false;
@@ -41,12 +47,57 @@ ADeckEnemy::ADeckEnemy()
 
 bool ADeckEnemy::CanMoveOnDeck() const
 {
-	return HasAuthority() && bPoolActive && !bDeathHandled && IsValid(GetDeckHostShip());
+	const auto* Host = GetDeckHostShip();
+	return HasAuthority() && !bAwaitingSnapshotCompletion && bPoolActive && !bDeathHandled
+		&& IsValid(Host) && Host->CanDeployDeckEnemies();
 }
 
 AEnemyShip* ADeckEnemy::GetDeckHostShip() const
 {
-	return Cast<AEnemyShip>(GetHostShip());
+	return !HasAuthority() && PoolNetState.ActivationGeneration > 0
+		? PoolNetState.Host.Get() : Cast<AEnemyShip>(GetHostShip());
+}
+
+void ADeckEnemy::SetHostShip(AShip* NewHostShip)
+{
+	if (GetHostShip() != NewHostShip && DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->CancelCombatRoute();
+		if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
+	}
+	Super::SetHostShip(NewHostShip);
+	BindRuntimeHost();
+}
+
+void ADeckEnemy::BindRuntimeHost()
+{
+	if (BoundRuntimeHost.Get() == GetDeckHostShip()) return;
+	if (auto* Previous = BoundRuntimeHost.Get())
+		(HasAuthority() ? Previous->OnRuntimeStateChanged : Previous->OnRuntimePresentationChanged).Remove(RuntimeHostHandle);
+	BoundRuntimeHost = GetDeckHostShip();
+	if (auto* Host = BoundRuntimeHost.Get()) RuntimeHostHandle = (HasAuthority() ? Host->OnRuntimeStateChanged : Host->OnRuntimePresentationChanged)
+		.AddUObject(this, &ADeckEnemy::HandleHostRuntimeStateChanged);
+}
+
+void ADeckEnemy::HandleHostRuntimeStateChanged(const FEnemyShipRuntimeState&, const FEnemyShipRuntimeState& Current)
+{
+	if (!HasAuthority()) { ReconcileClientPoolState(); return; }
+	if (!bPoolActive) return;
+	if (Current.IsActive()) ResumePoolAI();
+	else
+	{
+		if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
+		if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CancelCombatRoute();
+		if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
+		if (auto* ASC = GetAbilitySystemComponent()) ASC->CancelAllAbilities();
+		StopDeckMovement();
+		if (auto* AI = Cast<AAIController>(GetController()))
+			if (auto* Brain = AI->GetBrainComponent()) Brain->StopLogic(TEXT("Deck host inactive"));
+	}
+	FlushNetDormancy();
+	RefreshPoolNetState();
+	ApplyPoolPresentationState();
+	ForceNetUpdate();
 }
 
 void ADeckEnemy::PostInitializeComponents()
@@ -66,6 +117,22 @@ void ADeckEnemy::PostInitializeComponents()
 void ADeckEnemy::BeginPlay()
 {
 	Super::BeginPlay();
+	if (HasAuthority())
+	{
+		if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>())
+		{
+			PoolRestoreCompletedHandle = Room->OnRestoreCompleted.AddUObject(this, &ADeckEnemy::HandleRoomRestoreCompleted);
+			if (Room->IsRestoringSnapshot())
+			{
+				bAwaitingSnapshotCompletion = true;
+				StopDeckMovement();
+				if (auto* AI = Cast<AAIController>(GetController()))
+					if (auto* Brain = AI->GetBrainComponent()) Brain->StopLogic(TEXT("Deck pool snapshot restore"));
+				ApplyPoolPresentationState();
+				return;
+			}
+		}
+	}
 
 	if (HasAuthority() && bStartPooled)
 	{
@@ -82,12 +149,19 @@ void ADeckEnemy::BeginPlay()
 		{
 			StopDeckMovement();
 		}
+		if (!HasAuthority()) ReconcileClientPoolState();
 	}
 }
 
 void ADeckEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (auto* Host = BoundRuntimeHost.Get())
+		(HasAuthority() ? Host->OnRuntimeStateChanged : Host->OnRuntimePresentationChanged).Remove(RuntimeHostHandle);
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+	GetWorldTimerManager().ClearTimer(PoolPresentationRetryHandle);
+	GetWorldTimerManager().ClearTimer(PoolRestoreResumeTimerHandle);
+	if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->OnRestoreCompleted.Remove(PoolRestoreCompletedHandle);
 	if (HasAuthority())
 	{
 		if (DeckEnemyNavigationComponent)
@@ -105,23 +179,31 @@ void ADeckEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ADeckEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(ADeckEnemy, bPoolActive);
-	DOREPLIFETIME(ADeckEnemy, InitialSpawnPointId);
+	DOREPLIFETIME(ADeckEnemy, PoolNetState);
 }
 
 void ADeckEnemy::PrepareForPool()
 {
 	bStartPooled = true;
 	bPoolActive = false;
+	RefreshPoolNetState();
 }
 
-bool ADeckEnemy::ActivateFromPool(
+bool ADeckEnemy::ActivateFromPool(AEnemyShip* Host, int32 PointId, int32 Seed, const FTransform* Transform)
+{
+	if (!PreparePoolActivation(Host, PointId, Seed, Transform)) return false;
+	if (CommitPoolActivation()) return true;
+	DeactivateToPool();
+	return false;
+}
+
+bool ADeckEnemy::PreparePoolActivation(
 	AEnemyShip* InHostShip,
 	int32 InitialWaypointId,
 	int32 RandomSeed,
 	const FTransform* ReservedTransform)
 {
-	if (!HasAuthority() || bPoolActive || !IsValid(InHostShip)
+	if (!HasAuthority() || bPoolActive || bPoolActivationPrepared || !IsValid(InHostShip) || !InHostShip->CanDeployDeckEnemies()
 		|| !InHostShip->GetShipDeckMesh()
 		|| !InHostShip->GetDeckWaypoint(InitialWaypointId))
 	{
@@ -160,32 +242,37 @@ bool ADeckEnemy::ActivateFromPool(
 		DeactivateToPool();
 		return false;
 	}
+	bPoolActivationPrepared = true;
+	StopDeckMovement(); // The movement base is prepared, but AI/collision remain unpublished.
+	return true;
+}
+
+bool ADeckEnemy::CommitPoolActivation()
+{
+	AEnemyShip* Host = GetDeckHostShip();
+	if (!HasAuthority() || !bPoolActivationPrepared || bPoolActive || !Host || !Host->CanDeployDeckEnemies()) return false;
+	bPoolActivationPrepared = false;
 	bPoolActive = true;
+	RefreshPoolNetState(true);
 	ApplyPoolPresentationState();
-
-	if (!GetController())
-	{
-		SpawnDefaultController();
-	}
-	if (AAIController* OwningAIController = Cast<AAIController>(GetController()))
-	{
-		if (ABaseAIController* BaseAIController = Cast<ABaseAIController>(OwningAIController);
-			BaseAIController && BaseAIController->GetBrainComponent())
-		{
-			BaseAIController->RefreshBehaviorRouting();
-		}
-		else if (UBrainComponent* Brain = OwningAIController->GetBrainComponent())
-		{
-			Brain->RestartLogic();
-		}
-	}
-	// Possession/Restart may replace the movement mode. Reassert the live deck
-	// movement base after controller initialization.
 	RestoreDeckMovementState();
-
-	InHostShip->NotifyCrewEnemyReactivated(this);
+	Host->NotifyCrewEnemyReactivated(this);
+	ResumePoolAI();
 	ForceNetUpdate();
 	return true;
+}
+
+void ADeckEnemy::ResumePoolAI()
+{
+	if (!HasAuthority() || bAwaitingSnapshotCompletion || !bPoolActive || bDeathHandled || !GetDeckHostShip() || !GetDeckHostShip()->CanDeployDeckEnemies()) return;
+	if (!GetController()) SpawnDefaultController();
+	if (auto* AI = Cast<AAIController>(GetController()))
+	{
+		if (auto* Base = Cast<ABaseAIController>(AI); Base && Base->GetBrainComponent()) Base->RefreshBehaviorRouting();
+		else if (auto* Brain = AI->GetBrainComponent()) Brain->RestartLogic();
+		if (auto* Base = Cast<ABaseAIController>(AI); Base && CombatTarget) Base->SetCombatTarget(CombatTarget);
+	}
+	RestoreDeckMovementState();
 }
 
 void ADeckEnemy::DeactivateToPool()
@@ -198,8 +285,9 @@ void ADeckEnemy::DeactivateToPool()
 	SetNetDormancy(DORM_Awake);
 	FlushNetDormancy();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
-	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (AlarmComponent) AlarmComponent->ResetForReuse();
 	ClearCombatTarget();
 	if (DeckEnemyNavigationComponent)
@@ -237,8 +325,10 @@ void ADeckEnemy::DeactivateToPool()
 	StopDeckMovement();
 
 	bPoolActive = false;
+	bPoolActivationPrepared = false;
 	ClearAuthoritativeDeckBase();
 	InitialSpawnPointId = INDEX_NONE;
+	RefreshPoolNetState();
 	ApplyPoolPresentationState();
 	ForceNetUpdate();
 	SetNetDormancy(DORM_DormantAll);
@@ -251,7 +341,13 @@ void ADeckEnemy::ResetToFreshPoolState()
 		return;
 	}
 	DeactivateToPool();
-	RestoreForPoolActivation();
+	// Fresh inactive state must remain configurable. Applying spawn stats belongs to preparation only.
+	bDeathHandled = false;
+	bWaveRemoveNotified = false;
+	bHasDropped = false;
+	if (auto* Health = GetHealthComponent()) Health->ResetForReuse();
+	ResetInactivePresentation(false);
+	ResetBalanceForReuse();
 	ApplyPoolPresentationState();
 	ForceNetUpdate();
 }
@@ -267,9 +363,11 @@ bool ADeckEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLine
 	if (!EvaluateCombatTarget(Candidate, OutReason)) return false;
 	const AEnemyShip* Ship = GetDeckHostShip();
 	const UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
-	FDeckWalkLocation SelfFloor, TargetFloor;
+	FDeckWalkLocation SelfFloor;
+	FDeckTargetAnchor TargetFloor;
 	if (!Area || !Area->ResolveActorOnDeck(*this, SelfFloor)
-		|| !Candidate || !Area->ResolveActorOnDeck(*Candidate, TargetFloor))
+		|| !UDeckCombatTargetResolverComponent::ResolveFor(this, const_cast<AActor*>(Candidate), TargetFloor)
+		|| !TargetFloor.HasCurrentEvidence())
 	{
 		OutReason = TEXT("NoWalkableCombatFloor");
 		return false;
@@ -308,9 +406,21 @@ void ADeckEnemy::OnDeckMoveFailed()
 
 void ADeckEnemy::HandleDeath_Implementation()
 {
+	if (HasAuthority())
+	{
+		FlushNetDormancy();
+		RefreshPoolNetState();
+		ForceNetUpdate();
+	}
+	else if (PoolNetState.ActivationGeneration > 0 && !PoolNetState.bDead)
+	{
+		// A health subobject may describe the previous activation until the actor snapshot catches up.
+		PoolPresentationRetryHandle = GetWorldTimerManager().SetTimerForNextTick(this, &ADeckEnemy::ReconcileClientPoolState);
+	}
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
 	if (AlarmComponent) AlarmComponent->ResetForReuse();
-	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	if (HasAuthority())
 	{
 		if (AEnemyShip* Host = GetDeckHostShip())
@@ -329,10 +439,7 @@ void ADeckEnemy::HandleDeathFinishedPresentation()
 {
 	Super::HandleDeathFinishedPresentation();
 
-	if (!HasAuthority())
-	{
-		return;
-	}
+	if (!HasAuthority() || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()) return;
 
 	if (ReturnToPoolAfterDeathDelay <= 0.0f)
 	{
@@ -351,18 +458,65 @@ void ADeckEnemy::HandleDeathFinishedPresentation()
 
 void ADeckEnemy::OnRep_PoolActive()
 {
-	if (bPoolActive)
+	ReconcileClientPoolState();
+}
+
+void ADeckEnemy::RefreshPoolNetState(bool bNewActivation)
+{
+	if (!HasAuthority()) return;
+	PoolNetState.bActive = bPoolActive;
+	PoolNetState.bDead = bDeathHandled;
+	PoolNetState.Host = Cast<AEnemyShip>(GetHostShip());
+	PoolNetState.PointId = InitialSpawnPointId;
+	if (bNewActivation) ++PoolNetState.ActivationGeneration;
+	++PoolNetState.Revision;
+}
+
+void ADeckEnemy::OnRep_PoolNetState()
+{
+	bPoolActive = PoolNetState.bActive;
+	InitialSpawnPointId = PoolNetState.PointId;
+	PoolPresentationRetries = 0;
+	ReconcileClientPoolState();
+}
+
+void ADeckEnemy::PostNetReceive()
+{
+	Super::PostNetReceive();
+	if (!HasAuthority()) ReconcileClientPoolState();
+}
+
+void ADeckEnemy::HandleReplicatedHostShipChanged()
+{
+	BindRuntimeHost();
+	ReconcileClientPoolState();
+}
+
+void ADeckEnemy::ReconcileClientPoolState()
+{
+	if (HasAuthority() || !HasActorBegunPlay()) return;
+	BindRuntimeHost();
+	const bool bHostReady = PoolNetState.ActivationGeneration == 0 || (GetDeckHostShip() && GetDeckHostShip()->GetShipDeckMesh());
+	GetWorldTimerManager().ClearTimer(PoolPresentationRetryHandle);
+	if (PoolNetState.ActivationGeneration > 0) bDeathHandled = PoolNetState.bDead;
+	if (bPoolActive && bHostReady && !bDeathHandled
+		&& (LastPresentedActivationGeneration != PoolNetState.ActivationGeneration || bLocalDeathRagdollApplied))
 	{
-		ResetLocalDeathRagdoll();
+		ResetInactivePresentation();
+	}
+	if (bPoolActive && bHostReady)
+	{
+		LastPresentedActivationGeneration = PoolNetState.ActivationGeneration;
+		if (bDeathHandled) ApplyLocalDeathRagdoll();
 	}
 	ApplyPoolPresentationState();
-	if (bPoolActive)
+	if (bPoolActive && bHostReady && !bLocalDeathRagdollApplied) RestoreDeckMovementState();
+	else StopDeckMovement();
+	if (bPoolActive && !bHostReady && PoolPresentationRetries < 50)
 	{
-		RestoreDeckMovementState();
-	}
-	else
-	{
-		StopDeckMovement();
+		++PoolPresentationRetries;
+		GetWorldTimerManager().SetTimer(PoolPresentationRetryHandle, this, &ADeckEnemy::ReconcileClientPoolState, 0.1f, false);
+		if (PoolPresentationRetries == 50) UE_LOG(LogTemp, Warning, TEXT("[DeckEnemyPool] Enemy=%s Generation=%u Reason=HostReferencePending"), *GetName(), PoolNetState.ActivationGeneration);
 	}
 }
 
@@ -373,14 +527,19 @@ void ADeckEnemy::ReturnToPoolAfterDeath()
 
 void ADeckEnemy::ApplyPoolPresentationState()
 {
-	const bool bPresent = bPoolActive;
+	const auto* Room = HasAuthority() && GetWorld() ? GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>() : nullptr;
+	const bool bHostReady = HasAuthority() || PoolNetState.ActivationGeneration == 0 || (GetDeckHostShip() && GetDeckHostShip()->GetShipDeckMesh());
+	const auto* Host = GetDeckHostShip();
+	const bool bHostDormant = Host && (Host->GetRuntimeStateSnapshot().Phase == EEnemyShipRuntimePhase::Dormant
+		|| Host->GetRuntimeStateSnapshot().Phase == EEnemyShipRuntimePhase::Restoring);
+	const bool bPresent = bPoolActive && bHostReady && !bHostDormant && !(Room && Room->IsRestoringSnapshot());
 	SetActorHiddenInGame(!bPresent);
 	SetActorEnableCollision(bPresent);
 	SetActorTickEnabled(bPresent);
 
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
-		Capsule->SetCollisionEnabled(bPresent ? InitialCapsuleCollision : ECollisionEnabled::NoCollision);
+		Capsule->SetCollisionEnabled(bPresent && !bLocalDeathRagdollApplied ? InitialCapsuleCollision : ECollisionEnabled::NoCollision);
 	}
 	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{
@@ -391,7 +550,7 @@ void ADeckEnemy::ApplyPoolPresentationState()
 		{
 			CharacterMesh->SetVisibility(true, true);
 		}
-		CharacterMesh->SetCollisionEnabled(bPresent ? InitialMeshCollision : ECollisionEnabled::NoCollision);
+		if (!bPresent || !bLocalDeathRagdollApplied) CharacterMesh->SetCollisionEnabled(bPresent ? InitialMeshCollision : ECollisionEnabled::NoCollision);
 	}
 	if (EnemyHealthBarComponent)
 	{
@@ -410,10 +569,7 @@ void ADeckEnemy::StopDeckMovement()
 
 void ADeckEnemy::RestoreDeckMovementState()
 {
-	if (!bPoolActive)
-	{
-		return;
-	}
+	if (!bPoolActive || bDeathHandled || bLocalDeathRagdollApplied) return;
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->SetMovementMode(MOVE_Walking);
@@ -462,15 +618,16 @@ void ADeckEnemy::RestoreForPoolActivation()
 		}
 	}
 	if (!bAppliedBalance) return;
-	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
-	{
-		ResetLocalDeathRagdoll();
-	}
+	ResetInactivePresentation();
 	StopDeckMovement();
-	if (UBaseWeaponComponent* BaseWeaponComponent = GetWeaponComponent())
-	{
-		BaseWeaponComponent->RestoreFromOwnerPool();
-	}
+}
+
+void ADeckEnemy::ResetInactivePresentation(bool bRestoreWeapon)
+{
+	ResetLocalDeathRagdoll();
+	if (EnemyHealthBarComponent) EnemyHealthBarComponent->ResetRevealState();
+	if (bRestoreWeapon)
+		if (UBaseWeaponComponent* Weapon = GetWeaponComponent()) Weapon->RestoreFromOwnerPool();
 }
 
 bool ADeckEnemy::ApplyAuthoritativeDeckStart(const FTransform& AuthoritativeTransform)
@@ -522,4 +679,122 @@ void ADeckEnemy::ClearAuthoritativeDeckBase()
 		Movement->SetBase(nullptr);
 	}
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+}
+
+
+void ADeckEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	Super::CaptureRoomDomains(OutParts, OutIssues);
+	FSWRoomDeckEnemyPoolState State;
+	State.bActive = bPoolActive; State.PointId = InitialSpawnPointId;
+	State.ActivationGeneration = PoolNetState.ActivationGeneration;
+	State.ReturnToPoolRemaining = FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(ReturnToPoolTimerHandle));
+	if (const auto* Id = GetDeckHostShip() ? GetDeckHostShip()->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr) State.HostId = Id->StableId;
+	if (!State.HostId.IsValid())
+	{
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Spawner"); Issue.FieldKey = TEXT("DeckHost"); Issue.Reason = TEXT("Deck host has no stable ID");
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Spawner; Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop(); FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Spawner"); Issue.FieldKey = TEXT("DeckPool"); Issue.Reason = TEXT("Deck pool serialization failed");
+	}
+}
+
+bool ADeckEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain != ESWRoomDomain::Spawner)
+	{
+		if (Part.Domain == ESWRoomDomain::Enemy)
+		{
+			bRestoredPoolState = false;
+			bAwaitingSnapshotCompletion = true;
+			if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CancelCombatRoute();
+			if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
+			GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+			GetWorldTimerManager().ClearTimer(PoolRestoreResumeTimerHandle);
+			StopDeckMovement();
+			if (auto* AI = Cast<AAIController>(GetController()))
+				if (auto* Brain = AI->GetBrainComponent()) Brain->StopLogic(TEXT("Deck pool snapshot restore"));
+			ApplyPoolPresentationState();
+		}
+		return Super::RestoreRoomDomain(Part, OutError);
+	}
+	FSWRoomDeckEnemyPoolState State;
+	if (Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State) || !State.HostId.IsValid()
+		|| !FMath::IsFinite(State.ReturnToPoolRemaining) || State.ReturnToPoolRemaining < 0.f || State.PointId < INDEX_NONE)
+	{ OutError = TEXT("Invalid deck enemy pool snapshot"); return false; }
+	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+	PendingPoolRestore = State;
+	bRestoredPoolState = true;
+	bPoolActive = State.bActive;
+	InitialSpawnPointId = State.PointId;
+	PoolNetState.ActivationGeneration = State.ActivationGeneration;
+	bPoolActivationPrepared = false;
+	return true;
+}
+
+bool ADeckEnemy::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+	float TimeToleranceSeconds, TArray<FString>& OutFields) const
+{
+	return Expected.Domain == ESWRoomDomain::Spawner ? FSWRoomStructCodec::Compare<FSWRoomDeckEnemyPoolState>(Expected, Actual, TimeToleranceSeconds, OutFields)
+		: Super::CompareRoomDomain(Expected, Actual, TimeToleranceSeconds, OutFields);
+}
+
+bool ADeckEnemy::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!Super::FinalizeRoomRestore(RegisteredActors, OutError)) return false;
+	if (bRestoredPoolState)
+	{
+		AActor* const* Actor = RegisteredActors.Find(PendingPoolRestore.HostId);
+		AEnemyShip* Host = Actor ? Cast<AEnemyShip>(*Actor) : nullptr;
+		if (!Host || (InitialSpawnPointId != INDEX_NONE && !Host->GetDeckWaypoint(InitialSpawnPointId)))
+		{ OutError = TEXT("Restored deck enemy host/point missing"); return false; }
+		SetHostShip(Host);
+	}
+	// Preserve saved health/death/effects. Completion performs presentation/AI only.
+	RefreshPoolNetState();
+	return true;
+}
+
+bool ADeckEnemy::AllowsMigratedRoomDomain(const FSWRoomDomainPart& Added, const TArray<FSWRoomDomainPart>& Previous) const
+{
+	return Added.Domain == ESWRoomDomain::Spawner && Added.Version == 1
+		&& Previous.ContainsByPredicate([](const FSWRoomDomainPart& Part) { return Part.Domain == ESWRoomDomain::Enemy && Part.Version == 1; })
+		&& !Previous.ContainsByPredicate([](const FSWRoomDomainPart& Part) { return Part.Domain == ESWRoomDomain::Spawner; });
+}
+
+void ADeckEnemy::RestoreLegacyPoolActivity(bool bActive)
+{
+	if (!HasAuthority() || bRestoredPoolState) return;
+	bPoolActive = bActive;
+	if (bActive && PoolNetState.ActivationGeneration == 0) PoolNetState.ActivationGeneration = 1;
+	RefreshPoolNetState();
+}
+
+void ADeckEnemy::HandleRoomRestoreCompleted()
+{
+	if (!HasAuthority() || !bAwaitingSnapshotCompletion) return;
+	RefreshPoolNetState();
+	ApplyPoolPresentationState();
+	if (bPoolActive && bDeathHandled)
+	{
+		const float Remaining = bRestoredPoolState ? PendingPoolRestore.ReturnToPoolRemaining : ReturnToPoolAfterDeathDelay;
+		GetWorldTimerManager().SetTimer(ReturnToPoolTimerHandle, this, &ADeckEnemy::ReturnToPoolAfterDeath, FMath::Max(0.01f, Remaining), false);
+	}
+	else if (bPoolActive)
+	{
+		// Do not run behavior tasks inside the global restore audit or another actor's Finalize callback.
+		PoolRestoreResumeTimerHandle = GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]
+		{
+			bAwaitingSnapshotCompletion = false;
+			ResumePoolAI();
+		}));
+	}
+	else StopDeckMovement();
+	if (!bPoolActive || bDeathHandled) bAwaitingSnapshotCompletion = false;
+	ForceNetUpdate();
 }

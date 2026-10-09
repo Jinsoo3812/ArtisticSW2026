@@ -3,6 +3,12 @@
 이 문서는 기본 Enemy AI의 공통 구조를 빠르게 파악하기 위한 요약본이다.  
 세부 에디터 클릭 순서, 디버깅 절차, 테스트 명령어, Boss 전용 기능은 제외하고 핵심 책임과 실행 흐름만 정리한다.
 
+## 2026-10-08 스탯·Room 저장 계약
+
+`ConfigureSpawnBalance`는 서버에서만 실행하고, 이미 스탯을 적용한 적과 BeginPlay 이후 활성 상태인 `ADeckEnemy`의 재구성을 거부한다. 비활성 풀의 Fresh 초기화는 `ResetBalanceForReuse`로 재구성 가능 상태를 만들고, 실제 스탯 적용은 활성화 준비 단계에서 수행한다.
+
+BaseEnemy Enemy Domain은 현재 v2를 기록하며 v1 읽기를 지원한다. 기존 체력·사망·효과 외에 SpawnStatsRow, 적용/준비 플래그, 체력 배율, 공격 간격·근접 공격자 제한·공격 지연, Strength와 이동/공격 속도 배율을 저장한다. 갑판 풀의 활성/Host/Point/세대는 별도 Spawner Domain v1이다. 전체 Room 복원이 완료되기 전에는 갑판 AI를 재개하지 않는다. 세부 계약은 [DeckEnemy 공통 구조](DeckEnemy_Core.md)를 따른다.
+
 ---
 
 ## 1. 전체 구조

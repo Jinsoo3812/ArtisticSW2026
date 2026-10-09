@@ -16,6 +16,8 @@
 #include "Engine/GameInstance.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "ShipAI/NavalAIController.h"
+#include "TimerManager.h"
 
 UBossEncounterComponent::UBossEncounterComponent()
 {
@@ -87,6 +89,11 @@ bool UBossEncounterComponent::FinalizeRoomState(const TMap<FGuid, AActor*>& Regi
 void UBossEncounterComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (auto* Host = Cast<AEnemyShip>(GetOwner()); Host && Host->HasAuthority())
+	{
+		HostRuntimeStateHandle = Host->OnRuntimeStateChanged.AddUObject(this, &UBossEncounterComponent::HandleHostRuntimeStateChanged);
+		SightEvaluationTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UBossEncounterComponent::EvaluateCurrentSight);
+	}
 	if (!bEncounterEnabled)
 	{
 		return;
@@ -128,6 +135,8 @@ void UBossEncounterComponent::BeginPlay()
 
 void UBossEncounterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorld()->GetTimerManager().ClearTimer(SightEvaluationTimerHandle);
+	if (auto* Host = Cast<AEnemyShip>(GetOwner())) Host->OnRuntimeStateChanged.Remove(HostRuntimeStateHandle);
 	UnbindItemBox();
 	if (AChestSpawnPoint* Point = ResolveTriggerChestPoint())
 	{
@@ -216,6 +225,7 @@ bool UBossEncounterComponent::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 
 bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
 {
+	if (const auto* Host = Cast<AEnemyShip>(GetOwner()); Host && !Host->CanDeployDeckEnemies()) return false;
 	if (!bEncounterEnabled || !GetOwner() || !GetOwner()->HasAuthority()
 		|| (Cast<AEnemyShip>(GetOwner()) && Cast<AEnemyShip>(GetOwner())->IsStoryGateDormant())
 		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
@@ -245,6 +255,21 @@ bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
 		return false;
 	}
 	return true;
+}
+
+void UBossEncounterComponent::HandleHostRuntimeStateChanged(const FEnemyShipRuntimeState&, const FEnemyShipRuntimeState& Current)
+{
+	GetWorld()->GetTimerManager().ClearTimer(SightEvaluationTimerHandle);
+	if (Current.IsActive()) SightEvaluationTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UBossEncounterComponent::EvaluateCurrentSight);
+}
+
+void UBossEncounterComponent::EvaluateCurrentSight()
+{
+	const auto* Host = Cast<AEnemyShip>(GetOwner());
+	if (!Host || !Host->CanDeployDeckEnemies() || !bEncounterEnabled || EncounterState != EBossEncounterState::Waiting
+		|| EncounterTrigger != EBossEncounterTrigger::PlayerShipSight) return;
+	if (const auto* AI = Cast<ANavalAIController>(Host->GetController()))
+		if (AShip* PlayerShip = AI->FindSightedPlayerShip()) NotifyPlayerShipSighted(PlayerShip);
 }
 
 void UBossEncounterComponent::HandleBossDeathStarted(UBaseHealthComponent* HealthComponent)

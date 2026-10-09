@@ -25,6 +25,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AI|Target")
 	AShip* GetTargetShip() const { return TargetShip.Get(); }
+	/** Current Sight stimulus only; navigation's distance-selected target is not evidence of Sight. */
+	AShip* FindSightedPlayerShip(AShip* Preferred = nullptr) const;
 
 	/** Immediately re-evaluate and route the closest valid Player ship. */
 	UFUNCTION(BlueprintCallable, Category = "AI|Target")

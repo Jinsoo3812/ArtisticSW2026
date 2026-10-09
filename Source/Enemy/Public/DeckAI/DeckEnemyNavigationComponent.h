@@ -28,12 +28,14 @@ protected:
 	float TargetReplanDistance = 100.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Deck AI|Navigation", meta = (ClampMin = "0.05", Units = "s"))
 	float MinimumReplanInterval = 0.35f;
+	UPROPERTY(EditDefaultsOnly, Category = "Deck AI|Navigation", meta = (ClampMin = "0", Units = "cm"))
+	float SupportedTargetGoalTolerance = 350.f;
 
 private:
 	ADeckEnemy* GetDeckEnemy() const;
 	bool ClaimGoal(const FDeckWalkLocation& Goal);
 	bool SelectNearGoal(const FDeckWalkLocation& Start, const FVector& Ideal, FName Surface,
-		float Tolerance, bool bExcludePlayer, AActor* Player);
+		float Tolerance, bool bExcludePlayer, AActor* Player, bool bAllowNearbyEscape = false);
 	FDeckWalkLocation CombatGoal;
 	FDeckWalkLocation PlannedTargetFloor;
 	TWeakObjectPtr<AActor> PlannedTarget;

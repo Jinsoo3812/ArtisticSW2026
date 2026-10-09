@@ -44,7 +44,8 @@ Snapshot에는 ShotId, 현재 소켓·표적 위치, 속력·중력, 실제 월�
 
 1. 네이티브 빌드 후 에디터를 재시작하고 Enemy 캐릭터·활·화살 BP를 Compile한다. 활의 `Projectile Class`가 `RangedEnemyProjectile` 상속 BP여야 한다. 다른 부모이면 `[EnemyBow] ProjectileClass must derive...`로 거부한다.
 2. Enemy Mesh의 `Arrow_socket`, 캐릭터의 `Ranged Attack Socket Name`, 공격 몽타주의 FireArrow GameplayEvent Notify가 일치하는지 확인한다. 활의 `Projectile Speed`와 화살 BP의 `Flight Gravity Scale`을 확인한다. BP Tick/Timeline이 발사 뒤 화살 위치·속도를 덮어쓰거나 활에 다시 붙이지 않도록 한다.
-3. 실제 벽·난간·갑판은 Arrow를 Block한다. PCG 범위 Brush가 실제 장애물이 아니면 `NoCollision` 또는 `WeaponAim=Ignore`, `Arrow=Ignore`로 설정하고 생성된 실제 Mesh 충돌은 유지한다. 화살 Mesh는 시각용이며 명시적 sweep이 비행 충돌을 맡는다.
+3. 실제 벽·난간·갑판은 Arrow를 Block한다. 화살 query는 PCGVolume의 범위 Brush 및 `PCGVolumeBounds` Profile 컴포넌트를 자동 제외한다. Custom Profile인 범위 Brush도 통과하며, 같은 PCGVolume 소유의 생성 Mesh 충돌은 유지한다. 화살 Mesh는 시각용이며 명시적 sweep이 비행 충돌을 맡는다.
+4. 적 화살 BP의 **Class Defaults → Arrow → Movement → Initial Launch Speed**에서 초기 속력을 cm/s로 설정한다. **0이면 EnemyBow의 Projectile Speed를 사용**하고, 양수이면 화살 BP의 값을 우선한다. 표적 요격과 중력 보정도 이 속력으로 계산한 뒤 최종 월드 속도를 발사한다. ProjectileComp의 Initial Speed는 런타임 월드 속도 적용 시 0으로 유지되므로 이 새 속성에서 설정한다.
 
 ## 진단 및 수동 확인
 

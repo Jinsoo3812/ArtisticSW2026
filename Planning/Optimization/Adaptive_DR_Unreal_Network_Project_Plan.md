@@ -645,8 +645,8 @@ Unreal Insights의 CPU/Frame trace와 Networking Insights의 패킷·객체·속
 
 논문 인용은 제공된 PDF를 기준으로 한다. 텍스트 추출과 함께 식 (3)–(10), Fig.8–13, Tables 3–9의 페이지 이미지를 확인했다. 원문 표의 수치, MTDR의 정의, 계산 지연 미측정 서술을 분리해 읽었다.
 
-- 제공 논문: [An_adaptive_dead_reckoning_alg.pdf](C:/Users/wonkii/Downloads/An_adaptive_dead_reckoning_alg.pdf)
-- 사용자 개관: [Adaptive Dead Reckoning 기반 Unreal Iris 동적 Replication.md](<C:/Users/wonkii/Downloads/Adaptive Dead Reckoning 기반 Unreal Iris 동적 Replication.md>)
+- 제공 논문: `An_adaptive_dead_reckoning_alg.pdf` — 조사 당시 제공된 로컬 자료이며 저장소에는 포함되어 있지 않다.
+- 사용자 개관: `Adaptive Dead Reckoning 기반 Unreal Iris 동적 Replication.md` — 조사 당시 제공된 로컬 자료이며 저장소에는 포함되어 있지 않다.
 
 Unreal 관련 외부 근거는 아래 **Epic 공식 문서와 공식 API**만 사용했다. 대부분 5.7 문서로 고정했고, 과거 버전 설명 및 현재 API 페이지는 버전·용도를 표시했다. 확인일은 2026-09-08이다. API 선언과 세부 동작은 설치된 Epic UE 5.7.4 소스도 교차 확인했다. 포럼 답변이나 비공식 블로그를 근거로 사용하지 않았다.
 

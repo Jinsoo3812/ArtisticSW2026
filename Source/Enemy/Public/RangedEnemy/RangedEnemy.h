@@ -29,7 +29,7 @@ class ENEMY_API ARangedEnemy : public ABaseEnemy
 	GENERATED_BODY()
 
 public:
-	ARangedEnemy();
+	ARangedEnemy(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

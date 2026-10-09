@@ -107,8 +107,8 @@ bool UBTT_ActivateBossAbility::ShouldCancelAbilityOnAbort(
 void UBTT_ActivateBossAbility::OnAbilityTaskFinished(EBTNodeResult::Type Result)
 {
 	const FGameplayAbilitySpec* ActiveSpec = GetActiveAbilitySpec();
-	const UBossGameplayAbility* BossAbility = ActiveSpec
-		? Cast<UBossGameplayAbility>(ActiveSpec->Ability)
+	const UBaseGameplayAbility* BossAbility = ActiveSpec
+		? Cast<UBaseGameplayAbility>(ActiveSpec->Ability)
 		: nullptr;
 	if (Result == EBTNodeResult::Aborted && BossAbility
 		&& BossAbility->ShouldSurviveBehaviorTreeAbort()
@@ -130,6 +130,11 @@ void UBTT_ActivateBossAbility::ResetDestinationState()
 	if (!OwnerComp)
 	{
 		return;
+	}
+	if (AShipBossEnemy* Boss = Cast<AShipBossEnemy>(GetCachedPawn()))
+	{
+		// Another failed/aborted BT activation must not tear down a still-running mobility ability.
+		if (const auto* ASC = Boss->GetAbilitySystemComponent(); ASC && ASC->HasMatchingGameplayTag(State_Boss_Busy)) return;
 	}
 
 	if (UBlackboardComponent* Blackboard = OwnerComp->GetBlackboardComponent();

@@ -1,5 +1,11 @@
 # Damage feedback and animated hurtboxes
 
+## Hit diagnostics and bounds filtering (2026-10-08)
+
+`sw.Combat.Melee.Debug 1` logs authoritative sword hit windows, candidates, resolver rejection reasons and confirmed health changes. Ordinary deck enemies use `MovementCapsule`; their Physics Asset size does not determine capsule damage acceptance. See [deck melee diagnosis](Deck_Melee_Hit_Diagnosis.md).
+
+The resolver's WorldStatic object multi trace excludes only components assigned the `PCGVolumeBounds` collision profile. Other components, generated meshes and walls still participate. This affects resolver callers that enable the WorldStatic occlusion check, including melee and boss hits; arrow hits disable that extra check and keep projectile collision handling. Current saved maps have the profile on LV_ET, while Lvl_CY still uses Custom. See [PCG setup and verification](PCG_Combat_Fix_Editor_Check.md).
+
 ## Damage feedback responsibility
 
 `FSWGameplayEffectContext` carries `ESWDamageDeliveryType` so health feedback does not infer intent from damage magnitude or GameplayEffect period.

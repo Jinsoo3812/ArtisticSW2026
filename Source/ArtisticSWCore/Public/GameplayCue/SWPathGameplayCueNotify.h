@@ -7,6 +7,7 @@
 
 class UDecalComponent;
 class UNiagaraComponent;
+class UMaterialInterface;
 
 /** Native moving-reference-frame implementation shared by path cue Blueprints. */
 UCLASS(Abstract, Blueprintable)
@@ -42,6 +43,16 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GameplayCue|Path")
 	TObjectPtr<UNiagaraComponent> PathNiagara;
+
+	/** Shared enemy warning material. A soft reference also keeps it available to cooking. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GameplayCue|Path|Decal")
+	TSoftObjectPtr<UMaterialInterface> DecalMaterialOverride;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GameplayCue|Path|Decal")
+	FLinearColor DecalColor = FLinearColor::Red;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GameplayCue|Path|Decal")
+	FName DecalColorParameter = TEXT("DecalColor");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GameplayCue|Path", meta = (ClampMin = "1.0", Units = "cm"))
 	float ProjectionDepth = 100.0f;

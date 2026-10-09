@@ -33,7 +33,6 @@ private:
 	TWeakObjectPtr<AActor> Target;
 	float Direction = 1.0f;
 	float Elapsed = 0.0f;
-	float RetryRemaining = 0.0f;
 	float SegmentRemaining = 0.0f;
 	bool bOwnsFocus = false;
 };

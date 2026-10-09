@@ -133,4 +133,72 @@ bool FStrengthMeleePayloadTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FStrengthAuthoredSwordQueryTest,
+	"ArtisticSW.GAS.Strength.AuthoredSwordQueriesDeckCapsule",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FStrengthAuthoredSwordQueryTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
+		EAutomationExpectedErrorFlags::Contains, 0);
+	StrengthMeleeTests::FScopedTestWorld Scope;
+	if (!TestNotNull(TEXT("Query world exists"), Scope.World)) return false;
+	ABaseCharacter* Source = Scope.World->SpawnActor<ABaseCharacter>();
+	UBaseAttributeSet* SourceAttributes = nullptr;
+	UAbilitySystemComponent* SourceASC = StrengthMeleeTests::AddAbilitySystem(Source, SourceAttributes);
+	SourceAttributes->InitStrength(10.f);
+	SourceASC->AddLooseGameplayTag(Team_Player);
+	UClass* TargetClass = LoadClass<ABaseCharacter>(nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/Balancing/T1/T1_BP_DeckMeleeEnemy.T1_BP_DeckMeleeEnemy_C"));
+	if (!TestNotNull(TEXT("Authored deck enemy loads"), TargetClass)) return false;
+	ABaseCharacter* Target = Scope.World->SpawnActor<ABaseCharacter>(
+		TargetClass, FVector(5000.f, 0.f, 1000.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Authored deck enemy spawns"), Target)) return false;
+	UAbilitySystemComponent* TargetASC = Target->GetAbilitySystemComponent();
+	// The isolated world does not BeginPlay or initialize the enemy's ASC.
+	// Register its authored attribute subobject as normal component startup does.
+	UBaseAttributeSet* TargetAttributes = FindObject<UBaseAttributeSet>(Target, TEXT("BasicAttributeSet"));
+	if (!TestNotNull(TEXT("Enemy has health attributes"), TargetAttributes)) return false;
+	if (!TestNotNull(TEXT("Enemy has an ability system"), TargetASC)) return false;
+	TargetASC->AddAttributeSetSubobject(TargetAttributes);
+	TargetASC->InitAbilityActorInfo(Target, Target);
+	TargetASC->AddLooseGameplayTag(Team_Enemy);
+	Target->SetActorEnableCollision(true);
+	Target->GetCapsuleComponent()->RecreatePhysicsState();
+
+	for (const TCHAR* SwordPath : {
+		TEXT("/Game/GameplayAbilitySystem/Weapon/BP_BaseSwordA.BP_BaseSwordA_C"),
+		TEXT("/Game/GameplayAbilitySystem/Weapon/BP_BaseSwordB.BP_BaseSwordB_C") })
+	{
+		UClass* SwordClass = LoadClass<ASwordItem>(nullptr, SwordPath);
+		if (!TestNotNull(SwordPath, SwordClass)) continue;
+		ASwordItem* Sword = Scope.World->SpawnActor<ASwordItem>(SwordClass);
+		if (!TestNotNull(TEXT("Authored sword spawns"), Sword)) continue;
+		Sword->SetOwner(Source);
+		Sword->SetInstigator(Source);
+		FStrengthDamageRequest Request;
+		Request.SourceASC = SourceASC;
+		Request.InstigatorActor = Source;
+		Request.EffectCauser = Sword;
+		Request.AttackCoefficient = 1.f;
+		for (const FVector Offset : { FVector::ZeroVector, FVector(1000.f, 500.f, 200.f) })
+		{
+			Target->SetActorLocation(FVector(5000.f, 0.f, 1000.f) + Offset);
+			TargetAttributes->InitMaxHealth(100.f);
+			TargetAttributes->InitHealth(100.f);
+			Sword->GetTraceStartPoint()->SetWorldLocation(Target->GetActorLocation() - FVector(100.f, 0.f, 0.f));
+			Sword->GetTraceEndPoint()->SetWorldLocation(Target->GetActorLocation() + FVector(100.f, 0.f, 0.f));
+			TestTrue(TEXT("Sword opens query window"),
+				Sword->HitScanStart(UGASCombatLibrary::MakeStrengthDamageEffectSpec(Request)));
+			TestEqual(TEXT("Real sword sphere query damages authored deck capsule"), TargetAttributes->GetHealth(), 90.f);
+			Sword->SampleHitScan();
+			TestEqual(TEXT("Repeated samples only damage once"), TargetAttributes->GetHealth(), 90.f);
+			Sword->HitScanEnd();
+		}
+		Sword->Destroy();
+	}
+	return true;
+}
+
 #endif

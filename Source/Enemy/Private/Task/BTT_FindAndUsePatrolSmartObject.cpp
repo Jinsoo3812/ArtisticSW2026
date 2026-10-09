@@ -2,6 +2,7 @@
 
 #include "AI/AITask_UseGameplayBehaviorSmartObject.h"
 #include "AIController.h"
+#include "AI/PointSelectionFailure.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Float.h"
@@ -85,6 +86,7 @@ EBTNodeResult::Type UBTT_FindAndUsePatrolSmartObject::ExecuteTask(
 	const FConstStructView UserData = FConstStructView::Make(ActorUserData);
 	if (!SmartObjectSubsystem->FindSmartObjects(Request, Results, UserData))
 	{
+		EnemyPointSelectionFailure::Log(this, Pawn, TEXT("No patrol Smart Object point found."));
 		return EBTNodeResult::Failed;
 	}
 
@@ -120,6 +122,7 @@ EBTNodeResult::Type UBTT_FindAndUsePatrolSmartObject::ExecuteTask(
 		return EBTNodeResult::InProgress;
 	}
 
+	EnemyPointSelectionFailure::Log(this, Pawn, TEXT("No usable patrol Smart Object point could be claimed."));
 	return EBTNodeResult::Failed;
 }
 

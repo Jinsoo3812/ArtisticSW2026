@@ -24,5 +24,6 @@ public:
 	void AddEdge(int32 A, int32 B);
 	int32 LabelRegions(bool bCrossSurfaces);
 	bool FindPath(int32 Start, int32 Goal, bool bCrossSurfaces, TArray<int32>& OutPath,
-		const TArray<uint8>* AllowedNodes = nullptr) const;
+		const TArray<uint8>* AllowedNodes = nullptr,
+		const TFunction<bool(int32, int32)>* AllowedEdges = nullptr) const;
 };

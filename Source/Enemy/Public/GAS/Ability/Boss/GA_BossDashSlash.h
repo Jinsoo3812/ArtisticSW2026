@@ -5,62 +5,14 @@
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
 #include "GAS/SWGameplayEffectContext.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GAS/Tasks/BossSlashDashTypes.h"
 #include "GA_BossDashSlash.generated.h"
 
-class UAbilityTask_PlayMontageAndWait;
+class UAbilityTask_BossSlashDashExecution;
 class UAnimMontage;
 class UPrimitiveComponent;
 class UPathCombatPresentationDataAsset;
 class UStaticMeshComponent;
-
-/**
- * Authoring contract for the server-driven DashSlash montage phases.
- * Gameplay timing is derived from these sections and never depends on AnimNotifies.
- */
-USTRUCT(BlueprintType)
-struct ENEMY_API FDashSlashMontageConfig
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
-	TObjectPtr<UAnimMontage> Montage = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
-	FName WindupEnterSectionName = TEXT("Windup");
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
-	FName WindupHoldSectionName = TEXT("WindupHold");
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
-	FName AttackSectionName = TEXT("DashSlash");
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
-	FName TravelHoldSectionName = TEXT("DashHold");
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
-	FName RecoverySectionName = TEXT("Recover");
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage", meta = (ClampMin = "0.01"))
-	float PlayRate = 1.0f;
-
-	/** Time spent in the looping WindupHold section, excluding WindupEnter. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage", meta = (ClampMin = "0.0", Units = "s"))
-	float WindupHoldDuration = 0.5f;
-
-	/** Fails safe if the authored Recover section never completes. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage", meta = (ClampMin = "0.1", Units = "s"))
-	float RecoveryTimeout = 1.5f;
-};
-
-enum class EDashSlashPhase : uint8
-{
-	Inactive,
-	WindupEntering,
-	WindupHolding,
-	DashAttacking,
-	WaitingForCompletion,
-	Recovering
-};
 
 /** Native fallback. A presentation Data Asset may replace this class. */
 UCLASS(NotBlueprintable)
@@ -117,63 +69,13 @@ public:
 		bool bWasCancelled) override;
 
 protected:
-	void BeginWindupHold();
-	void ReleaseWindupAndBeginDash();
-	void BeginDash();
-	void MarkSlashFinished();
+	bool StartDashExecution(float TotalWaitOverride = -1.f, bool bSkipWindup = false, bool bSkipRecovery = false);
+	UFUNCTION() virtual void HandleExecutionCompleted();
+	UFUNCTION() virtual void HandleExecutionFailed();
+	UFUNCTION() void HandleExecutionHit(AActor* Target, const FHitResult& Hit);
 
-	UFUNCTION()
-	void HandleMontageCompleted();
-
-	UFUNCTION()
-	void HandleMontageBlendOut();
-
-	UFUNCTION()
-	void HandleMontageInterrupted();
-
-	void HandleRecoveryTimeout();
-
-	UFUNCTION()
-	void HandleDashOverlap(
-		UPrimitiveComponent* OverlappedComponent,
-		AActor* OtherActor,
-		UPrimitiveComponent* OtherComponent,
-		int32 OtherBodyIndex,
-		bool bFromSweep,
-		const FHitResult& SweepResult);
-
-	void TickDash();
-	void ApplySweptDashHits(const FVector& SegmentStart, const FVector& SegmentEnd);
-	void TryApplyDashDamage(AActor* Target, const FHitResult& HitResult);
-	void HandleDestinationReached();
-	void TryStartRecovery();
-	void StartRecovery();
-	void ConfigureMontageSections();
-	bool TransitionMontagePhase(
-		EDashSlashPhase ExpectedPhase,
-		EDashSlashPhase NextPhase,
-		FName DestinationSection);
-	bool ValidateMontageConfig(FString& OutError) const;
-	bool HasMontageSection(FName SectionName) const;
-	float GetSectionDurationSeconds(FName SectionName) const;
-	void ActivateDashCollision();
-	void DeactivateDashCollision();
-	bool CapturePreselectedDestination();
-	bool ValidateCommittedPath(FString& OutError) const;
-	FActiveGameplayEffectHandle ApplyPathPresentationEffect(
-		TSubclassOf<UGameplayEffect> EffectClass) const;
-	void StartPathTelegraph();
-	void StopPathTelegraph();
-	void StartExecutedPathPresentation();
-	bool LockMovementToCommittedStart();
-	void RestoreMovementAfterAbility();
-	bool ResolveCommittedPathWorld(
-		FVector& OutStart,
-		FVector& OutEnd,
-		FVector& OutSurfaceNormal) const;
-	void FinishDash(bool bWasCancelled);
-	void ClearDashState();
-	void ClearRuntimeTimers();
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash|Presentation", meta = (Categories = "GameplayCue"))
+	FGameplayTag ChargingGameplayCueTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash|Montage")
 	FDashSlashMontageConfig MontageConfig;
@@ -195,8 +97,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash|Presentation")
 	TObjectPtr<UPathCombatPresentationDataAsset> PathPresentation = nullptr;
 
-	UPROPERTY()
-	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask = nullptr;
+	UPROPERTY() TObjectPtr<UAbilityTask_BossSlashDashExecution> ExecutionTask;
 
 	// Serialized compatibility for BPGA_SlashDash assets authored before MontageConfig.
 	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Use MontageConfig.Montage."))
@@ -220,32 +121,4 @@ protected:
 	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Use MontageConfig.RecoveryTimeout."))
 	float RecoveryTimeout_DEPRECATED = 1.5f;
 
-	FActiveGameplayEffectHandle DashStateHandle;
-	FActiveGameplayEffectHandle TelegraphEffectHandle;
-	FTimerHandle WindupLeadInTimerHandle;
-	FTimerHandle WindupHoldTimerHandle;
-	FTimerHandle SlashCompletionTimerHandle;
-	FTimerHandle DashTimerHandle;
-	FTimerHandle RecoveryTimeoutTimerHandle;
-	UPROPERTY(Transient)
-	FSWPathCuePayload CommittedPath;
-
-	FVector PreviousWorldLocation = FVector::ZeroVector;
-	TWeakObjectPtr<UStaticMeshComponent> CapturedDeckMesh;
-	FDeckWalkLocation CapturedDestinationLocation;
-	FDeckWalkLocation CapturedStartLocation;
-	double DashStartServerTime = 0.0;
-	float DashTickInterval = 1.0f / 60.0f;
-	TEnumAsByte<EMovementMode> CachedMovementMode = MOVE_Walking;
-	uint8 CachedCustomMovementMode = 0;
-	float CachedMaxWalkSpeed = 0.0f;
-	int32 NextPathInstanceId = 0;
-	TEnumAsByte<ECollisionResponse> CachedPawnCollisionResponse = ECR_Block;
-	EDashSlashPhase Phase = EDashSlashPhase::Inactive;
-	bool bDashStarted = false;
-	bool bSlashFinished = false;
-	bool bDestinationReached = false;
-	bool bCollisionOverrideActive = false;
-	bool bMovementLocked = false;
-	bool bFinishing = false;
 };

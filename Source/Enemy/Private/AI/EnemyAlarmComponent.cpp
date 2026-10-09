@@ -4,6 +4,7 @@
 #include "Components/BaseHealthComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Perception/AIPerceptionTypes.h"
 #include "Perception/AISense_Hearing.h"
@@ -50,8 +51,9 @@ bool UEnemyAlarmComponent::Broadcast(AActor* ObservedPlayer, float Range, float 
 		if (!Deck->CanMoveOnDeck()) return false;
 		EmittedShip = Deck->GetDeckHostShip();
 		const UDeckWalkAreaComponent* Area = EmittedShip->GetDeckWalkAreaComponent();
-		if (!Area || !Area->ResolveActorOnDeck(*ObservedPlayer, EmittedFloor)) return false;
-		EmittedFloor.LocalFloor = Area->ToLocal(Area->GetActorFeetWorld(*ObservedPlayer));
+		FDeckTargetAnchor Anchor;
+		if (!Area || !UDeckCombatTargetResolverComponent::ResolveFor(Deck, ObservedPlayer, Anchor)) return false;
+		EmittedFloor = FDeckWalkLocation(); EmittedFloor.LocalFloor = Anchor.LocalCenter; EmittedFloor.SurfaceId = Anchor.SurfaceId;
 	}
 	EmittedPlayer = ObservedPlayer;
 	BroadcastSession = CombatSession;

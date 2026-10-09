@@ -12,6 +12,7 @@
 #include "ItemSpawn/LootSpawnPoint.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "BossAI/BossEncounterComponent.h"
+#include "ShipAI/EnemyShipRuntimeState.h"
 #include "EnemyShip.generated.h"
 
 USTRUCT()
@@ -77,15 +78,16 @@ class ENEMY_API AEnemyShip : public AShip, public IIncomingDamageMultiplierInter
 
 public:
 	AEnemyShip();
+	FOnEnemyShipRuntimeStateChanged OnRuntimeStateChanged;
+	/** Client-local presentation notification, never an authority spawn command. */
+	FOnEnemyShipRuntimeStateChanged OnRuntimePresentationChanged;
+	const FEnemyShipRuntimeState& GetRuntimeStateSnapshot() const { return RuntimeState; }
+	bool CanDeployDeckEnemies() const;
+	void NotifyPlayerShipSightLost(AShip* PlayerShip);
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
-		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
-	{
-		return Expected.Domain == ESWRoomDomain::Ship
-			? AShip::CompareRoomDomain(Expected, Actual, TimeToleranceSeconds, OutFields)
-			: FSWRoomStructCodec::Compare<FSWRoomEnemyShipState>(Expected, Actual, TimeToleranceSeconds, OutFields);
-	}
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override;
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual bool IsEnemyShipForEffects() const override { return true; }
 	virtual bool AllowsPlayerHelmControl() const override { return !IsStoryGateDormant() && !IsSinking() && !bDeathHandled && bCrewDefeated; }
@@ -288,6 +290,9 @@ protected:
 	void ApplyChestSpawnPointSettings();
 	void SetStoryGateOpen(bool bOpen);
 	void ApplyEffectiveDormancyState();
+	void PublishRuntimeState();
+	void HandleRoomRestoreCompleted();
+	UFUNCTION() void OnRep_RuntimeState();
 	void ApplyStoryGatePresentation();
 	void ApplyStoryGateToSpawnedChests();
 	UFUNCTION() void OnRep_StoryGateOpen();
@@ -399,6 +404,11 @@ protected:
 	};
 	TArray<FCannonDormancyState> DormancyCannonStates;
 	bool bEffectiveDormancyApplied = false;
+	bool bApplyingRuntimeState = false;
+	FDelegateHandle RoomRestoreCompletedHandle;
+	UPROPERTY(ReplicatedUsing = OnRep_RuntimeState, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Runtime")
+	FEnemyShipRuntimeState RuntimeState;
+	FEnemyShipRuntimeState LastClientRuntimeState;
 	bool bDormancyShipCollisionEnabled = false;
 	bool bDormancyShipTickEnabled = false;
 	bool bDormancyShipPhysicsEnabled = false;
