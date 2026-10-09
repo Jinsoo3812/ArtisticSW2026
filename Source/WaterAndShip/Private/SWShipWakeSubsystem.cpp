@@ -350,27 +350,27 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 	}
 
 	// 온스크린 디버그 메시지
-	if (CVarOnScreenDebug.GetValueOnGameThread() > 0 && GEngine && bIsRenderingClient)
-	{
-		const int32 StoredCount = GetEventCount();
-		const int32 MaxCap = GetMaxCapacity();
-		int32 ActiveCount = 0;
-		{
-			FReadScopeLock Lock(EventsLock);
-			for (const FSWShipWakeEvent& Event : Events)
-			{
-				if (Event.IsActiveAt(ServerTime))
-				{
-					++ActiveCount;
-				}
-			}
-		}
-		const FString DebugMsg = FString::Printf(
-			TEXT("Kelvin Wake [CS Baked RT]: Active=%d / Stored=%d / MaxCap=%d (Grid: %.0fm)"),
-			ActiveCount, StoredCount, MaxCap, GridSizeCm * 0.01f);
-		GEngine->AddOnScreenDebugMessage(
-			184719, 0.0f, FColor::Cyan, DebugMsg, true, FVector2D(1.1f, 1.1f));
-	}
+	// if (CVarOnScreenDebug.GetValueOnGameThread() > 0 && GEngine && bIsRenderingClient)
+	// {
+		// const int32 StoredCount = GetEventCount();
+		// const int32 MaxCap = GetMaxCapacity();
+		// int32 ActiveCount = 0;
+		// {
+			// FReadScopeLock Lock(EventsLock);
+			// for (const FSWShipWakeEvent& Event : Events)
+			// {
+				// if (Event.IsActiveAt(ServerTime))
+				// {
+					// ++ActiveCount;
+				// }
+			// }
+		// }
+		// const FString DebugMsg = FString::Printf(
+			// TEXT("Kelvin Wake [CS Baked RT]: Active=%d / Stored=%d / MaxCap=%d (Grid: %.0fm)"),
+			// ActiveCount, StoredCount, MaxCap, GridSizeCm * 0.01f);
+		// GEngine->AddOnScreenDebugMessage(
+			// 184719, 0.0f, FColor::Cyan, DebugMsg, true, FVector2D(1.1f, 1.1f));
+	// }
 }
 
 TStatId USWShipWakeSubsystem::GetStatId() const
@@ -576,12 +576,12 @@ void USWShipWakeSubsystem::RefreshWaterMaterials()
 		if (UMaterialInstanceDynamic* MID = Component ? Component->GetWaterMaterialInstance() : nullptr)
 		{
 			WaterMaterials.AddUnique(MID);
-			if (CVarDebugLog.GetValueOnGameThread() != 0)
-			{
-				FString ParentName = MID->Parent ? MID->Parent->GetName() : TEXT("None");
-				UE_LOG(LogSWShipWake, Log, TEXT("[M7Runtime] Bound WaterMaterial: %s (Parent: %s, Actor: %s)"),
-					*MID->GetName(), *ParentName, *It->GetName());
-			}
+			// if (CVarDebugLog.GetValueOnGameThread() != 0)
+			// {
+				// FString ParentName = MID->Parent ? MID->Parent->GetName() : TEXT("None");
+				// UE_LOG(LogSWShipWake, Log, TEXT("[M7Runtime] Bound WaterMaterial: %s (Parent: %s, Actor: %s)"),
+					// *MID->GetName(), *ParentName, *It->GetName());
+			// }
 		}
 	}
 }

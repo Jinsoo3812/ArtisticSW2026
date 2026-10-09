@@ -73,6 +73,10 @@ public:
 	bool TryGetActiveSurfaceWaveServerTime(double& OutServerTime) const;
 
 protected:
+	virtual FVector ConstrainInputAcceleration(const FVector& InputAcceleration) const override;
+	virtual void UpdateBasedMovement(float DeltaSeconds) override;
+	virtual void SmoothCorrection(const FVector& OldLocation, const FQuat& OldRotation,
+		const FVector& NewLocation, const FQuat& NewRotation) override;
 	virtual void PhysCustom(float DeltaTime, int32 Iterations) override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;

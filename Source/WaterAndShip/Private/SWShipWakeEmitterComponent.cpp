@@ -109,17 +109,17 @@ void USWShipWakeEmitterComponent::BeginPlay()
 	}
 	bHasSample = true;
 
-	if (IsDebugLogEnabled())
-	{
-		const AActor* Owner = GetOwner();
-		UE_LOG(LogSWShipWakeEmitter, Log,
-			TEXT("[WakeEmitter::BeginPlay] Owner='%s' (Enemy=%d) | InitApex=(%.1f, %.1f) | InitFwd=(%.3f, %.3f) | Profile=%s | ServerTime=%.2fs"),
-			Owner ? *Owner->GetName() : TEXT("None"),
-			IsEnemyShip(),
-			LastSamplePosition.X, LastSamplePosition.Y,
-			LastSampleForward.X, LastSampleForward.Y,
-			GetProfileName(FroudeProfile), LastSampleServerTime);
-	}
+	// if (IsDebugLogEnabled())
+	// {
+		// const AActor* Owner = GetOwner();
+		// UE_LOG(LogSWShipWakeEmitter, Log,
+			// TEXT("[WakeEmitter::BeginPlay] Owner='%s' (Enemy=%d) | InitApex=(%.1f, %.1f) | InitFwd=(%.3f, %.3f) | Profile=%s | ServerTime=%.2fs"),
+			// Owner ? *Owner->GetName() : TEXT("None"),
+			// IsEnemyShip(),
+			// LastSamplePosition.X, LastSamplePosition.Y,
+			// LastSampleForward.X, LastSampleForward.Y,
+			// GetProfileName(FroudeProfile), LastSampleServerTime);
+	// }
 }
 
 void USWShipWakeEmitterComponent::ResolveKelvinFrame(
@@ -202,26 +202,26 @@ void USWShipWakeEmitterComponent::TickComponent(
 	const bool bDirectionFlipped = (bLastReversing != bIsReversing);
 	bLastReversing = bIsReversing;
 
-	const bool bLogging = IsDebugLogEnabled();
-	const int32 VerboseLevel = CVarEmitterDebugLog.GetValueOnGameThread();
+	// const bool bLogging = IsDebugLogEnabled();
+	// const int32 VerboseLevel = CVarEmitterDebugLog.GetValueOnGameThread();
 
-	if (bLogging && VerboseLevel >= 2)
-	{
-		UE_LOG(LogSWShipWakeEmitter, VeryVerbose,
-			TEXT("[WakeEmitter::Tick] '%s' Mode=%s Speed=%.1f/%.1f FwdVel=%.1f Rev=%d Flip=%d Apex=(%.1f, %.1f) Fwd=(%.3f, %.3f)"),
-			*Owner->GetName(), bAuthority ? TEXT("Auth") : TEXT("Pred"),
-			Speed, MinimumSpeedCmPerSecond, ForwardVelocityComponent,
-			bIsReversing, bDirectionFlipped, Apex.X, Apex.Y, Forward.X, Forward.Y);
-	}
+	// if (bLogging && VerboseLevel >= 2)
+	// {
+		// UE_LOG(LogSWShipWakeEmitter, VeryVerbose,
+			// TEXT("[WakeEmitter::Tick] '%s' Mode=%s Speed=%.1f/%.1f FwdVel=%.1f Rev=%d Flip=%d Apex=(%.1f, %.1f) Fwd=(%.3f, %.3f)"),
+			// *Owner->GetName(), bAuthority ? TEXT("Auth") : TEXT("Pred"),
+			// Speed, MinimumSpeedCmPerSecond, ForwardVelocityComponent,
+			// bIsReversing, bDirectionFlipped, Apex.X, Apex.Y, Forward.X, Forward.Y);
+	// }
 
 	if (!bHasSample || Speed < MinimumSpeedCmPerSecond || bDirectionFlipped)
 	{
-		if (bLogging && bDirectionFlipped)
-		{
-			UE_LOG(LogSWShipWakeEmitter, Log,
-				TEXT("[WakeEmitter::Reset] '%s' Direction flipped -> bIsReversing=%d, Speed=%.1f cm/s, Apex=(%.1f, %.1f)"),
-				*Owner->GetName(), bIsReversing, Speed, Apex.X, Apex.Y);
-		}
+		// if (bLogging && bDirectionFlipped)
+		// {
+			// UE_LOG(LogSWShipWakeEmitter, Log,
+				// TEXT("[WakeEmitter::Reset] '%s' Direction flipped -> bIsReversing=%d, Speed=%.1f cm/s, Apex=(%.1f, %.1f)"),
+				// *Owner->GetName(), bIsReversing, Speed, Apex.X, Apex.Y);
+		// }
 		LastSamplePosition = Apex;
 		LastSampleForward = Forward;
 		LastSampleServerTime = ServerTime;
@@ -259,30 +259,30 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 	const float Lifetime = FMath::Max(
 		(MaximumRadius + EnvelopeWidthCm) / FMath::Max(PropagationSpeedCmPerSecond, 1.0f), 1.0f);
 
-	const bool bLogging = IsDebugLogEnabled();
-	if (bLogging)
-	{
-		const AActor* Owner = GetOwner();
-		const TCHAR* TriggerReason = bDistanceTrigger ? TEXT("Distance")
-			: (bTurnTrigger ? TEXT("TurnAngle") : TEXT("TimeInterval"));
+	// const bool bLogging = IsDebugLogEnabled();
+	// if (bLogging)
+	// {
+		// const AActor* Owner = GetOwner();
+		// const TCHAR* TriggerReason = bDistanceTrigger ? TEXT("Distance")
+			// : (bTurnTrigger ? TEXT("TurnAngle") : TEXT("TimeInterval"));
 
-		UE_LOG(LogSWShipWakeEmitter, Warning,
-			TEXT("================================================================================"));
-		UE_LOG(LogSWShipWakeEmitter, Warning,
-			TEXT("[Kelvin Wake Emission] Owner='%s' | NetRole=%s | Trigger=%s"),
-			Owner ? *Owner->GetName() : TEXT("None"),
-			bPredicted ? TEXT("Predicted(Client)") : TEXT("Authoritative(Server)"),
-			TriggerReason);
-		UE_LOG(LogSWShipWakeEmitter, Log,
-			TEXT("  >> Kinematics: Speed=%.1f cm/s (Fade=%.2f) | Dist=%.1f cm (Spacing=%.1f) | Turn=%.2f deg (Max=%.1f) | Elapsed=%.3fs (Max=%.3fs)"),
-			HorizontalSpeed, SpeedFade, Distance, Spacing, TurnDegrees, MaxTurn, Elapsed, MaximumEmissionInterval);
-		UE_LOG(LogSWShipWakeEmitter, Log,
-			TEXT("  >> Parameters: Profile=%s | Segments=%d | Lifetime=%.2fs | MaxRadius=%.1f cm | WaveSpeed=%.1f cm/s | Decay=%.4f"),
-			GetProfileName(FroudeProfile), SegmentCount, Lifetime, MaximumRadius, PropagationSpeedCmPerSecond, DecayRate);
-		UE_LOG(LogSWShipWakeEmitter, Log,
-			TEXT("  >> Geometry: Length=%.1f cm | HalfWidth=%.1f cm | CutRatio=(Len:%.2f, Wid:%.2f) | EnvelopeWidth=%.1f cm | FadeIn=%.3fs | BaseAmp=%.1f cm"),
-			WakeLengthCm, WakeHalfWidthCm, LengthCutRatio, WidthCutRatio, EnvelopeWidthCm, FadeInSeconds, MaximumAmplitudeCm);
-	}
+		// UE_LOG(LogSWShipWakeEmitter, Warning,
+			// TEXT("================================================================================"));
+		// UE_LOG(LogSWShipWakeEmitter, Warning,
+			// TEXT("[Kelvin Wake Emission] Owner='%s' | NetRole=%s | Trigger=%s"),
+			// Owner ? *Owner->GetName() : TEXT("None"),
+			// bPredicted ? TEXT("Predicted(Client)") : TEXT("Authoritative(Server)"),
+			// TriggerReason);
+		// UE_LOG(LogSWShipWakeEmitter, Log,
+			// TEXT("  >> Kinematics: Speed=%.1f cm/s (Fade=%.2f) | Dist=%.1f cm (Spacing=%.1f) | Turn=%.2f deg (Max=%.1f) | Elapsed=%.3fs (Max=%.3fs)"),
+			// HorizontalSpeed, SpeedFade, Distance, Spacing, TurnDegrees, MaxTurn, Elapsed, MaximumEmissionInterval);
+		// UE_LOG(LogSWShipWakeEmitter, Log,
+			// TEXT("  >> Parameters: Profile=%s | Segments=%d | Lifetime=%.2fs | MaxRadius=%.1f cm | WaveSpeed=%.1f cm/s | Decay=%.4f"),
+			// GetProfileName(FroudeProfile), SegmentCount, Lifetime, MaximumRadius, PropagationSpeedCmPerSecond, DecayRate);
+		// UE_LOG(LogSWShipWakeEmitter, Log,
+			// TEXT("  >> Geometry: Length=%.1f cm | HalfWidth=%.1f cm | CutRatio=(Len:%.2f, Wid:%.2f) | EnvelopeWidth=%.1f cm | FadeIn=%.3fs | BaseAmp=%.1f cm"),
+			// WakeLengthCm, WakeHalfWidthCm, LengthCutRatio, WidthCutRatio, EnvelopeWidthCm, FadeInSeconds, MaximumAmplitudeCm);
+	// }
 
 	for (int32 Segment = 1; Segment <= SegmentCount; ++Segment)
 	{
@@ -316,23 +316,23 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		if (bPredicted) State->SubmitPredictedEvent(Event);
 		else State->SubmitAuthoritativeEvent(Event);
 
-		if (bLogging)
-		{
-			UE_LOG(LogSWShipWakeEmitter, Log,
-				TEXT("    [Segment %d/%d] P0=(%.1f, %.1f) P1=(%.1f, %.1f) | Fwd0=(%.2f, %.2f) Fwd1=(%.2f, %.2f) | T=[%.2f..%.2f] Exp=%.2f | Amp=%.1f | Profile=%d"),
-				Segment, SegmentCount,
-				Event.Origin.X, Event.Origin.Y, Event.EndOrigin.X, Event.EndOrigin.Y,
-				Event.Forward.X, Event.Forward.Y, Event.EndForward.X, Event.EndForward.Y,
-				Event.StartServerTime, Event.EndServerTime, Event.ExpireServerTime,
-				Event.InitialAmplitudeCm, static_cast<int32>(Event.FroudeProfile));
-		}
+		// if (bLogging)
+		// {
+			// UE_LOG(LogSWShipWakeEmitter, Log,
+				// TEXT("    [Segment %d/%d] P0=(%.1f, %.1f) P1=(%.1f, %.1f) | Fwd0=(%.2f, %.2f) Fwd1=(%.2f, %.2f) | T=[%.2f..%.2f] Exp=%.2f | Amp=%.1f | Profile=%d"),
+				// Segment, SegmentCount,
+				// Event.Origin.X, Event.Origin.Y, Event.EndOrigin.X, Event.EndOrigin.Y,
+				// Event.Forward.X, Event.Forward.Y, Event.EndForward.X, Event.EndForward.Y,
+				// Event.StartServerTime, Event.EndServerTime, Event.ExpireServerTime,
+				// Event.InitialAmplitudeCm, static_cast<int32>(Event.FroudeProfile));
+		// }
 	}
 
-	if (bLogging)
-	{
-		UE_LOG(LogSWShipWakeEmitter, Warning,
-			TEXT("================================================================================"));
-	}
+	// if (bLogging)
+	// {
+		// UE_LOG(LogSWShipWakeEmitter, Warning,
+			// TEXT("================================================================================"));
+	// }
 
 	LastSamplePosition = Apex;
 	LastSampleForward = Forward;

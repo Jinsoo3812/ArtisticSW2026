@@ -131,6 +131,9 @@ public:
 	float GetDesiredFacingDeltaYaw() const;
 
 	UFUNCTION()
+	void HandleDeathStarted(UBaseHealthComponent* InHealthComponent);
+
+	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
 
 private:
@@ -138,9 +141,18 @@ private:
 	void RetireLifeAbilityBindings();
 	bool bLifeAbilityBindingsRetired = false;
 
+	UPROPERTY(ReplicatedUsing = OnRep_ShipDeathMovement)
+	bool bShipDeathMovement = false;
+	bool bShipDeathMovementPrepared = false;
+	UFUNCTION()
+	void OnRep_ShipDeathMovement();
+
 public:
 
 	virtual void ApplyLocalDeathRagdoll() override;
+	virtual void PrepareDeathMovement() override;
+	virtual bool ShouldKeepCharacterMovementOnDeath() const override { return bShipDeathMovement; }
+	virtual bool IsMoveInputIgnored() const override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:
 	UFUNCTION(BlueprintCallable, Category = "Respawn")
