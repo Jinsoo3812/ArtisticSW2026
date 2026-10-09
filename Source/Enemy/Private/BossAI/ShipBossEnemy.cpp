@@ -21,6 +21,7 @@
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "DeckAI/DeckWalkRouteComponent.h"
+#include "DeckAI/DeckEnemyCharacterMovementComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
 #include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -41,7 +42,8 @@ namespace
 	}
 }
 
-AShipBossEnemy::AShipBossEnemy()
+AShipBossEnemy::AShipBossEnemy(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UDeckEnemyCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
 	DeckTargetResolver = CreateDefaultSubobject<UDeckCombatTargetResolverComponent>(TEXT("DeckTargetResolver"));
@@ -135,7 +137,7 @@ void AShipBossEnemy::BeginPlay()
 void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
-	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	GetHealthComponent()->OnConfirmedDamage.RemoveAll(this);
 	GetHealthComponent()->OnHealthChanged.RemoveDynamic(this, &AShipBossEnemy::HandleStunHealthChanged);
 	ReleaseSummonedDeckEnemies();
@@ -193,6 +195,8 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 		return false;
 	}
 
+	ClearDestination();
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	UnbindHostShip();
 	HostShip = InHostShip;
 	DeckTargetResolver->Reset();
@@ -555,6 +559,7 @@ void AShipBossEnemy::FinishHiddenRelocation()
 void AShipBossEnemy::HandleDeath_Implementation()
 {
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	// Capture before ability/BT cleanup. A dash may be between authored points;
 	// neither its destination nor its last occupied point is the death location.
 	const FTransform DeathWorldTransform = GetActorTransform();
@@ -840,6 +845,7 @@ bool AShipBossEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& O
 	}
 	ClearDestination();
 	InitialSpawnPointId = State.InitialSpawnPointId;
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	PreviousLocation = FDeckWalkLocation();
 	bStunHealthThresholdConsumed = State.bStunHealthThresholdConsumed;
 	PendingBalanceSummons = State.PendingBalanceSummons;

@@ -10,6 +10,14 @@ class UPrimitiveComponent;
 class UDeckWaypointComponent;
 class ACharacter;
 struct FDeckWalkRuntime;
+/** Per-query constraints; never changes the ship's shared graph. */
+struct FDeckWalkPathConstraints
+{
+	const ACharacter* Requester = nullptr;
+	TFunction<bool(const FDeckWalkLocation&, const FDeckWalkLocation&)> CanTraverse;
+	int32 MaximumCollisionQueries = 256;
+	int32* RemainingCollisionQueries = nullptr;
+};
 struct FDeckWalkRuntimeDeleter
 {
 	void operator()(FDeckWalkRuntime* Runtime) const;
@@ -38,6 +46,7 @@ public:
 	void Rebuild();
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck Walk")
 	bool IsReady() const { return bReady; }
+	bool CanPatrolAcrossSurfaces() const { return bPatrolAcrossSurfaces; }
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck Walk")
 	int32 GetSurfaceNodeCount(FName SurfaceId) const;
 	/** Server-side build snapshot; false before resolution or on clients. */
@@ -60,9 +69,14 @@ public:
 	bool ResolvePreciseLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
 	bool ResolveSpawnTransform(const UDeckWaypointComponent& Point, float CapsuleHalfHeight, FTransform& OutTransform) const;
 	bool FindPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
-		TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces = true) const;
+		TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces = true,
+		const FDeckWalkPathConstraints* Constraints = nullptr) const;
 	bool FindPathInDistanceBand(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
-		const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath) const;
+		const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath,
+		const FDeckWalkPathConstraints* Constraints = nullptr) const;
+	/** Actual movement capsule/responses, including live Pawns and geometry. */
+	bool TraceMovementSegment(const ACharacter& Character, const FVector& WorldStart,
+		const FVector& WorldEnd, FHitResult& OutHit) const;
 	bool PickPatrolPath(const AActor& Actor, FRandomStream& Random, TArray<FDeckWalkLocation>& OutPath) const;
 	bool IsLocationValid(const FDeckWalkLocation& Location) const;
 	void GetReachableLocations(const FDeckWalkLocation& Start, TArray<FDeckWalkLocation>& Out, bool bCrossSurfaces = true) const;
@@ -85,6 +99,9 @@ private:
 	UStaticMeshComponent* GetFrame() const;
 	bool FindNearestNode(const FVector& LocalFloor, FName SurfaceId, float XYTolerance, float ZTolerance, int32& OutNode) const;
 	FDeckWalkLocation MakeLocation(int32 Node) const;
+	bool FindConstrainedPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
+		bool bCrossSurfaces, const TArray<uint8>* AllowedNodes,
+		const FDeckWalkPathConstraints* Constraints, TArray<int32>& OutNodes) const;
 	bool ResolveSources();
 	bool FilterSeedRegions();
 

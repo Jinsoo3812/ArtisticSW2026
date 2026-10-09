@@ -321,9 +321,50 @@ bool UDeckWalkAreaComponent::IsLocationAvailable(const FDeckWalkLocation& Locati
 				< Pair.Value.Radius + Capsule->GetScaledCapsuleRadius()) return false;
 	}
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(DeckWalkDestination), false, &Requester);
-	return !GetWorld()->OverlapBlockingTestByChannel(Transform.GetLocation(), Transform.GetRotation(),
-		ECC_Pawn, FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(),
-			Capsule->GetScaledCapsuleHalfHeight()), Params);
+	FCollisionResponseParams Responses;
+	Capsule->InitSweepCollisionParams(Params, Responses);
+	return !GetWorld()->OverlapBlockingTestByChannel(Transform.GetLocation(), Capsule->GetComponentQuat(),
+		Capsule->GetCollisionObjectType(), FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(),
+			Capsule->GetScaledCapsuleHalfHeight()), Params, Responses);
+}
+
+bool UDeckWalkAreaComponent::TraceMovementSegment(const ACharacter& Character,
+	const FVector& WorldStart, const FVector& WorldEnd, FHitResult& OutHit) const
+{
+	OutHit = FHitResult();
+	const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
+	const UCharacterMovementComponent* Movement = Character.GetCharacterMovement();
+	if (!GetWorld() || !Capsule || !Movement || WorldStart.ContainsNaN() || WorldEnd.ContainsNaN()) return true;
+	if (!Capsule->IsQueryCollisionEnabled()) return false;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(DeckWalkLiveCorridor), false, &Character);
+	FCollisionResponseParams Responses;
+	Capsule->InitSweepCollisionParams(Params, Responses);
+	const float Radius = FMath::Max(1.f, Capsule->GetScaledCapsuleRadius() - 1.f);
+	const float HalfHeight = FMath::Max(Radius, Capsule->GetScaledCapsuleHalfHeight() - 1.f);
+	const FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius, HalfHeight);
+	if (!GetWorld()->SweepSingleByChannel(OutHit, WorldStart, WorldEnd, Capsule->GetComponentQuat(),
+		Capsule->GetCollisionObjectType(), Shape, Params, Responses)) return false;
+	if (OutHit.bStartPenetrating && OutHit.GetComponent() == Movement->CurrentFloor.HitResult.GetComponent()
+		&& !Cast<APawn>(OutHit.GetActor()) && OutHit.PenetrationDepth <= 2.5f
+		&& FVector::DotProduct(OutHit.Normal, Capsule->GetUpVector()) >= Movement->GetWalkableFloorZ())
+	{
+		OutHit = FHitResult(); return false;
+	}
+	// Skin contact with the floor and a walkable ramp are not blocked locomotion.
+	if (!OutHit.bStartPenetrating && !Cast<APawn>(OutHit.GetActor()) && Movement->IsWalkable(OutHit)) { OutHit = FHitResult(); return false; }
+	// Only allow a low, stepable obstacle after a second sweep at step height.
+	// Never ignore the whole floor/ship actor: its rail can be the actual blocker.
+	const float ImpactHeight = FVector::DotProduct(OutHit.ImpactPoint -
+		(WorldStart - Capsule->GetUpVector() * Capsule->GetScaledCapsuleHalfHeight()), Capsule->GetUpVector());
+	if (!OutHit.bStartPenetrating && !Cast<APawn>(OutHit.GetActor()) && Movement->CanStepUp(OutHit)
+		&& ImpactHeight >= -2.f && ImpactHeight <= Movement->MaxStepHeight)
+	{
+		FHitResult RaisedHit;
+		const FVector Lift = Capsule->GetUpVector() * (Movement->MaxStepHeight + 2.f);
+		if (!GetWorld()->SweepSingleByChannel(RaisedHit, WorldStart + Lift, WorldEnd + Lift,
+			Capsule->GetComponentQuat(), Capsule->GetCollisionObjectType(), Shape, Params, Responses)) { OutHit = FHitResult(); return false; }
+	}
+	return true;
 }
 
 bool UDeckWalkAreaComponent::TryClaimLocation(const FDeckWalkLocation& Location, ACharacter& Requester)
@@ -561,12 +602,12 @@ bool UDeckWalkAreaComponent::ResolveSpawnTransform(const UDeckWaypointComponent&
 }
 
 bool UDeckWalkAreaComponent::FindPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
-	TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces) const
+	TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces, const FDeckWalkPathConstraints* Constraints) const
 {
 	OutPath.Reset();
 	TArray<int32> Nodes;
 	if (!IsLocationValid(Start) || !IsLocationValid(Goal)
-		|| !Runtime->Graph.FindPath(Start.NodeIndex, Goal.NodeIndex, bCrossSurfaces, Nodes)) return false;
+		|| !FindConstrainedPath(Start, Goal, bCrossSurfaces, nullptr, Constraints, Nodes)) return false;
 	for (int32 Node : Nodes) OutPath.Add(MakeLocation(Node));
 	return true;
 }
@@ -595,7 +636,8 @@ bool UDeckWalkAreaComponent::PickPatrolPath(const AActor& Actor, FRandomStream& 
 }
 
 bool UDeckWalkAreaComponent::FindPathInDistanceBand(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
-	const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath) const
+	const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath,
+	const FDeckWalkPathConstraints* Constraints) const
 {
 	OutPath.Reset();
 	if (!IsLocationValid(Start) || !IsLocationValid(Goal) || Start.SurfaceId != Goal.SurfaceId
@@ -609,9 +651,44 @@ bool UDeckWalkAreaComponent::FindPathInDistanceBand(const FDeckWalkLocation& Sta
 			&& FMath::Abs(FVector::Dist2D(Node.Floor, Center) - Distance) <= FMath::Max(30.0f, Tolerance);
 	}
 	TArray<int32> Nodes;
-	if (!Allowed[Goal.NodeIndex] || !Runtime->Graph.FindPath(Start.NodeIndex, Goal.NodeIndex, false, Nodes, &Allowed)) return false;
+	if (!Allowed[Goal.NodeIndex] || !FindConstrainedPath(Start, Goal, false, &Allowed, Constraints, Nodes)) return false;
 	for (int32 Node : Nodes) OutPath.Add(MakeLocation(Node));
 	return true;
+}
+
+bool UDeckWalkAreaComponent::FindConstrainedPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
+	bool bCrossSurfaces, const TArray<uint8>* AllowedNodes,
+	const FDeckWalkPathConstraints* Constraints, TArray<int32>& OutNodes) const
+{
+	if (!Constraints) return Runtime->Graph.FindPath(Start.NodeIndex, Goal.NodeIndex, bCrossSurfaces, OutNodes, AllowedNodes);
+	TMap<uint64, bool> EdgeCache;
+	int32 Queries = 0;
+	const ACharacter* Character = Constraints->Requester;
+	const UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
+	const FVector Offset = Capsule ? Capsule->GetUpVector() * (Capsule->GetScaledCapsuleHalfHeight() + 2.f) : FVector::ZeroVector;
+	TFunction<bool(int32, int32)> AllowedEdges = [&](int32 From, int32 To)
+	{
+		const uint64 Key = (uint64(uint32(From)) << 32) | uint32(To);
+		if (const bool* Cached = EdgeCache.Find(Key)) return *Cached;
+		FDeckWalkLocation A = MakeLocation(From), B = MakeLocation(To);
+		if (From == Start.NodeIndex && Character) A.LocalFloor = ToLocal(GetActorFeetWorld(*Character));
+		bool bAllowed = !Constraints->CanTraverse || Constraints->CanTraverse(A, B);
+		if (bAllowed && Capsule)
+		{
+			FHitResult Hit;
+			// Exhaustion is a safe failure, never permission to accept an unchecked edge.
+			bAllowed = Queries++ < Constraints->MaximumCollisionQueries
+				&& (!Constraints->RemainingCollisionQueries || *Constraints->RemainingCollisionQueries > 0);
+			if (bAllowed)
+			{
+				if (Constraints->RemainingCollisionQueries) --*Constraints->RemainingCollisionQueries;
+				bAllowed = !TraceMovementSegment(*Character, ToWorld(A.LocalFloor) + Offset, ToWorld(B.LocalFloor) + Offset, Hit);
+			}
+		}
+		EdgeCache.Add(Key, bAllowed);
+		return bAllowed;
+	};
+	return Runtime->Graph.FindPath(Start.NodeIndex, Goal.NodeIndex, bCrossSurfaces, OutNodes, AllowedNodes, &AllowedEdges);
 }
 
 UPrimitiveComponent* UDeckWalkAreaComponent::GetFloorComponent(const FDeckWalkLocation& Location) const

@@ -15,6 +15,7 @@
 #include "AI/EnemyAlarmComponent.h"
 #include "DeckAI/DeckWalkRouteComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckEnemyCharacterMovementComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -26,7 +27,8 @@
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
 
-ADeckEnemy::ADeckEnemy()
+ADeckEnemy::ADeckEnemy(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UDeckEnemyCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	DeckEnemyNavigationComponent = CreateDefaultSubobject<UDeckEnemyNavigationComponent>(
 		TEXT("DeckEnemyNavigationComponent"));
@@ -58,6 +60,11 @@ AEnemyShip* ADeckEnemy::GetDeckHostShip() const
 
 void ADeckEnemy::SetHostShip(AShip* NewHostShip)
 {
+	if (GetHostShip() != NewHostShip && DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->CancelCombatRoute();
+		if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
+	}
 	Super::SetHostShip(NewHostShip);
 	BindRuntimeHost();
 }
@@ -80,7 +87,8 @@ void ADeckEnemy::HandleHostRuntimeStateChanged(const FEnemyShipRuntimeState&, co
 	else
 	{
 		if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
-		if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+		if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CancelCombatRoute();
+		if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 		if (auto* ASC = GetAbilitySystemComponent()) ASC->CancelAllAbilities();
 		StopDeckMovement();
 		if (auto* AI = Cast<AAIController>(GetController()))
@@ -277,7 +285,7 @@ void ADeckEnemy::DeactivateToPool()
 	SetNetDormancy(DORM_Awake);
 	FlushNetDormancy();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
-	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (AlarmComponent) AlarmComponent->ResetForReuse();
@@ -412,7 +420,7 @@ void ADeckEnemy::HandleDeath_Implementation()
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
 	if (AlarmComponent) AlarmComponent->ResetForReuse();
-	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	if (HasAuthority())
 	{
 		if (AEnemyShip* Host = GetDeckHostShip())
@@ -704,6 +712,8 @@ bool ADeckEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutEr
 		{
 			bRestoredPoolState = false;
 			bAwaitingSnapshotCompletion = true;
+			if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CancelCombatRoute();
+			if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 			GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 			GetWorldTimerManager().ClearTimer(PoolRestoreResumeTimerHandle);
 			StopDeckMovement();

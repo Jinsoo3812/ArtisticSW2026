@@ -23,7 +23,7 @@
 #include "Weapon/EnemyBow.h"
 #include "Weapon/WeaponDataAsset.h"
 
-ARangedEnemy::ARangedEnemy()
+ARangedEnemy::ARangedEnemy(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	bApplyDeathRagdollImpulse = true;
 	// Preserve the former RangedEnemyAIController defaults while moving the

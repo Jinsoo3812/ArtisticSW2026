@@ -17,7 +17,6 @@
 UBTT_SelectDeckWaypoint::UBTT_SelectDeckWaypoint()
 {
 	NodeName = TEXT("Select Deck Walk Goal");
-	bNotifyTick = true;
 	BlackboardKey.SelectedKeyName = TEXT("TargetActor");
 	BlackboardKey.AddObjectFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_SelectDeckWaypoint, BlackboardKey), AActor::StaticClass());
 }
@@ -37,6 +36,10 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 		return EBTNodeResult::Failed;
 	};
 	if (!Enemy || !Enemy->CanMoveOnDeck() || !Area || !Area->IsReady() || !Navigation || !Route) return EBTNodeResult::Failed;
+	if (Route->IsGoalSelectionDelayed())
+	{
+		Navigation->CancelCombatRoute(); return EBTNodeResult::Failed;
+	}
 	if (SelectionMode == EDeckWaypointSelectionMode::Patrol)
 	{
 		Navigation->CancelCombatRoute();
@@ -63,13 +66,6 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 		if (auto* AI = Cast<ABaseAIController>(Controller)) AI->ClearCombatTarget(true);
 		return EBTNodeResult::Failed;
 	}
-	const auto HoldOrKeepRoute = [&]()
-	{
-		if (Navigation->HasActiveRoute() && Route->HasGoal() && Area->IsLocationValid(Route->GetGoal()))
-			return EBTNodeResult::Succeeded;
-		*reinterpret_cast<float*>(NodeMemory) = 0.f;
-		return EBTNodeResult::InProgress;
-	};
 	FDeckTargetAnchor TargetFloor;
 	if (!UDeckCombatTargetResolverComponent::ResolveFor(Enemy, Target, TargetFloor))
 	{
@@ -86,7 +82,7 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 			}
 			return EBTNodeResult::Failed;
 		}
-		return HoldOrKeepRoute();
+		return FailPointSelection(TEXT("No supported combat target anchor."));
 	}
 	if (SelectionMode == EDeckWaypointSelectionMode::Combat)
 	{
@@ -94,18 +90,12 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 		if (Combat->EvaluateAttack(Target, false) == EDeckAttackOutcome::BlockedLOS)
 		{
 			if (!Combat->HasStoredRecovery()) Combat->RecordBlockedLOS(Combat->BeginAttack(Target), Target);
-			return Navigation->PlanRecoveryRoute(Target) ? EBTNodeResult::Succeeded : HoldOrKeepRoute();
+			return Navigation->PlanRecoveryRoute(Target) ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No safe LOS recovery route."));
 		}
 	}
 	const bool bSelected = SelectionMode == EDeckWaypointSelectionMode::ReleaseLineOfSightReposition
 		? Navigation->PlanRecoveryRoute(Target) : Navigation->PlanTargetDistanceRoute(Target, TargetDistance, ProjectionTolerance);
-	return bSelected ? EBTNodeResult::Succeeded : HoldOrKeepRoute();
-}
-void UBTT_SelectDeckWaypoint::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
-{
-	float& Waiting = *reinterpret_cast<float*>(NodeMemory); Waiting += DeltaSeconds;
-	// A bounded observation avoids an immediate failure loop without removing the live target.
-	if (Waiting >= 0.3f) FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+	return bSelected ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No safe deck route installed."));
 }
 FString UBTT_SelectDeckWaypoint::GetStaticDescription() const
 {

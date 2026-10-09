@@ -35,7 +35,7 @@ private:
 	ADeckEnemy* GetDeckEnemy() const;
 	bool ClaimGoal(const FDeckWalkLocation& Goal);
 	bool SelectNearGoal(const FDeckWalkLocation& Start, const FVector& Ideal, FName Surface,
-		float Tolerance, bool bExcludePlayer, AActor* Player);
+		float Tolerance, bool bExcludePlayer, AActor* Player, bool bAllowNearbyEscape = false);
 	FDeckWalkLocation CombatGoal;
 	FDeckWalkLocation PlannedTargetFloor;
 	TWeakObjectPtr<AActor> PlannedTarget;

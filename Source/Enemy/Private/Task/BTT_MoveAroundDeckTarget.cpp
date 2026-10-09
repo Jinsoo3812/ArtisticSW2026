@@ -36,9 +36,7 @@ bool UBTT_MoveAroundDeckTarget::PlanNextSegment()
 	{
 		SegmentRemaining = 1.5f; return true;
 	}
-	// Holding position is a valid cooldown activity when the rail leaves no safe lateral route.
-	SegmentRemaining = 0.3f;
-	return Enemy->IsValidCombatTarget(Target.Get());
+	return false;
 }
 void UBTT_MoveAroundDeckTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
@@ -66,14 +64,14 @@ void UBTT_MoveAroundDeckTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint
 	}
 	Enemy->GetDeckEnemyNavigationComponent()->ReplanIfTargetMoved(Target.Get());
 	const EDeckWalkRouteTick Result = Route->TickRoute(DeltaSeconds, 30.0f, 1.0f, MaximumDuration, MoveSpeed, 10.0f);
-	if (Result == EDeckWalkRouteTick::Failed)
+	if (Result == EDeckWalkRouteTick::Failed || Result == EDeckWalkRouteTick::Blocked)
 	{
 		EnemyPointSelectionFailure::Log(this, Enemy.Get(), TEXT("Deck strafe route is no longer usable."));
 		Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); return;
 	}
 	if (Result != EDeckWalkRouteTick::Moving || SegmentRemaining <= 0.0f)
 	{
-		Enemy->GetCharacterMovement()->StopMovementImmediately();
+		Route->StopWalkingMovement();
 		Direction *= -1.0f;
 		if (Result == EDeckWalkRouteTick::Reached)
 		{
@@ -88,8 +86,8 @@ void UBTT_MoveAroundDeckTarget::Cleanup()
 {
 	if (Enemy.IsValid())
 	{
+		Enemy->GetDeckWalkRouteComponent()->StopWalkingMovement();
 		Enemy->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
-		if (Enemy->GetCharacterMovement()) Enemy->GetCharacterMovement()->StopMovementImmediately();
 		if (bOwnsFocus) Enemy->GetDeckCombatComponent()->ReleaseFocus();
 	}
 	bOwnsFocus = false; Enemy.Reset(); Target.Reset();

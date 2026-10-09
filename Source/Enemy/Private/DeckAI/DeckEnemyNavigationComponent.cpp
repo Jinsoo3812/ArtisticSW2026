@@ -8,6 +8,8 @@
 #include "DeckAI/DeckWalkRouteComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "Weapon/BaseWeaponComponent.h"
+#include "AIController.h"
+#include "BehaviorTree/BlackboardComponent.h"
 
 UDeckEnemyNavigationComponent::UDeckEnemyNavigationComponent()
 {
@@ -42,14 +44,18 @@ bool UDeckEnemyNavigationComponent::ClaimGoal(const FDeckWalkLocation& Goal)
 }
 
 bool UDeckEnemyNavigationComponent::SelectNearGoal(const FDeckWalkLocation& Start, const FVector& Ideal,
-	FName Surface, float Tolerance, bool bExcludePlayer, AActor* Player)
+	FName Surface, float Tolerance, bool bExcludePlayer, AActor* Player, bool bAllowNearbyEscape)
 {
 	ADeckEnemy* Enemy = GetDeckEnemy();
 	UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
 	if (!Area || !Enemy->CanMoveOnDeck() || Ideal.ContainsNaN() || !FMath::IsFinite(Tolerance)) return false;
+	const UDeckWalkRouteComponent* Route = Enemy->GetDeckWalkRouteComponent();
+	const FVector Away = Route->GetPreferredEscapeDirection();
+	const FVector Feet = Area->ToLocal(Area->GetActorFeetWorld(*Enemy));
 	auto IsUsable = [&](const FDeckWalkLocation& Goal)
 	{
-		if (!Area->IsLocationAvailable(Goal, *Enemy)) return false;
+		if (!Away.IsNearlyZero() && FVector::Dist2D(Goal.LocalFloor, Feet) < 75.f) return false;
+		if (Route->IsGoalRecentlyBlocked(Goal) || !Area->IsLocationAvailable(Goal, *Enemy)) return false;
 		if (bExcludePlayer && Player)
 		{
 			const ACharacter* Character = Cast<ACharacter>(Player);
@@ -63,12 +69,13 @@ bool UDeckEnemyNavigationComponent::SelectNearGoal(const FDeckWalkLocation& Star
 	const bool bScoreAttackPosition = Player && UDeckCombatTargetResolverComponent::ResolveFor(Enemy, Player, Anchor)
 		&& (bRecoveryRoute || Anchor.Source != EDeckTargetAnchorSource::DeckFloor);
 	FDeckWalkLocation Exact;
-	if (!bScoreAttackPosition && Area->ResolvePreciseLocalFloor(Ideal, Surface, Exact) && IsUsable(Exact) && ClaimGoal(Exact)) return true;
+	if (Away.IsNearlyZero() && !bScoreAttackPosition && Area->ResolvePreciseLocalFloor(Ideal, Surface, Exact) && IsUsable(Exact) && ClaimGoal(Exact)) return true;
 	TArray<FDeckWalkLocation> Candidates;
 	Area->GetReachableLocations(Start, Candidates);
 	Candidates.RemoveAll([&](const FDeckWalkLocation& Candidate)
 	{
-		return Candidate.SurfaceId != Surface || FVector::Dist2D(Candidate.LocalFloor, Ideal) > FMath::Max(0.0f, Tolerance);
+		return Candidate.SurfaceId != Surface || (FVector::Dist2D(Candidate.LocalFloor, Ideal) > FMath::Max(0.0f, Tolerance)
+			&& !(bAllowNearbyEscape && !Away.IsNearlyZero() && FVector::Dist2D(Candidate.LocalFloor, Feet) <= 350.f));
 	});
 	TMap<int32, float> CandidateScores;
 	const UBaseWeaponComponent* Weapon = Enemy->GetWeaponComponent();
@@ -77,6 +84,13 @@ bool UDeckEnemyNavigationComponent::SelectNearGoal(const FDeckWalkLocation& Star
 	for (const auto& Candidate : Candidates)
 	{
 		float Score = FVector::DistSquared2D(Candidate.LocalFloor, Ideal);
+		if (!Away.IsNearlyZero())
+		{
+			// A contact normal points away from the blocker. Rank this half-plane first,
+			// then retain distance/LOS preferences within each group.
+			const float Dot = FVector::DotProduct((Candidate.LocalFloor - Feet).GetSafeNormal2D(), Away);
+			Score += (Dot >= 0.35f ? 0.f : 10000000.f) + (1.f - Dot) * 250000.f;
+		}
 		if (bScoreAttackPosition)
 		{
 			const FVector Position = Area->ToWorld(Candidate.LocalFloor)
@@ -99,10 +113,14 @@ bool UDeckEnemyNavigationComponent::SelectNearGoal(const FDeckWalkLocation& Star
 		const float DA = CandidateScores[A.NodeIndex], DB = CandidateScores[B.NodeIndex];
 		return FMath::IsNearlyEqual(DA, DB) ? A.NodeIndex < B.NodeIndex : DA < DB;
 	});
+	int32 Attempts = 0, EscapeAttempts = 0;
 	for (const FDeckWalkLocation& Candidate : Candidates)
 	{
-		if (Candidate.SurfaceId != Surface || FVector::Dist2D(Candidate.LocalFloor, Ideal) > FMath::Max(0.0f, Tolerance)) continue;
-		if (IsUsable(Candidate) && ClaimGoal(Candidate)) return true;
+		if (!IsUsable(Candidate)) continue;
+		if (!Away.IsNearlyZero() && FVector::DotProduct((Candidate.LocalFloor - Feet).GetSafeNormal2D(), Away) >= 0.35f
+			&& ++EscapeAttempts > 6) continue;
+		if (++Attempts > 12) break;
+		if (ClaimGoal(Candidate)) return true;
 	}
 	return false;
 }
@@ -117,6 +135,7 @@ bool UDeckEnemyNavigationComponent::PlanTargetDistanceRoute(AActor* Target, floa
 		|| !FMath::IsFinite(Distance) || !FMath::IsFinite(AngleDegrees)
 		|| !Area->ResolveActorOnDeck(*Enemy, Start)
 		|| !UDeckCombatTargetResolverComponent::ResolveFor(Enemy, Target, TargetFloor)) return false;
+	if (!Enemy->GetDeckWalkRouteComponent()->BeginGoalSelection()) return false;
 	if (PlannedTarget.IsValid() && PlannedTarget != Target) CancelCombatRoute();
 	const FVector TargetFeet = TargetFloor.LocalCenter;
 	const FVector SelfFeet = Area->ToLocal(Area->GetActorFeetWorld(*Enemy));
@@ -125,26 +144,28 @@ bool UDeckEnemyNavigationComponent::PlanTargetDistanceRoute(AActor* Target, floa
 	const float OldDistance = BandDistance;
 	// First acquire the radius; lateral paths stay in the annulus and cannot cut through the Player.
 	bUseDistanceBand = !FMath::IsNearlyZero(AngleDegrees) && Start.SurfaceId == TargetFloor.SurfaceId
-		&& FMath::Abs(FVector::Dist2D(SelfFeet, TargetFeet) - Distance) <= 100.0f;
+		&& FMath::Abs(FVector::Dist2D(SelfFeet, TargetFeet) - Distance) <= 100.0f
+		&& Enemy->GetDeckWalkRouteComponent()->GetPreferredEscapeDirection().IsNearlyZero();
 	BandCenter = TargetFeet; BandDistance = Distance;
 	FVector Ideal = CalculateDistanceGoal(TargetFeet, SelfFeet, Distance, bUseDistanceBand ? AngleDegrees : 0.0f);
-	bool bSelected = SelectNearGoal(Start, Ideal, TargetFloor.SurfaceId, ProjectionTolerance, true, Target);
+	bool bSelected = SelectNearGoal(Start, Ideal, TargetFloor.SurfaceId, ProjectionTolerance, true, Target, true);
 	// At a rail only one side of the annulus may exist; try the opposite side before normal safe approach.
 	if (!bSelected && bUseDistanceBand)
 	{
 		Ideal = CalculateDistanceGoal(TargetFeet, SelfFeet, Distance, -AngleDegrees);
-		bSelected = SelectNearGoal(Start, Ideal, TargetFloor.SurfaceId, ProjectionTolerance, true, Target);
+		bSelected = SelectNearGoal(Start, Ideal, TargetFloor.SurfaceId, ProjectionTolerance, true, Target, true);
 	}
 	if (!bSelected && TargetFloor.Source != EDeckTargetAnchorSource::DeckFloor)
 	{
 		bUseDistanceBand = false;
 		Ideal = CalculateDistanceGoal(TargetFeet, SelfFeet, Distance);
 		bSelected = SelectNearGoal(Start, Ideal, TargetFloor.SurfaceId,
-			FMath::Max(ProjectionTolerance, SupportedTargetGoalTolerance), true, Target);
+			FMath::Max(ProjectionTolerance, SupportedTargetGoalTolerance), true, Target, true);
 	}
 	if (!bSelected)
 	{
 		bUseDistanceBand = bOldBand; BandCenter = OldCenter; BandDistance = OldDistance;
+		Enemy->GetDeckWalkRouteComponent()->RecordGoalSelectionFailure();
 		return false;
 	}
 	PlannedTarget = Target; PlannedTargetFloor = FDeckWalkLocation();
@@ -163,34 +184,30 @@ bool UDeckEnemyNavigationComponent::PlanRecoveryRoute(AActor* Target)
 	FDeckWalkLocation Start, Snapshot;
 	if (!Combat || !Area || !Combat->HasRecovery(Target) || !Combat->GetRecoveryGoal(Snapshot)
 		|| !Area->ResolveActorOnDeck(*Enemy, Start)) return false;
+	if (!Enemy->GetDeckWalkRouteComponent()->BeginGoalSelection()) return false;
 	// A local point survives ship motion and a graph rebuild. SelectNearGoal resolves a fresh handle.
 	const bool bOldBand = bUseDistanceBand, bOldRecovery = bRecoveryRoute; bUseDistanceBand = false; bRecoveryRoute = true;
 	if (!SelectNearGoal(Start, Snapshot.LocalFloor, Snapshot.SurfaceId, SupportedTargetGoalTolerance, true, Target))
-	{ bUseDistanceBand = bOldBand; bRecoveryRoute = bOldRecovery; return false; }
+	{
+		bUseDistanceBand = bOldBand; bRecoveryRoute = bOldRecovery;
+		Enemy->GetDeckWalkRouteComponent()->RecordGoalSelectionFailure(); return false;
+	}
 	PlannedTarget = Target; bRecoveryRoute = true;
 	return true;
 }
 
 bool UDeckEnemyNavigationComponent::PlanInvestigationRoute(const FVector& WorldPoint)
 {
-	CancelCombatRoute();
 	ADeckEnemy* Enemy = GetDeckEnemy();
 	const UDeckWalkAreaComponent* Area = Enemy && Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
 	FDeckWalkLocation Start;
 	if (!Enemy || !Enemy->CanMoveOnDeck() || !Area || WorldPoint.ContainsNaN() || !Area->ResolveActorOnDeck(*Enemy, Start)) return false;
+	if (!Enemy->GetDeckWalkRouteComponent()->BeginGoalSelection()) return false;
+	CancelCombatRoute();
 	const FVector Local = Area->ToLocal(WorldPoint);
-	TArray<FDeckWalkLocation> Candidates;
-	Area->GetReachableLocations(Start, Candidates);
-	Candidates.Sort([&](const FDeckWalkLocation& A, const FDeckWalkLocation& B)
-	{
-		return FVector::DistSquared(A.LocalFloor, Local) < FVector::DistSquared(B.LocalFloor, Local);
-	});
-	for (const FDeckWalkLocation& Candidate : Candidates)
-	{
-		if (FVector::Dist2D(Candidate.LocalFloor, Local) > 250.0f || FMath::Abs(Candidate.LocalFloor.Z - Local.Z) > 120.0f) continue;
-		if (ClaimGoal(Candidate)) return true;
-	}
-	return false;
+	if (FMath::Abs(Start.LocalFloor.Z - Local.Z) > 120.f) return false;
+	if (SelectNearGoal(Start, Local, Start.SurfaceId, 250.f, false, nullptr)) return true;
+	Enemy->GetDeckWalkRouteComponent()->RecordGoalSelectionFailure(); return false;
 }
 
 bool UDeckEnemyNavigationComponent::ReplanIfTargetMoved(AActor* Target)
@@ -218,4 +235,7 @@ void UDeckEnemyNavigationComponent::CancelCombatRoute()
 	if (Enemy->GetDeckWalkRouteComponent()) Enemy->GetDeckWalkRouteComponent()->ClearGoal();
 	if (AEnemyShip* Ship = Enemy->GetDeckHostShip(); Ship && Ship->GetDeckWalkAreaComponent()) Ship->GetDeckWalkAreaComponent()->ReleaseLocationClaim(Enemy);
 	CombatGoal = FDeckWalkLocation(); PlannedTarget.Reset(); bRecoveryRoute = bUseDistanceBand = false;
+	if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
+		if (UBlackboardComponent* BB = AI->GetBlackboardComponent(); BB && BB->GetKeyID(TEXT("DestinationLocation")) != FBlackboard::InvalidKey)
+			BB->ClearValue(TEXT("DestinationLocation"));
 }

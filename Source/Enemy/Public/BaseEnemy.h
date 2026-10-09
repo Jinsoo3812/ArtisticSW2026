@@ -64,7 +64,7 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter, public ISWRoomStateAdapter
 	GENERATED_BODY()
 
 public:
-	ABaseEnemy();
+	ABaseEnemy(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,

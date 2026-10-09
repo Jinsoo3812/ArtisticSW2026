@@ -50,7 +50,7 @@ class ENEMY_API ADeckEnemy : public ARangedEnemy, public IDeckWaypointMovementIn
 	GENERATED_BODY()
 
 public:
-	ADeckEnemy();
+	ADeckEnemy(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;

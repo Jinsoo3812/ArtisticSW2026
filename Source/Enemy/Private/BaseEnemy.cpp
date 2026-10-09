@@ -167,7 +167,7 @@ bool ABaseEnemy::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWR
 	return FSWRoomStructCodec::Compare<FSWRoomEnemyState>(Expected, Actual, TimeToleranceSeconds, OutFields);
 }
 
-ABaseEnemy::ABaseEnemy()
+ABaseEnemy::ABaseEnemy(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
