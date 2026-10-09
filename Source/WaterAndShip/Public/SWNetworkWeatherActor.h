@@ -221,6 +221,11 @@ private:
 	double DiagnosticLastLocalTime = 0.;
 	double DiagnosticLastAlpha = 0.;
 	double DiagnosticNextSampleTime = 0.;
+	double DiagnosticNextFrameWarningTime = 0.;
+	double DiagnosticNextHitchWarningTime = 0.;
+	uint32 DiagnosticSuppressedFrameChanges = 0;
+	uint32 DiagnosticHitchCount = 0;
+	double DiagnosticMaximumElapsed = 0.;
 	uint32 DiagnosticLastSequence = 0;
 	bool bAdapterReady = false;
 	bool bEventsReady = false;
