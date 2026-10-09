@@ -10,6 +10,7 @@ public class ArtisticSWCore: ModuleRules
             "CoreUObject",
             "Engine",
             "AssetRegistry",
+            "PCG",
 			"NavigationSystem",
             "InputCore",
 			"UMG"

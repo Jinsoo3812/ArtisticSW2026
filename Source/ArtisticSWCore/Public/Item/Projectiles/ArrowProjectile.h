@@ -112,6 +112,9 @@ public:
 
 	float GetFlightGravityZ() const;
 	float GetFlightGravityScale() const { return FlightGravityScale; }
+	/** Resolve before aiming/ballistics; zero retains the bow's existing speed. */
+	UFUNCTION(BlueprintPure, Category = "Arrow|Movement")
+	float ResolveInitialLaunchSpeed(float BowSpeed) const;
 	virtual FCollisionQueryParams MakeFlightQueryParams() const;
 	/** Called only by the movement component after the unified query resolves a contact. */
 	virtual void HandleFlightImpact(const FHitResult& Hit);
@@ -218,6 +221,11 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Movement", meta = (ClampMin = "0.0"))
 	float FlightGravityScale = 0.0f;
+
+	/** Fixed launch speed before ship velocity inheritance. Zero uses the bow's speed (including draw). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Movement",
+		meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm/s"))
+	float InitialLaunchSpeed = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow")
 	bool bDestroyOnImpact = true;

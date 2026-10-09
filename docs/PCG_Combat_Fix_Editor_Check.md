@@ -8,7 +8,9 @@
 
 `UCombatHitResolverComponent`는 WorldStatic Object Multi Trace의 결과 중 이 Profile인 **컴포넌트만** 제외한다. 실제 벽과 다른 Profile의 생성 Mesh는 계속 검사한다. PCG 클래스·Brush 타입·모든 응답 Ignore 검사는 사용하지 않으며 GASCore에 PCG 모듈 의존성도 없다.
 
-이는 WorldStatic 장애물 검사를 사용하는 플레이어/적 근접·보스 Resolver 호출에 적용된다. 화살 호출은 이 추가 검사를 끄고 기존 투사체 충돌을 사용한다. Profile 이름 필터만으로 PCG의 화살 Block 응답은 바뀌지 않는다.
+이는 WorldStatic 장애물 검사를 사용하는 플레이어/적 근접·보스 Resolver 호출에 적용된다. 화살 호출은 이 추가 검사를 끄고 투사체 전용 query를 사용한다.
+
+2026-10-08 화살 수정: `ArrowCollisionQuery`는 **PCGVolume의 범위 Brush** 또는 **PCGVolumeBounds Profile 컴포넌트**를 제외하고 같은 시작점에서 query를 다시 수행한다. Custom Profile인 Lvl_CY 범위 Brush도 화살을 막지 않는다. 실제 비행 sweep, 발사 가림 검사, 플레이어 카메라의 장애물/WeaponAim ray가 같은 제외 정책을 사용한다. 같은 PCGVolume이 소유한 생성 Mesh 전체를 제외하지 않으며 실제 나무·바위·벽·갑판은 계속 화살을 막는다. 기존 레벨·PCG 생성 상태·Collision Profile 응답은 변경하지 않는다. 따라서 에디터 Brush의 Arrow 응답이 Block이어도 화살 전용 query에서는 통과한다. 근접 Resolver는 여전히 Profile 기준이므로 아래 Lvl_CY 적용 절차는 근접 충돌에 유효하다.
 
 2026-10-08 두 저장 레벨을 다시 읽은 **현재 상태**:
 
@@ -37,6 +39,8 @@
 8. `sw.Combat.Melee.Debug 0`으로 진단을 끈다.
 
 ## 검증과 자료
+
+2026-10-08 화살 변경 검증: `ArtisticSW2026Editor Win64 Development` 전체 빌드 성공. `ArtisticSW.Item.Arrow.CollisionProfile`, `IgnoresPCGBounds`, `PlayerIgnoresShooter`, `ArtisticSW.PlayerBow.IndependentFlight` 총 4개 자동화 테스트 성공. Custom PCG Brush 내부에서 출발하는 화살, 여러 범위 컴포넌트 뒤 실제 벽, 같은 PCGVolume 소유 생성 충돌, 범위만 남았을 때 통과, 조준 ray, 에디터 지정 속력 6200 cm/s와 배 관성·중력의 실제 비행을 검증했다. 실제 레벨의 PIE 및 네트워크 플레이는 별도 확인이 필요하다. 로그: `Saved/ArrowPCGLaunchSpeedBuild.log`, `Saved/ArrowPCGLaunchSpeedTests.log`; 보고서: `Saved/ArrowPCGLaunchSpeedTests/index.json`.
 
 2026-10-08 Editor 대상 C++ 빌드는 성공했다. 저장된 Profile과 인스턴스 수를 읽기 전용으로 확인했다. 실제 PIE 피해·벽 차단, PCG 재생성 및 패키지 실행은 아직 확인하지 않았다. 이번 점검에서 전투 자동화 테스트를 추가하거나 재실행하지 않았다.
 

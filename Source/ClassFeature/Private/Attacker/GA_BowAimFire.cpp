@@ -517,7 +517,7 @@ bool UGA_BowAimFire::IsAimPathObstructed() const
 	const AArrowProjectile* Defaults = SpawnClass->GetDefaultObject<AArrowProjectile>();
 	FProjectileShotInput Input;
 	Input.ShotId = FGuid(0, 0, 0, 1); // Local preview only; never queued, sent or spawned.
-	Input.Speed = CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha());
+	Input.Speed = Defaults->ResolveInitialLaunchSpeed(CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha()));
 	Input.GravityZ = GetWorld()->GetGravityZ() * PlayerBowShotPreparation::GetGravityScale(Defaults->GetFlightGravityScale());
 	if (!CachedBow->TryGetArrowSpawnTransform(Input.MuzzleTransform)
 		|| !Player->GetAimComponent()->ResolveCurrentAim(CachedBow, Input.MuzzleTransform.GetLocation(), Input.AimPoint, Input.AimDirection, Input.AimServerTime)) return false;
@@ -577,7 +577,7 @@ EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
 	if (AimResult != EPlayerShotAimResult::Ready) return EProjectileShotCommit::Rejected;
 
 	const AArrowProjectile* Defaults = SpawnClass->GetDefaultObject<AArrowProjectile>();
-	Input.Speed = PendingReleaseFireSpeed;
+	Input.Speed = Defaults->ResolveInitialLaunchSpeed(PendingReleaseFireSpeed);
 	Input.GravityZ = GetWorld()->GetGravityZ() * PlayerBowShotPreparation::GetGravityScale(Defaults->GetFlightGravityScale());
 	FProjectileShotSnapshot Shot;
 	if (!PlayerBowShotPreparation::Prepare(Player, Input, Shot))

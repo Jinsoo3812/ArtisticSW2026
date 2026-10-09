@@ -291,7 +291,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	Input.AimPoint = AimLocation;
 	Input.AimDirection = (AimLocation - ArrowSpawnTransform.GetLocation()).GetSafeNormal();
 	Input.AimServerTime = ProjectileShotPreparation::GetServerTime(World);
-	Input.Speed = Bow->GetProjectileSpeed();
+	Input.Speed = ProjectileClass.GetDefaultObject()->ResolveInitialLaunchSpeed(Bow->GetProjectileSpeed());
 	Input.GravityZ = World->GetGravityZ() * EnemyBowShotPreparation::GetGravityScale(
 		ProjectileClass.GetDefaultObject()->GetFlightGravityScale());
 	FProjectileShotSnapshot Shot;

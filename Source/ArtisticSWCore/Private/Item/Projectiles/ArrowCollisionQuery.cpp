@@ -7,12 +7,53 @@
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "Components/BrushComponent.h"
+#include "PCGVolume.h"
+
+namespace
+{
+	// Single queries stop at the first blocker. Retry from the same origin after
+	// excluding ONLY bounds components, so walls behind them and initial overlaps remain visible.
+	template <typename QueryType>
+	bool QueryPastPCGBounds(const FCollisionQueryParams& Params, FHitResult& OutHit, QueryType Query)
+	{
+		FCollisionQueryParams FilteredParams = Params;
+		while (Query(FilteredParams, OutHit))
+		{
+			if (!ArrowCollisionQuery::IsPCGVolumeBounds(OutHit.GetComponent())) return true;
+			FilteredParams.AddIgnoredComponent(OutHit.GetComponent());
+			OutHit = FHitResult(1.0f);
+		}
+		return false;
+	}
+}
+
+bool ArrowCollisionQuery::IsPCGVolumeBounds(const UPrimitiveComponent* Component)
+{
+	if (!Component) return false;
+	if (Component->GetCollisionProfileName() == TEXT("PCGVolumeBounds")) return true;
+	const APCGVolume* Volume = Cast<APCGVolume>(Component->GetOwner());
+	return Volume && Component == Volume->GetBrushComponent();
+}
 
 bool ArrowCollisionQuery::TraceObstacles(const UWorld* World, const FVector& Start, const FVector& End,
 	const FCollisionQueryParams& Params, FHitResult& OutHit)
 {
 	OutHit = FHitResult(1.0f);
-	return World && World->LineTraceSingleByProfile(OutHit, Start, End, TEXT("ArrowObstacle"), Params);
+	return World && QueryPastPCGBounds(Params, OutHit, [&](const FCollisionQueryParams& FilteredParams, FHitResult& Hit)
+	{
+		return World->LineTraceSingleByProfile(Hit, Start, End, TEXT("ArrowObstacle"), FilteredParams);
+	});
+}
+
+bool ArrowCollisionQuery::TraceAimTarget(const UWorld* World, const FVector& Start, const FVector& End,
+	const FCollisionQueryParams& Params, FHitResult& OutHit)
+{
+	OutHit = FHitResult(1.0f);
+	return World && QueryPastPCGBounds(Params, OutHit, [&](const FCollisionQueryParams& FilteredParams, FHitResult& Hit)
+	{
+		return World->LineTraceSingleByChannel(Hit, Start, End, ECC_WeaponAim, FilteredParams);
+	});
 }
 
 bool ArrowCollisionQuery::SweepObstacles(const UWorld* World, const FVector& Start, const FVector& End,
@@ -25,8 +66,11 @@ bool ArrowCollisionQuery::SweepObstacles(const UWorld* World, const FVector& Sta
 		OutHit.Time = 0.0f;
 		return true;
 	}
-	return World->SweepSingleByProfile(OutHit, Start, End, Rotation, TEXT("ArrowObstacle"),
-		FCollisionShape::MakeBox(HalfExtent.ComponentMax(FVector(0.1))), Params);
+	return QueryPastPCGBounds(Params, OutHit, [&](const FCollisionQueryParams& FilteredParams, FHitResult& Hit)
+	{
+		return World->SweepSingleByProfile(Hit, Start, End, Rotation, TEXT("ArrowObstacle"),
+			FCollisionShape::MakeBox(HalfExtent.ComponentMax(FVector(0.1))), FilteredParams);
+	});
 }
 
 bool ArrowCollisionQuery::IsAimObstructed(const UWorld* World, const FProjectileShotSnapshot& Shot,
