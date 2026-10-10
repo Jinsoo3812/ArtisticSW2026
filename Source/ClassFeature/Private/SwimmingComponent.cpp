@@ -24,6 +24,23 @@
 #include "AbilitySystemGlobals.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "GameFramework/PlayerState.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/CameraComponent.h"
+#include "Engine/NetDriver.h"
+#include "Engine/NetConnection.h"
+#include "HAL/PlatformTime.h"
+#include "HAL/PlatformProcess.h"
+#include "GerstnerWaterWaves.h"
+#include "Water/SWRippleStateSubsystem.h"
+#include "SWShipWakeSubsystem.h"
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+static TAutoConsoleVariable<int32> CVarSwimNetDiagnostics(
+	TEXT("sw.Swim.NetDiag"), 1,
+	TEXT("Swimming network diagnostics: 0 off, 1 frame/physics samples at 10Hz plus correction events, 2 every physics step. Development only."),
+	ECVF_Default);
+#endif
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
@@ -432,6 +449,7 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Swimming_Tick);
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	LogNetworkDiagnostic(TEXT("Frame"), DeltaTime);
 
 	// Pontoon Debug Visualizer - Active only in editor (PIE)
 #if WITH_EDITOR
@@ -493,6 +511,157 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 			DrawDebugLine(GetWorld(), SubmergedThreshold - FVector(PontoonRadius, 0.f, 0.f), SubmergedThreshold + FVector(PontoonRadius, 0.f, 0.f), FColor::Blue, false, -1.f, 0, 1.5f);
 		}
 	}
+}
+
+int32 USwimmingComponent::GetNetworkDiagnosticLevel()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	return CVarSwimNetDiagnostics.GetValueOnGameThread();
+#else
+	return 0;
+#endif
+}
+
+void USwimmingComponent::LogNetworkDiagnostic(const TCHAR* Phase, float DeltaTime, const FString& Detail)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	const int32 Level = GetNetworkDiagnosticLevel();
+	UWorld* World = GetWorld();
+	if (Level <= 0 || !OwnerCharacter || !CharacterMovement || !World) return;
+	const double Now = FPlatformTime::Seconds();
+	const bool bFrame = FCString::Strcmp(Phase, TEXT("Frame")) == 0;
+	const bool bPhysics = FCString::Strcmp(Phase, TEXT("Physics")) == 0;
+	const int32 Mode = CharacterMovement->PackNetworkMovementMode();
+	const bool bModeChanged = bFrame && Mode != LastNetworkMovementMode;
+	if (bFrame)
+	{
+		if (!IsCustomSwimming() && OverlappingWaterBodies.IsEmpty() && !bModeChanged) return;
+		if (!bModeChanged && Now - LastNetworkFrameLogTime < 0.1) return;
+	}
+	if (bPhysics && Level < 2 && Now - LastNetworkPhysicsLogTime < 0.1) return;
+	if (bPhysics) LastNetworkPhysicsLogTime = Now;
+	const FVector Location = OwnerCharacter->GetActorLocation();
+	const FVector Velocity = CharacterMovement->Velocity;
+	const double Elapsed = LastNetworkFrameLogTime >= 0.0 ? Now - LastNetworkFrameLogTime : 0.0;
+	const FVector Residual = Elapsed > 0.0 ? Location - LastNetworkFrameLocation
+		- (Velocity + LastNetworkFrameVelocity) * (0.5 * Elapsed) : FVector::ZeroVector;
+	const TOptional<double> WaveTime = ResolveMovementWaveServerTime();
+	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(Location, WaveTime);
+	const APlayerState* State = OwnerCharacter->GetPlayerState();
+	const USkeletalMeshComponent* Mesh = OwnerCharacter->GetMesh();
+	const UCameraComponent* Camera = OwnerCharacter->FindComponentByClass<UCameraComponent>();
+	const UWaterSubsystem* Water = UWaterSubsystem::GetWaterSubsystem(World);
+	const APlayerController* Controller = Cast<APlayerController>(OwnerCharacter->GetController());
+	const UNetDriver* Driver = World->GetNetDriver();
+	const UNetConnection* Connection = World->GetNetMode() == NM_Client && Driver
+		? Driver->ServerConnection.Get() : (Controller ? Controller->GetNetConnection() : nullptr);
+	const FNetworkPredictionData_Client_Character* Prediction = CharacterMovement->HasPredictionData_Client()
+		? CharacterMovement->GetPredictionData_Client_Character() : nullptr;
+	UE_LOG(LogTemp, Display,
+		TEXT("[SwimNet] Phase=%s Pid=%u Real=%.6f ServerT=%.6f WorldT=%.6f Player=%s Id=%d Pawn=%s Net=%d Role=%d Local=%d DT=%.6f Mode=%d:%d State=%s Underwater=%d Raw=%.2f Effective=%.2f Pos=%s Vel=%s Accel=%s Residual=%s Mesh=%s Camera=%s Base=%s Floor=%d Water=%s Valid=%d SurfaceZ=%.3f SurfaceVZ=%.3f Depth=%.3f WaveT=%.6f ActiveWave=%d WaterT=%.6f Overlaps=%d Cabin=%d QueryFailT=%.3f SavedMoves=%d Replay=%d Smooth=%d PingMs=%.2f NetLag=%.4f PacketsIn=%d PacketsOut=%d LostIn=%d LostOut=%d Detail={%s}"),
+		Phase, FPlatformProcess::GetCurrentProcessId(), Now, GetCurrentSynchronizedServerTime(), World->GetTimeSeconds(),
+		State ? *State->GetPlayerName() : TEXT("None"), State ? State->GetPlayerId() : -1,
+		*OwnerCharacter->GetName(), int32(World->GetNetMode()), int32(OwnerCharacter->GetLocalRole()), OwnerCharacter->IsLocallyControlled(),
+		DeltaTime, int32(CharacterMovement->MovementMode), int32(CharacterMovement->CustomMovementMode),
+		GetSwimMovementStateName(MovementState), bIsUnderwater, RawVerticalSwimInput, GetEffectiveVerticalSwimInput(),
+		*Location.ToCompactString(), *Velocity.ToCompactString(), *CharacterMovement->GetCurrentAcceleration().ToCompactString(),
+		*Residual.ToCompactString(), Mesh ? *Mesh->GetComponentLocation().ToCompactString() : TEXT("None"),
+		Camera ? *Camera->GetComponentLocation().ToCompactString() : TEXT("None"), *GetNameSafe(CharacterMovement->GetMovementBase()),
+		CharacterMovement->CurrentFloor.IsWalkableFloor(), *GetNameSafe(Sample.WaterBody.Get()), Sample.bIsValid,
+		Sample.SurfaceZ, Sample.SurfaceVelocityZ, Sample.bIsValid ? Sample.SurfaceZ - Location.Z : 0.0f,
+		WaveTime.IsSet() ? WaveTime.GetValue() : GetCurrentSynchronizedServerTime(), WaveTime.IsSet(),
+		Water ? Water->GetWaterTimeSeconds() : -1.0, OverlappingWaterBodies.Num(), IsInsideCabinWaterCull(), WaterQueryFailureElapsed,
+		Prediction ? Prediction->SavedMoves.Num() : 0, OwnerCharacter->bClientUpdating,
+		int32(CharacterMovement->NetworkSmoothingMode), State ? State->GetPingInMilliseconds() : 0.0f,
+		Connection ? Connection->AvgLag : 0.0f, Connection ? Connection->InPacketsPerSecond : 0,
+		Connection ? Connection->OutPacketsPerSecond : 0, Connection ? Connection->InPacketsLost : 0,
+		Connection ? Connection->OutPacketsLost : 0, *Detail);
+	if (bFrame)
+	{
+		LastNetworkFrameLogTime = Now;
+		LastNetworkFrameLocation = Location;
+		LastNetworkFrameVelocity = Velocity;
+		LastNetworkMovementMode = Mode;
+	}
+#endif
+}
+
+void USwimmingComponent::LogPairedWaterProbe(const TCHAR* Side, float ClientStamp, double WaveTime,
+	const FVector& MoveLocation, float MoveDeltaTime, bool bWaveTimeAccepted)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	const int32 Level = GetNetworkDiagnosticLevel();
+	if (Level <= 0 || !OwnerCharacter || !CharacterMovement || !GetWorld()
+		|| !FMath::IsFinite(ClientStamp) || !FMath::IsFinite(WaveTime) || MoveLocation.ContainsNaN()) return;
+	// Both peers select the same serialized timestamp, independent of their tick/arrival times.
+	if (Level < 2 && FMath::RoundToInt(ClientStamp * 1000.0f) % 5 != 0) return;
+	const FVector ProbeLocation(FMath::RoundToDouble(MoveLocation.X * 100.0) / 100.0,
+		FMath::RoundToDouble(MoveLocation.Y * 100.0) / 100.0, FMath::RoundToDouble(MoveLocation.Z * 100.0) / 100.0);
+	UWorld* World = GetWorld();
+	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(ProbeLocation, WaveTime);
+	UWaterBodyComponent* Body = Sample.WaterBody.Get();
+	UWaterWavesBase* Waves = Body ? Body->GetWaterWaves() : nullptr;
+	const USWRippleWaterWaves* Wrapper = Cast<USWRippleWaterWaves>(Waves);
+	const UWaterWaves* BaseWaves = Waves ? Waves->GetWaterWaves() : nullptr;
+	const float ResolvedTime = Wrapper ? Wrapper->ResolveQueryTime(static_cast<float>(WaveTime)) : static_cast<float>(WaveTime);
+	float PlaneZ = 0.0f, WaterDepth = 0.0f, Attenuation = 0.0f, BaseHeight = 0.0f, FullHeight = 0.0f;
+	FVector QueryPosition = ProbeLocation;
+	if (Body)
+	{
+		const TOptional<float> SplineKey = Body->GetWaterBodyType() == EWaterBodyType::River
+			? TOptional<float>(Body->FindInputKeyClosestToWorldLocation(ProbeLocation)) : TOptional<float>(-1.0f);
+		const auto Query = Body->TryQueryWaterInfoClosestToWorldLocation(ProbeLocation,
+			EWaterBodyQueryFlags::ComputeLocation | EWaterBodyQueryFlags::ComputeDepth, SplineKey);
+		if (Query.HasValue())
+		{
+			QueryPosition = Query.GetValue().GetWaterSurfaceLocation();
+			PlaneZ = QueryPosition.Z;
+			WaterDepth = Query.GetValue().GetWaterSurfaceDepth();
+			if (Waves && Body->HasWaves())
+			{
+				Attenuation = Waves->GetWaveAttenuationFactor(QueryPosition, WaterDepth, Body->TargetWaveMaskDepth);
+				FVector Normal = FVector::UpVector;
+				FullHeight = Waves->GetWaveHeightAtPosition(QueryPosition, WaterDepth, static_cast<float>(WaveTime), Normal);
+				if (BaseWaves) BaseHeight = BaseWaves->GetWaveHeightAtPosition(QueryPosition, WaterDepth, ResolvedTime, Normal);
+			}
+		}
+	}
+	const USWRippleStateSubsystem* Ripple = World->GetSubsystem<USWRippleStateSubsystem>();
+	const USWShipWakeSubsystem* Wake = World->GetSubsystem<USWShipWakeSubsystem>();
+	const float RippleHeight = Ripple ? Ripple->GetRippleHeight(QueryPosition, ResolvedTime) : 0.0f;
+	const float WakeHeight = Wake ? Wake->GetWakeHeight(QueryPosition, ResolvedTime) : 0.0f;
+	uint32 WaveHash = 0;
+	int32 WaveCount = 0;
+	if (const UGerstnerWaterWaves* Gerstner = Cast<UGerstnerWaterWaves>(BaseWaves))
+	{
+		WaveCount = Gerstner->GetGerstnerWaves().Num();
+		for (const FGerstnerWave& Wave : Gerstner->GetGerstnerWaves())
+		{
+			const auto HashFloat = [&WaveHash](float Value) { WaveHash = HashCombineFast(WaveHash, GetTypeHash(Value)); };
+			HashFloat(Wave.WaveLength); HashFloat(Wave.Amplitude); HashFloat(Wave.Steepness);
+			HashFloat(static_cast<float>(Wave.Direction.X)); HashFloat(static_cast<float>(Wave.Direction.Y)); HashFloat(static_cast<float>(Wave.Direction.Z));
+			HashFloat(static_cast<float>(Wave.WaveVector.X)); HashFloat(static_cast<float>(Wave.WaveVector.Y));
+			HashFloat(Wave.WaveSpeed); HashFloat(Wave.WKA); HashFloat(Wave.Q); HashFloat(Wave.PhaseOffset);
+		}
+	}
+	const APlayerState* State = OwnerCharacter->GetPlayerState();
+	UE_LOG(LogTemp, Display,
+		TEXT("[SwimPair] Side=%s Player=%s Id=%d Stamp=%.9f WaveT=%.9f Pid=%u EditorBuild=%d Cooked=%d ServerT=%.9f WorldT=%.9f MoveDT=%.9f Accepted=%d ProbeXYZ=%.3f,%.3f,%.3f Valid=%d Body=%s Waves=%s WaveClass=%s WaveWorld=%s BaseAsset=%s BaseWaves=%s WaveCount=%d WaveHash=%08X ResolvedT=%.9f QueryXYZ=%.3f,%.3f,%.3f PlaneZ=%.6f WaterDepth=%.6f MaskDepth=%.6f Attenuation=%.6f BaseHeight=%.6f FullHeight=%.6f RippleHeight=%.6f WakeHeight=%.6f RippleCount=%d RippleRevision=%u SurfaceZ=%.6f SurfaceVZ=%.6f ActualPos=%s ActualVel=%s Mode=%d:%d State=%d SwimClass=%s TargetDepth=%.3f Frequency=%.3f Damping=%.3f MaxAccel=%.3f MaxVZ=%.3f SwimAccel=%.3f Friction=%.3f MaxSpeed=%.3f Overlaps=%d LastBody=%s Replay=%d"),
+		Side, State ? *State->GetPlayerName() : TEXT("None"), State ? State->GetPlayerId() : -1, ClientStamp, WaveTime,
+		FPlatformProcess::GetCurrentProcessId(), WITH_EDITOR, FPlatformProperties::RequiresCookedData(),
+		GetCurrentSynchronizedServerTime(), World->GetTimeSeconds(), MoveDeltaTime, bWaveTimeAccepted,
+		ProbeLocation.X, ProbeLocation.Y, ProbeLocation.Z, Sample.bIsValid, *GetPathNameSafe(Body), *GetPathNameSafe(Waves),
+		Waves ? *Waves->GetClass()->GetPathName() : TEXT("None"), *GetPathNameSafe(Waves ? Waves->GetWorld() : nullptr),
+		*GetPathNameSafe(Wrapper ? Wrapper->BaseWavesAsset.Get() : nullptr),
+		*GetPathNameSafe(BaseWaves), WaveCount, WaveHash, ResolvedTime, QueryPosition.X, QueryPosition.Y, QueryPosition.Z,
+		PlaneZ, WaterDepth, Body ? Body->TargetWaveMaskDepth : 0.0f, Attenuation, BaseHeight, FullHeight,
+		RippleHeight, WakeHeight, Ripple ? Ripple->GetEventCount() : 0, Ripple ? Ripple->GetRevision() : 0,
+		Sample.SurfaceZ, Sample.SurfaceVelocityZ, *OwnerCharacter->GetActorLocation().ToCompactString(),
+		*CharacterMovement->Velocity.ToCompactString(), int32(CharacterMovement->MovementMode), int32(CharacterMovement->CustomMovementMode),
+		int32(MovementState), *GetClass()->GetPathName(), SurfaceTargetDepth, SurfaceFollowFrequencyHz, SurfaceFollowDampingRatio, MaxSurfaceFollowAcceleration,
+		MaxSurfaceFollowSpeed, SwimAcceleration, SwimFriction, MaxSwimSpeed, OverlappingWaterBodies.Num(),
+		*GetPathNameSafe(LastActiveWaterBody.Get()), OwnerCharacter->bClientUpdating);
+#endif
 }
 
 void USwimmingComponent::InitializeOverlaps()
@@ -1069,6 +1238,8 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	const TOptional<double> MovementWaveTime = ResolveMovementWaveServerTime();
 	const FVector ActorLocation = OwnerCharacter->GetActorLocation();
 	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(ActorLocation, MovementWaveTime);
+	const FVector DiagnosticVelocityBefore = CharacterMovement->Velocity;
+	const ESwimMovementState DiagnosticStateBefore = MovementState;
 	const float MovementVerticalInput = GetEffectiveVerticalSwimInput();
 	const float InputVerticalAcceleration = MovementVerticalInput * VerticalSwimAcceleration;
 	const bool bHasVerticalInput = HasVerticalSwimInput();
@@ -1160,6 +1331,17 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 
 	UpdateSwimState(DeltaTime, Sample, SweepHit.IsValidBlockingHit());
 	UpdateUnderwaterState(Sample);
+	if (GetNetworkDiagnosticLevel() > 0)
+	{
+		LogNetworkDiagnostic(TEXT("Physics"), DeltaTime, FString::Printf(
+			TEXT("StateBefore=%d VelocityBefore=%s TargetZ=%.3f PositionError=%.3f VelocityError=%.3f FollowAccel=%.3f MaxAccel=%.3f Frequency=%.3f Damping=%.3f MaxVZ=%.3f Blocking=%d StartPenetrating=%d Penetration=%.3f HitTime=%.4f Obstacle=%s Normal=%s MoveWaveT=%.6f SampleSurfaceZ=%.3f SampleSurfaceVZ=%.3f SampleValid=%d"),
+			int32(DiagnosticStateBefore), *DiagnosticVelocityBefore.ToCompactString(), SurfaceTargetActorZ,
+			SurfacePositionError, SurfaceVelocityError, SurfaceFollowAcceleration, MaxSurfaceFollowAcceleration,
+			SurfaceFollowFrequencyHz, SurfaceFollowDampingRatio, MaxSurfaceFollowSpeed, SweepHit.IsValidBlockingHit(),
+			SweepHit.bStartPenetrating, SweepHit.PenetrationDepth, SweepHit.Time, *GetNameSafe(SweepHit.GetComponent()),
+			*SweepHit.ImpactNormal.ToCompactString(), MovementWaveTime.IsSet() ? MovementWaveTime.GetValue() : -1.0,
+			Sample.SurfaceZ, Sample.SurfaceVelocityZ, Sample.bIsValid));
+	}
 
 	if (CVarSwimTransitionDebug.GetValueOnGameThread() != 0
 		&& GetWorld()
@@ -1221,6 +1403,9 @@ void USwimmingComponent::EnterSwimMovementState(
 	SurfaceTransitionEntryHoldElapsed = 0.0f;
 	LastSurfaceTransitionProgressDepth = InitialDepth;
 	RefreshEffectiveVerticalInput();
+	if (PreviousState != NewState && GetNetworkDiagnosticLevel() > 0)
+		LogNetworkDiagnostic(TEXT("StateEdge"), 0.0f, FString::Printf(TEXT("From=%s To=%s Reason=%s InitialDepth=%.3f"),
+			GetSwimMovementStateName(PreviousState), GetSwimMovementStateName(NewState), TransitionReason, InitialDepth));
 
 	if (PreviousState != NewState && CVarSwimTransitionDebug.GetValueOnGameThread() != 0)
 	{

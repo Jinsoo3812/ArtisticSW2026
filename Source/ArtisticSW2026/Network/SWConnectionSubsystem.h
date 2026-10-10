@@ -91,6 +91,7 @@ private:
 	TWeakObjectPtr<UNetDriver> ReturnTimeoutDriver;
 	float PreviousInitialConnectTimeout = 0.0f;
 	float PreviousConnectionTimeout = 0.0f;
+	float PreviousResolutionConnectionTimeout = 0.0f;
 	static constexpr int32 RequiredConsecutiveReadyTicks = 3;
 	TSharedPtr<SWidget> LoadingOverlayWidget;
 	UPROPERTY(Transient)

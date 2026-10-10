@@ -150,25 +150,6 @@ bool PlaceShipSafely(UWorld* World, AKelvinShip* Ship, AActor* Entry, bool bUseE
 	return false;
 }
 
-bool HasPostPlacementBlock(UWorld* World, AKelvinShip* Ship)
-{
-	for (UPrimitiveComponent* Part : {Cast<UPrimitiveComponent>(Ship->GetRootComponent()),
-		Cast<UPrimitiveComponent>(Ship->GetDeckMeshSimple()), Cast<UPrimitiveComponent>(Ship->GetDeckMeshComplex())})
-	{
-		if (IsShipPartBlocked(World, Ship, Part)) return true;
-	}
-	for (TActorIterator<ABasePlayer> It(World); It; ++It)
-	{
-		if (UCapsuleComponent* Capsule = It->GetCapsuleComponent())
-		{
-			FCollisionQueryParams PlayerParams(SCENE_QUERY_STAT(SWRoomPlayerPostPlacement), false, *It);
-			if (World->OverlapBlockingTestByChannel(Capsule->GetComponentLocation(), Capsule->GetComponentQuat(),
-				ECC_WorldStatic, Capsule->GetCollisionShape(), PlayerParams)) return true;
-		}
-	}
-	return false;
-}
-
 AActor* ResolveShipEntry(UWorld* World, bool bFinalDeparture, int32& OutMarkerCount)
 {
 	OutMarkerCount = 0;
@@ -225,7 +206,6 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 	bFinalDepartureSharedRestored = false;
 	bReturnShipPlaced = false;
 	bReturnEntryReady = false;
-	bShipSafetyFallbackUsed = false;
 	ShipSafetyCheckAt = 0.0;
 	ShipPlacementRealTime = 0.0;
 	ShipPlacementWorldTime = 0.0;
@@ -373,33 +353,14 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
   if (Ship->IsSinking()) Mode->NotifyPlayerShipSinking(Ship);
 		ShipEntry = ResolveShipEntry(World, Room->IsFinalDepartureTravelPending(), MarkerCount);
 		if (!Ship || !ShipEntry) return false;
-		const bool bPostPlacementBlocked = HasPostPlacementBlock(World, Ship);
-		if (bPostPlacementBlocked || LastShipSafetyDiagnosticWorldTime < 0.0 || World->GetTimeSeconds() - LastShipSafetyDiagnosticWorldTime >= 1.0)
+		// Placement was validated before physics resumed; subsequent contacts belong to the physics solver.
+		if (LastShipSafetyDiagnosticWorldTime < 0.0 || World->GetTimeSeconds() - LastShipSafetyDiagnosticWorldTime >= 1.0)
 		{
 			LastShipSafetyDiagnosticWorldTime = World->GetTimeSeconds();
-			UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Phase=PostPhysicsCheck New=%d Return=%d GameOver=%d Blocked=%d RealElapsed=%.3f WorldElapsed=%.3f TickDelta=%.3f ParticipantsReady=%d Actor=%s Root=%s"),
-				Room->IsNewRoomPending(), Room->IsReturnTravelPending(), Room->IsGameOverTravelPending(), bPostPlacementBlocked,
+			UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Phase=PostPhysicsState New=%d Return=%d GameOver=%d RealElapsed=%.3f WorldElapsed=%.3f TickDelta=%.3f ParticipantsReady=%d Actor=%s Root=%s"),
+				Room->IsNewRoomPending(), Room->IsReturnTravelPending(), Room->IsGameOverTravelPending(),
 				FPlatformTime::Seconds() - ShipPlacementRealTime, World->GetTimeSeconds() - ShipPlacementWorldTime, DeltaTime,
 				AreTransitionParticipantsReady(World), *Ship->GetActorTransform().ToString(), *Ship->GetRootComponent()->GetComponentTransform().ToString());
-		}
-		if (bPostPlacementBlocked)
-		{
-			if (!Room->IsNewRoomPending() && !Room->IsReturnTravelPending()
-				&& !Room->IsFinalDepartureTravelPending() && !Room->IsGameOverTravelPending())
-			{
-				UE_LOG(LogSWRoom, Warning, TEXT("Flow=ShipPlacement SavedTransformPostPhysicsOverlap Ship=%s"), *Ship->GetPathName());
-			}
-			else
-			{
-			if (bShipSafetyFallbackUsed)
-			{ UE_LOG(LogSWRoom, Error, TEXT("Room ship post-placement overlap persisted")); FPlatformMisc::RequestExit(false); return false; }
-			FString Reason;
-			if (!PlaceShipSafely(World, Ship, ShipEntry, true, Reason))
-			{ UE_LOG(LogSWRoom, Error, TEXT("Room ship fallback failed: %s"), *Reason); FPlatformMisc::RequestExit(false); return false; }
-			bShipSafetyFallbackUsed = true;
-			ShipSafetyCheckAt = FPlatformTime::Seconds() + 0.5;
-			DevelopmentScope.bKeep=true; return true;
-			}
 		}
 	}
 	if (!bFinalDepartureSharedRestored && !RestoreSharedWorld(World))

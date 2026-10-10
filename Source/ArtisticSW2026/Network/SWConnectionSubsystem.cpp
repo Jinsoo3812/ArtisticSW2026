@@ -4,6 +4,7 @@
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
 #include "Engine/PendingNetGame.h"
+#include "UObject/UnrealType.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
@@ -128,14 +129,27 @@ bool USWConnectionSubsystem::IsTickable() const
 
 void USWConnectionSubsystem::ApplyReturnReconnectTimeout(UNetDriver* NetDriver)
 {
-	if (RoomLoadingReason != ERoomLoadingReason::Return || !NetDriver || ReturnTimeoutDriver.Get() == NetDriver) return;
-	RestoreReturnReconnectTimeout();
-	ReturnTimeoutDriver = NetDriver;
-	PreviousInitialConnectTimeout = NetDriver->InitialConnectTimeout;
-	PreviousConnectionTimeout = NetDriver->ConnectionTimeout;
+	if (RoomLoadingReason != ERoomLoadingReason::Return || !NetDriver) return;
+	const bool bNewDriver = ReturnTimeoutDriver.Get() != NetDriver;
+	if (bNewDriver)
+	{
+		RestoreReturnReconnectTimeout();
+		ReturnTimeoutDriver = NetDriver;
+		PreviousInitialConnectTimeout = NetDriver->InitialConnectTimeout;
+		PreviousConnectionTimeout = NetDriver->ConnectionTimeout;
+		if (const FFloatProperty* Resolution = FindFProperty<FFloatProperty>(NetDriver->GetClass(), TEXT("ResolutionConnectionTimeout")))
+			PreviousResolutionConnectionTimeout = Resolution->GetPropertyValue_InContainer(NetDriver);
+	}
+	// IP address-resolution connection attempts have their own timeout, independent of UNetDriver.
 	NetDriver->InitialConnectTimeout = ReturnReconnectTimeoutSeconds;
 	NetDriver->ConnectionTimeout = ReturnReconnectTimeoutSeconds;
-	UE_LOG(LogSWConnection, Display, TEXT("Flow=Return Phase=ReconnectTimeout Driver=%s Timeout=%.1f"), *NetDriver->GetName(), ReturnReconnectTimeoutSeconds);
+	// UE exposes this private config property through reflection but provides no public setter.
+	const FFloatProperty* Resolution = FindFProperty<FFloatProperty>(NetDriver->GetClass(), TEXT("ResolutionConnectionTimeout"));
+	if (Resolution) Resolution->SetPropertyValue_InContainer(NetDriver, ReturnReconnectTimeoutSeconds);
+	if (bNewDriver)
+		UE_LOG(LogSWConnection, Display, TEXT("Flow=Return Phase=ReconnectTimeout Driver=%s Initial=%.1f Connection=%.1f Resolution=%.1f"),
+			*NetDriver->GetName(), NetDriver->InitialConnectTimeout, NetDriver->ConnectionTimeout,
+			Resolution ? Resolution->GetPropertyValue_InContainer(NetDriver) : 0.0f);
 }
 
 void USWConnectionSubsystem::RestoreReturnReconnectTimeout()
@@ -144,6 +158,8 @@ void USWConnectionSubsystem::RestoreReturnReconnectTimeout()
 	{
 		Driver->InitialConnectTimeout = PreviousInitialConnectTimeout;
 		Driver->ConnectionTimeout = PreviousConnectionTimeout;
+		if (const FFloatProperty* Resolution = FindFProperty<FFloatProperty>(Driver->GetClass(), TEXT("ResolutionConnectionTimeout")))
+			Resolution->SetPropertyValue_InContainer(Driver, PreviousResolutionConnectionTimeout);
 	}
 	ReturnTimeoutDriver.Reset();
 }

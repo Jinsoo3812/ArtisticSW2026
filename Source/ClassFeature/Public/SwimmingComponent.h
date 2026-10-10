@@ -157,6 +157,10 @@ protected:
 
 public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	static int32 GetNetworkDiagnosticLevel();
+	void LogNetworkDiagnostic(const TCHAR* Phase, float DeltaTime, const FString& Detail = FString());
+	void LogPairedWaterProbe(const TCHAR* Side, float ClientStamp, double WaveTime, const FVector& MoveLocation,
+		float MoveDeltaTime, bool bWaveTimeAccepted);
 
 	// Overlap delegates
 	UFUNCTION()
@@ -348,6 +352,11 @@ private:
 	float LastLoggedTime = -1.0f;
 
 	float LastCabinSwimTraceTime = -1.0f;
+	double LastNetworkFrameLogTime = -1.0;
+	double LastNetworkPhysicsLogTime = -1.0;
+	int32 LastNetworkMovementMode = INDEX_NONE;
+	FVector LastNetworkFrameLocation = FVector::ZeroVector;
+	FVector LastNetworkFrameVelocity = FVector::ZeroVector;
 
 	UPROPERTY(Transient)
 	float WaterQueryFailureElapsed = 0.0f;

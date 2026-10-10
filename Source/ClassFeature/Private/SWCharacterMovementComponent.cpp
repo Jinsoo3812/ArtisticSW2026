@@ -8,6 +8,7 @@
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "HAL/PlatformTime.h"
 
 namespace
 {
@@ -188,6 +189,10 @@ void FCharacterNetworkMoveData_SWCharacter::ClientFillNetworkMoveData(
 	const FSavedMove_SWCharacter& SWMove = static_cast<const FSavedMove_SWCharacter&>(ClientMove);
 	bHasSurfaceWaveServerTime = SWMove.bHasSurfaceWaveServerTime;
 	SurfaceWaveServerTimeSeconds = bHasSurfaceWaveServerTime ? SWMove.SurfaceWaveServerTimeSeconds : 0.0;
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && bHasSurfaceWaveServerTime
+		&& MoveType == ENetworkMoveType::NewMove && ClientMove.CharacterOwner && !MovementBase)
+		if (USwimmingComponent* Swim = ClientMove.CharacterOwner->FindComponentByClass<USwimmingComponent>())
+			Swim->LogPairedWaterProbe(TEXT("ClientSend"), TimeStamp, SurfaceWaveServerTimeSeconds, Location, ClientMove.DeltaTime, true);
 }
 
 bool FCharacterNetworkMoveData_SWCharacter::Serialize(
@@ -448,6 +453,20 @@ void USWCharacterMovementComponent::SmoothCorrection(const FVector& OldLocation,
 	USkeletalMeshComponent* Mesh = GetShipDeathRagdoll(CharacterOwner);
 	const FVector BeforeCorrection = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	Super::SmoothCorrection(OldLocation, OldRotation, NewLocation, NewRotation);
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner)
+	{
+		if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>(); Swim && Swim->IsCustomSwimming())
+		{
+			++SwimCorrectionDiagnosticCount;
+			Swim->LogNetworkDiagnostic(TEXT("Correction"), 0.0f, FString::Printf(
+				TEXT("Count=%u Old=%s New=%s Error=%s ErrorCm=%.3f Before=%s After=%s RotationDeg=%.3f MeshOffset=%s"),
+				SwimCorrectionDiagnosticCount, *OldLocation.ToCompactString(), *NewLocation.ToCompactString(),
+				*(NewLocation - OldLocation).ToCompactString(), FVector::Dist(NewLocation, OldLocation),
+				*BeforeCorrection.ToCompactString(), UpdatedComponent ? *UpdatedComponent->GetComponentLocation().ToCompactString() : TEXT("None"),
+				FMath::RadiansToDegrees(OldRotation.AngularDistance(NewRotation)),
+				ClientPredictionData ? *ClientPredictionData->MeshTranslationOffset.ToCompactString() : TEXT("None")));
+		}
+	}
 	if (Mesh && UpdatedComponent)
 	{
 		const FVector Delta = UpdatedComponent->GetComponentLocation() - BeforeCorrection;
@@ -552,6 +571,26 @@ void USWCharacterMovementComponent::MoveAutonomous(
 		}
 	}
 
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner && SWData && SWData->bHasSurfaceWaveServerTime)
+	{
+		if (CharacterOwner->HasAuthority() && SWMoveDataContainer.IsNewMoveData(CurrentData) && !SWData->MovementBase)
+			if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>())
+				Swim->LogPairedWaterProbe(TEXT("ServerReceive"), ClientTimeStamp, SWData->SurfaceWaveServerTimeSeconds,
+					SWData->Location, DeltaTime, bHasActiveSurfaceWaveServerTime);
+		const double Now = FPlatformTime::Seconds();
+		if (bForceSurfaceWaveCorrectionForCurrentMove || USwimmingComponent::GetNetworkDiagnosticLevel() > 1
+			|| Now - LastSwimMoveDiagnosticTime >= 0.1)
+		{
+			LastSwimMoveDiagnosticTime = Now;
+			if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>())
+				Swim->LogNetworkDiagnostic(TEXT("MoveTime"), DeltaTime, FString::Printf(
+					TEXT("ClientStamp=%.6f Flags=%u SentWaveT=%.6f ActiveWaveT=%.6f AnchorWaveT=%.6f AnchorStamp=%.6f Accepted=%d ForceCorrection=%d OldMove=%d NewMove=%d InputAccel=%s"),
+					ClientTimeStamp, uint32(CompressedFlags), SWData->SurfaceWaveServerTimeSeconds, ActiveSurfaceWaveServerTimeSeconds,
+					LastAcceptedSurfaceWaveServerTimeSeconds, LastAcceptedSurfaceWaveClientTimeStamp, bHasActiveSurfaceWaveServerTime,
+					bForceSurfaceWaveCorrectionForCurrentMove, SWMoveDataContainer.IsOldMoveData(CurrentData),
+					SWMoveDataContainer.IsNewMoveData(CurrentData), *NewAccel.ToCompactString()));
+		}
+	}
 	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags,
 		IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : NewAccel);
 }
@@ -563,6 +602,33 @@ void USWCharacterMovementComponent::OnClientTimeStampResetDetected()
 	{
 		LastAcceptedSurfaceWaveClientTimeStamp -= MinTimeBetweenTimeStampResets;
 	}
+}
+
+void USWCharacterMovementComponent::ResetPredictionData_Client()
+{
+	Super::ResetPredictionData_Client();
+	ResetSurfaceWavePrediction(TEXT("ClientPredictionReset"));
+}
+
+void USWCharacterMovementComponent::ResetPredictionData_Server()
+{
+	Super::ResetPredictionData_Server();
+	ResetSurfaceWavePrediction(TEXT("ServerPredictionReset"));
+}
+
+void USWCharacterMovementComponent::ResetSurfaceWavePrediction(const TCHAR* Reason)
+{
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && bHasAcceptedSurfaceWaveTimeAnchor)
+		UE_LOG(LogTemp, Display, TEXT("[SwimNetReset] Reason=%s Pawn=%s Role=%d PreviousWaveT=%.9f PreviousStamp=%.9f"),
+			Reason, *GetNameSafe(CharacterOwner), CharacterOwner ? int32(CharacterOwner->GetLocalRole()) : -1,
+			LastAcceptedSurfaceWaveServerTimeSeconds, LastAcceptedSurfaceWaveClientTimeStamp);
+	// Possession changes reset CMC timestamps; anchors from the old prediction session cannot validate new moves.
+	ClearActiveSurfaceWaveServerTime();
+	bHasAcceptedSurfaceWaveTimeAnchor = false;
+	LastAcceptedSurfaceWaveServerTimeSeconds = 0.0;
+	LastAcceptedSurfaceWaveClientTimeStamp = 0.0f;
+	bForceSurfaceWaveCorrectionForCurrentMove = false;
+	LastSwimMoveDiagnosticTime = -1.0;
 }
 
 void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
@@ -603,6 +669,9 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 {
 	if (bForceSurfaceWaveCorrectionForCurrentMove)
 	{
+		if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner)
+			if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>())
+				Swim->LogNetworkDiagnostic(TEXT("ServerError"), DeltaTime, TEXT("Reason=InvalidWaveTime ForceCorrection=1"));
 		return true;
 	}
 	const bool bExceedsDefaultTolerance = Super::ServerExceedsAllowablePositionError(
@@ -614,6 +683,13 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 		ClientMovementBase,
 		ClientBaseBoneName,
 		ClientMovementMode);
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner)
+		if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>(); Swim && Swim->IsCustomSwimming() && bExceedsDefaultTolerance)
+			Swim->LogNetworkDiagnostic(TEXT("ServerError"), DeltaTime, FString::Printf(
+				TEXT("Reason=Position ClientStamp=%.6f ClientPos=%s ServerPos=%s ErrorCm=%.3f ClientMode=%u ServerMode=%u ClientBase=%s ServerBase=%s"),
+				ClientTimeStamp, *ClientWorldLocation.ToCompactString(), *CharacterOwner->GetActorLocation().ToCompactString(),
+				FVector::Dist(ClientWorldLocation, CharacterOwner->GetActorLocation()), uint32(ClientMovementMode), uint32(PackNetworkMovementMode()),
+				*GetNameSafe(ClientMovementBase), *GetNameSafe(CharacterOwner->GetMovementBase())));
 
 	if (!bExceedsDefaultTolerance)
 	{
