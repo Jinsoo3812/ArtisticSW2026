@@ -1,0 +1,2371 @@
+{
+  "success": true,
+  "partial": false,
+  "matched_actor_count": 51,
+  "ignored_class_mismatch_count": 2,
+  "label_corrections": [
+    {
+      "object_name": "BP_ES_Normal_4MMR_C_21",
+      "old_label": "BP_ES_Normal_4_8",
+      "new_label": "BP_ES_Normal_4_9"
+    }
+  ],
+  "requested_fields": [
+    "squad_id",
+    "enemy_ship_archetype",
+    "tags"
+  ],
+  "matching_policy": "unique_exact_actor_label",
+  "input_map_sha256": "4ca87d61931257eba86d47dfaa1ccd12331a43476cb482a4d50df1aeb73298ed",
+  "published_map_sha256": "08c6b04046e120a288f2a68550ff74a9ffd4e4fe51dfd01b516991177d453767",
+  "original_backup": "C:\\Users\\wonkii\\Documents\\GitHub\\ArtisticSW2026\\Saved\\LvlCYExtraction\\Application\\20261010_131108\\Lvl_CY_before.umap",
+  "applied": [
+    {
+      "actor_label": "BP_ES_Final",
+      "object_name": "BP_ES_Final_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/BP_ES_Final.BP_ES_Final_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/BP_ES_Final.BP_ES_Final_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_TimeStop.DA_ES_TimeStop"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip07",
+          "SWRoomStableId=BD600E494282738E335DAA958771E549"
+        ]
+      },
+      "after": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_TimeStop.DA_ES_TimeStop"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip07",
+          "SWRoomStableId=BD600E494282738E335DAA958771E549"
+        ]
+      },
+      "transform": {
+        "location": [
+          -224270.56439561877,
+          -12993.752292397177,
+          6.459421456384007e-06
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Mid_1",
+      "object_name": "BP_ES_Mid_1_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/BP_ES_Mid_1.BP_ES_Mid_1_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/BP_ES_Mid_1.BP_ES_Mid_1_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_Charge.DA_ES_Charge"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip_M_1",
+          "SWRoomStableId=4240ECA44C18E51191D457A89AB3A88B"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_Charge.DA_ES_Charge"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip_M_1",
+          "SWRoomStableId=4240ECA44C18E51191D457A89AB3A88B"
+        ]
+      },
+      "transform": {
+        "location": [
+          225033.48739769924,
+          102570.79027683484,
+          1.348183741356479e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Mid_3",
+      "object_name": "BP_ES_Mid_3_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/BP_ES_Mid_3.BP_ES_Mid_3_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/BP_ES_Mid_3.BP_ES_Mid_3_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_Torpedo_Obstacle.DA_ES_Torpedo_Obstacle"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip_M_3",
+          "SWRoomStableId=8DE911054E693642955AFB982E9CE05B"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_Torpedo_Obstacle.DA_ES_Torpedo_Obstacle"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip_M_3",
+          "SWRoomStableId=8DE911054E693642955AFB982E9CE05B"
+        ]
+      },
+      "transform": {
+        "location": [
+          13909.304218773937,
+          98241.43098119501,
+          -6.262279521251912e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_1",
+      "object_name": "BP_ES_Normal_MMR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_1",
+          "SWRoomStableId=1CABABA0469AF6A171336E801CAB9BBF"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_1",
+          "SWRoomStableId=1CABABA0469AF6A171336E801CAB9BBF"
+        ]
+      },
+      "transform": {
+        "location": [
+          211268.51504118263,
+          -46349.474956557795,
+          0.00019257400890637655
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_2",
+      "object_name": "BP_ES_Normal_MMR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_2",
+          "SWRoomStableId=B8A766AE43CFFDA2A790F4A466EED695"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_2",
+          "SWRoomStableId=B8A766AE43CFFDA2A790F4A466EED695"
+        ]
+      },
+      "transform": {
+        "location": [
+          223401.12582217157,
+          -48187.47699118372,
+          -0.00014701519012305653
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_3",
+      "object_name": "BP_ES_Normal_MRR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_3",
+          "SWRoomStableId=DB0AAB624284852639A1119680E796D7"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_3",
+          "SWRoomStableId=DB0AAB624284852639A1119680E796D7"
+        ]
+      },
+      "transform": {
+        "location": [
+          217281.51559802584,
+          -46967.62212331978,
+          -0.00029813178116455674
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_4",
+      "object_name": "BP_ES_Normal_MMR_C_5",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_4",
+          "SWRoomStableId=CBF7BCC44AE65920A28B80B5E57E60BF"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_4",
+          "SWRoomStableId=CBF7BCC44AE65920A28B80B5E57E60BF"
+        ]
+      },
+      "transform": {
+        "location": [
+          188307.73044745147,
+          16919.118399750754,
+          -0.000193839478015434
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_5",
+      "object_name": "BP_ES_Normal_MMR_C_8",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_5",
+          "SWRoomStableId=9104823A46D1AA105B796A9626CD711D"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_5",
+          "SWRoomStableId=9104823A46D1AA105B796A9626CD711D"
+        ]
+      },
+      "transform": {
+        "location": [
+          175745.92874594993,
+          18976.04361709092,
+          7.986453874764265e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_6",
+      "object_name": "BP_ES_Normal_RRR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_6",
+          "SWRoomStableId=7793710A42649A348812E1804B854D81"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_6",
+          "SWRoomStableId=7793710A42649A348812E1804B854D81"
+        ]
+      },
+      "transform": {
+        "location": [
+          182042.94882056577,
+          18194.73761064319,
+          0.00013565421704697656
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_7",
+      "object_name": "BP_ES_Normal_MMR_C_12",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_7",
+          "SWRoomStableId=59E01F20480F60EEE7549D938FC8A182"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_7",
+          "SWRoomStableId=59E01F20480F60EEE7549D938FC8A182"
+        ]
+      },
+      "transform": {
+        "location": [
+          225003.3817537202,
+          110690.3136399676,
+          0.00010498752453713678
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_8",
+      "object_name": "BP_ES_Normal_RRR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_8",
+          "SWRoomStableId=9D5BFA9C4BB6DA4E9601F9AC8908E76B"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_8",
+          "SWRoomStableId=9D5BFA9C4BB6DA4E9601F9AC8908E76B"
+        ]
+      },
+      "transform": {
+        "location": [
+          229852.9378378182,
+          106469.48497978819,
+          6.760054202459287e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_9",
+      "object_name": "BP_ES_Normal_RRR_C_5",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_9",
+          "SWRoomStableId=E7ED0960458C94D1CFFA9BBD64AAE4DF"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_9",
+          "SWRoomStableId=E7ED0960458C94D1CFFA9BBD64AAE4DF"
+        ]
+      },
+      "transform": {
+        "location": [
+          220106.55595102772,
+          106736.91063481737,
+          0.00021765876226709224
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_10",
+      "object_name": "BP_ES_Normal_MRR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": true,
+      "before": {
+        "squad_id": "Normal_1_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_10",
+          "SWRoomStableId=D46C4F794533AEC2C02BD6BCB93BB1D3"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_10",
+          "SWRoomStableId=D46C4F794533AEC2C02BD6BCB93BB1D3"
+        ]
+      },
+      "transform": {
+        "location": [
+          263720.00807861745,
+          46518.15015181203,
+          0.00016037174145822064
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_11",
+      "object_name": "BP_ES_Normal_MRR_C_5",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": true,
+      "before": {
+        "squad_id": "Normal_1_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_11",
+          "SWRoomStableId=2912DB8C4AB0043F7819D79709109992"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_11",
+          "SWRoomStableId=2912DB8C4AB0043F7819D79709109992"
+        ]
+      },
+      "transform": {
+        "location": [
+          251889.4342631992,
+          48435.97410745507,
+          0.00011190065697519458
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_1_12",
+      "object_name": "BP_ES_Normal_MMR_C_10",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N1/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_1_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_12",
+          "SWRoomStableId=10BA18C9412495C800942FB58522B153"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_1_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip01_12",
+          "SWRoomStableId=10BA18C9412495C800942FB58522B153"
+        ]
+      },
+      "transform": {
+        "location": [
+          257691.74063788902,
+          47602.70871759579,
+          0.00013076539607936866
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_1",
+      "object_name": "BP_ES_Normal_MMR_C_15",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_1",
+          "SWRoomStableId=C589E81940BCF87BEF9A8DA54D1B87EC"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_1",
+          "SWRoomStableId=C589E81940BCF87BEF9A8DA54D1B87EC"
+        ]
+      },
+      "transform": {
+        "location": [
+          93841.05128007973,
+          15645.943596842204,
+          0.00021957023272989318
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_2",
+      "object_name": "BP_ES_Normal_MMR_C_17",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_2",
+          "SWRoomStableId=6CB7EF424CDC1712EEC155BAC6CC3EF5"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_2",
+          "SWRoomStableId=6CB7EF424CDC1712EEC155BAC6CC3EF5"
+        ]
+      },
+      "transform": {
+        "location": [
+          90657.65791472828,
+          10342.19199583443,
+          0.00026984980740962783
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_3",
+      "object_name": "BP_ES_Normal_MMR_C_19",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_3",
+          "SWRoomStableId=A63EE68E49BFBB73F658F8BC185C55FD"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_3",
+          "SWRoomStableId=A63EE68E49BFBB73F658F8BC185C55FD"
+        ]
+      },
+      "transform": {
+        "location": [
+          88520.88436233782,
+          6585.301803407442,
+          -0.00022470329167845193
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_4",
+      "object_name": "BP_ES_Normal_MMR_C_21",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_4",
+          "SWRoomStableId=0D16A93643AAB4C15CC54889D9378836"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_4",
+          "SWRoomStableId=0D16A93643AAB4C15CC54889D9378836"
+        ]
+      },
+      "transform": {
+        "location": [
+          98488.14720338667,
+          54502.786195090215,
+          3.498606747598387e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_5",
+      "object_name": "BP_ES_Normal_MRR_C_7",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_5",
+          "SWRoomStableId=32F3C94343BE53E856CF6FB4823C3081"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_5",
+          "SWRoomStableId=32F3C94343BE53E856CF6FB4823C3081"
+        ]
+      },
+      "transform": {
+        "location": [
+          104411.12022744822,
+          55927.33659479506,
+          0.0002520175876270514
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_6",
+      "object_name": "BP_ES_Normal_MRR_C_9",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MRR.BP_ES_Normal_MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_6",
+          "SWRoomStableId=28EC0FC24798591460C20D9AFE7E6026"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_6",
+          "SWRoomStableId=28EC0FC24798591460C20D9AFE7E6026"
+        ]
+      },
+      "transform": {
+        "location": [
+          91854.8782289533,
+          53212.14013954367,
+          -3.082016519329045e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_7",
+      "object_name": "BP_ES_Normal_MMR_C_23",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_7",
+          "SWRoomStableId=9C0720E941CAB0FB6DBC2BBF6658E3E3"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_7",
+          "SWRoomStableId=9C0720E941CAB0FB6DBC2BBF6658E3E3"
+        ]
+      },
+      "transform": {
+        "location": [
+          73968.72339518518,
+          -64427.28869314138,
+          0.00010481400477146963
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_8",
+      "object_name": "BP_ES_Normal_MMR_C_25",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_MMR.BP_ES_Normal_MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_8",
+          "SWRoomStableId=0214F7604BE62FB012208F8A928E864D"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_8",
+          "SWRoomStableId=0214F7604BE62FB012208F8A928E864D"
+        ]
+      },
+      "transform": {
+        "location": [
+          76103.01158792316,
+          -67110.71406052657,
+          0.0002102909147652099
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_2_9",
+      "object_name": "BP_ES_Normal_RRR_C_7",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N2/BP_ES_Normal_RRR.BP_ES_Normal_RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_2_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_9",
+          "SWRoomStableId=0824E1F04D2B1B020CA965836AC15077"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_2_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip02_9",
+          "SWRoomStableId=0824E1F04D2B1B020CA965836AC15077"
+        ]
+      },
+      "transform": {
+        "location": [
+          78415.85937939031,
+          -69690.5726997759,
+          4.7582870138285216e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_1",
+      "object_name": "BP_ES_Normal_3MMR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_1",
+          "SWRoomStableId=EC6DCDBE418C68F312D78693FD8E8043"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_1",
+          "SWRoomStableId=EC6DCDBE418C68F312D78693FD8E8043"
+        ]
+      },
+      "transform": {
+        "location": [
+          -55634.011387312225,
+          -32894.437773063684,
+          -0.00013831294381816406
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_2",
+      "object_name": "BP_ES_Normal_3RRR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3RRR.BP_ES_Normal_3RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3RRR.BP_ES_Normal_3RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_2",
+          "SWRoomStableId=F9F6A7E24D20FA5DFE6D2DA149E94B47"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_2",
+          "SWRoomStableId=F9F6A7E24D20FA5DFE6D2DA149E94B47"
+        ]
+      },
+      "transform": {
+        "location": [
+          -53714.00571435136,
+          -29357.591379637917,
+          -8.949576658778824e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_3",
+      "object_name": "BP_ES_Normal_3RRR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3RRR.BP_ES_Normal_3RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3RRR.BP_ES_Normal_3RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_3",
+          "SWRoomStableId=1FF232664275E3457E7ECBACE8AA550F"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_3",
+          "SWRoomStableId=1FF232664275E3457E7ECBACE8AA550F"
+        ]
+      },
+      "transform": {
+        "location": [
+          -57475.34808756917,
+          -35576.04976646643,
+          -5.423129096016055e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_4",
+      "object_name": "BP_ES_Normal_3MMR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_4",
+          "SWRoomStableId=AA04578E423A18DAF2BCCBB0D9044BF2"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_4",
+          "SWRoomStableId=AA04578E423A18DAF2BCCBB0D9044BF2"
+        ]
+      },
+      "transform": {
+        "location": [
+          12607.38849319016,
+          10233.322592789844,
+          2.11989072340657e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_5",
+      "object_name": "BP_ES_Normal_3MRR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MRR.BP_ES_Normal_3MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MRR.BP_ES_Normal_3MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_5",
+          "SWRoomStableId=48905ACF40439276716F7BA977E96D43"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_5",
+          "SWRoomStableId=48905ACF40439276716F7BA977E96D43"
+        ]
+      },
+      "transform": {
+        "location": [
+          15541.970569443818,
+          15210.857267795238,
+          5.3405980452225776e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_6",
+      "object_name": "BP_ES_Normal_3MRR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MRR.BP_ES_Normal_3MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MRR.BP_ES_Normal_3MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_6",
+          "SWRoomStableId=55AB984C4E555B466E03B595513CC653"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_6",
+          "SWRoomStableId=55AB984C4E555B466E03B595513CC653"
+        ]
+      },
+      "transform": {
+        "location": [
+          10914.767165638881,
+          6574.377134561795,
+          -0.00016972253479252686
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_7",
+      "object_name": "BP_ES_Normal_3MMR_C_5",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_7",
+          "SWRoomStableId=4719C4F446A29F170E4FA0AF6CD1D83E"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_7",
+          "SWRoomStableId=4719C4F446A29F170E4FA0AF6CD1D83E"
+        ]
+      },
+      "transform": {
+        "location": [
+          20883.773413496896,
+          103112.14566986289,
+          0.00017940125144377816
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_8",
+      "object_name": "BP_ES_Normal_3MMR_C_7",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3MMR.BP_ES_Normal_3MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_8",
+          "SWRoomStableId=B819881D4660897F18CB0B85F4851731"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_8",
+          "SWRoomStableId=B819881D4660897F18CB0B85F4851731"
+        ]
+      },
+      "transform": {
+        "location": [
+          10973.239638813224,
+          101458.64812810956,
+          -2.4485084395564627e-06
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_3_9",
+      "object_name": "BP_ES_Normal_3RRR_C_5",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3RRR.BP_ES_Normal_3RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N3/BP_ES_Normal_3RRR.BP_ES_Normal_3RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_9",
+          "SWRoomStableId=3E5A80514104F3C708C44FB11507C431"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_3_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip03_9",
+          "SWRoomStableId=3E5A80514104F3C708C44FB11507C431"
+        ]
+      },
+      "transform": {
+        "location": [
+          15585.387958884814,
+          102440.79609149315,
+          8.508983228239231e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_1",
+      "object_name": "BP_ES_Normal_4MMR_C_5",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_1",
+          "SWRoomStableId=BF8D1E5F4D71099DE033AFBC13D97F31"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_1",
+          "SWRoomStableId=BF8D1E5F4D71099DE033AFBC13D97F31"
+        ]
+      },
+      "transform": {
+        "location": [
+          -128361.45797461517,
+          23980.6115656026,
+          7.75340986365336e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_2",
+      "object_name": "BP_ES_Normal_4MMR_C_7",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_2",
+          "SWRoomStableId=5AE2CC9C42313537B1DF18B7C0A82491"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_2",
+          "SWRoomStableId=5AE2CC9C42313537B1DF18B7C0A82491"
+        ]
+      },
+      "transform": {
+        "location": [
+          -132327.03170196968,
+          16862.7966176983,
+          -0.00014594967888115207
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_3",
+      "object_name": "BP_ES_Normal_4MRR_C_6",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_3",
+          "SWRoomStableId=FF2C4D044A6FEEE8AE7EECAF65151A07"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_1",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_3",
+          "SWRoomStableId=FF2C4D044A6FEEE8AE7EECAF65151A07"
+        ]
+      },
+      "transform": {
+        "location": [
+          -130194.60541786462,
+          20033.43794052287,
+          -0.00017857791317510419
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_4",
+      "object_name": "BP_ES_Normal_4MRR_C_8",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_4",
+          "SWRoomStableId=7D576F63433005EA1C6C1FAFBDA727A1"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_4",
+          "SWRoomStableId=7D576F63433005EA1C6C1FAFBDA727A1"
+        ]
+      },
+      "transform": {
+        "location": [
+          -223529.63103669946,
+          53536.101858711685,
+          -9.557838893670123e-06
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_5",
+      "object_name": "BP_ES_Normal_4RRR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4RRR.BP_ES_Normal_4RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4RRR.BP_ES_Normal_4RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_5",
+          "SWRoomStableId=C3E8178246171903171DB7A3518BB58B"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_5",
+          "SWRoomStableId=C3E8178246171903171DB7A3518BB58B"
+        ]
+      },
+      "transform": {
+        "location": [
+          -223455.8529231564,
+          58428.81909018103,
+          -0.0002165950609196443
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_6",
+      "object_name": "BP_ES_Normal_4RRR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4RRR.BP_ES_Normal_4RRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4RRR.BP_ES_Normal_4RRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_6",
+          "SWRoomStableId=CC87CC1A40CB55317A7125B804E4C7CB"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_2",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_6",
+          "SWRoomStableId=CC87CC1A40CB55317A7125B804E4C7CB"
+        ]
+      },
+      "transform": {
+        "location": [
+          -224577.35536108064,
+          49367.461103901995,
+          -7.628901130374288e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_7",
+      "object_name": "BP_ES_Normal_4MMR_C_17",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_5",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_7",
+          "SWRoomStableId=12F62CCD4D688449D4CBE89673779BB4"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_5",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_7",
+          "SWRoomStableId=12F62CCD4D688449D4CBE89673779BB4"
+        ]
+      },
+      "transform": {
+        "location": [
+          -241321.65216007773,
+          146690.69556890614,
+          -0.00011257644291617908
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_8",
+      "object_name": "BP_ES_Normal_4MMR_C_19",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_5",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_8",
+          "SWRoomStableId=A4ECD03F4511C9EDB1C3D7BD3173E5BA"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_5",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_8",
+          "SWRoomStableId=A4ECD03F4511C9EDB1C3D7BD3173E5BA"
+        ]
+      },
+      "transform": {
+        "location": [
+          -241360.9485862163,
+          142494.71845474825,
+          -0.00037154837082198355
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_9",
+      "object_name": "BP_ES_Normal_4MMR_C_21",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_5",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_9",
+          "SWRoomStableId=4ED73E1347C3D6B275FED0ADC2DB394C"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_5",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_9",
+          "SWRoomStableId=4ED73E1347C3D6B275FED0ADC2DB394C"
+        ]
+      },
+      "transform": {
+        "location": [
+          -242007.4555056666,
+          138328.20634605453,
+          -9.972185580409132e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_10",
+      "object_name": "BP_ES_Normal_4MMR_C_9",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_10",
+          "SWRoomStableId=AAC2864A4F81A424F3934890D0218E92"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_10",
+          "SWRoomStableId=AAC2864A4F81A424F3934890D0218E92"
+        ]
+      },
+      "transform": {
+        "location": [
+          -92879.59390868444,
+          97186.33860831705,
+          5.822298135171877e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_11",
+      "object_name": "BP_ES_Normal_4MRR_C_10",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_11",
+          "SWRoomStableId=5D2D2E4241CDFF2C3C382FB505FD3E06"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_11",
+          "SWRoomStableId=5D2D2E4241CDFF2C3C382FB505FD3E06"
+        ]
+      },
+      "transform": {
+        "location": [
+          -88825.02677705394,
+          99429.93056764691,
+          8.300175841213786e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_12",
+      "object_name": "BP_ES_Normal_4MRR_C_12",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_12",
+          "SWRoomStableId=5B0B33D9429CD797BB9A31B3A3ED156C"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_3",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_12",
+          "SWRoomStableId=5B0B33D9429CD797BB9A31B3A3ED156C"
+        ]
+      },
+      "transform": {
+        "location": [
+          -96419.68614569701,
+          94737.70412971945,
+          -4.109893416170962e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_13",
+      "object_name": "BP_ES_Normal_4MMR_C_13",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_13",
+          "SWRoomStableId=5EAE144C489352B43F574084E4421C26"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_13",
+          "SWRoomStableId=5EAE144C489352B43F574084E4421C26"
+        ]
+      },
+      "transform": {
+        "location": [
+          -195028.77059155438,
+          147652.11457747407,
+          8.390191851503914e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_14",
+      "object_name": "BP_ES_Normal_4MMR_C_11",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_14",
+          "SWRoomStableId=B22948B8439947671117FC875E0C9578"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_14",
+          "SWRoomStableId=B22948B8439947671117FC875E0C9578"
+        ]
+      },
+      "transform": {
+        "location": [
+          -192309.31547596495,
+          149880.01593115256,
+          -3.018225197592983e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_15",
+      "object_name": "BP_ES_Normal_4MMR_C_15",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Normal_4_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_15",
+          "SWRoomStableId=FB0C6BC94C7C3A42F4C652B3FF8CA9C0"
+        ]
+      },
+      "after": {
+        "squad_id": "Normal_4_4",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_15",
+          "SWRoomStableId=FB0C6BC94C7C3A42F4C652B3FF8CA9C0"
+        ]
+      },
+      "transform": {
+        "location": [
+          -198757.29381282214,
+          146394.47663925053,
+          6.329149482553476e-05
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_16",
+      "object_name": "BP_ES_Normal_4MMR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MMR.BP_ES_Normal_4MMR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_16",
+          "SWRoomStableId=F465EAF04B93B768466F469E00A0A0FA"
+        ]
+      },
+      "after": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_16",
+          "SWRoomStableId=F465EAF04B93B768466F469E00A0A0FA"
+        ]
+      },
+      "transform": {
+        "location": [
+          -221229.57042380277,
+          -9314.258179885412,
+          0.00018903838827100117
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_17",
+      "object_name": "BP_ES_Normal_4MRR_C_1",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_17",
+          "SWRoomStableId=6C877BDE4390B2F12365DB88704E883B"
+        ]
+      },
+      "after": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_17",
+          "SWRoomStableId=6C877BDE4390B2F12365DB88704E883B"
+        ]
+      },
+      "transform": {
+        "location": [
+          -220139.69105518208,
+          -11284.463456588455,
+          -0.00017685877264739247
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "actor_label": "BP_ES_Normal_4_18",
+      "object_name": "BP_ES_Normal_4MRR_C_3",
+      "actual_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "backup_class_path": "/Game/GameplayAbilitySystem/Enemy/Balancing/Final/N4/BP_ES_Normal_4MRR.BP_ES_Normal_4MRR_C",
+      "class_differs": false,
+      "before": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_18",
+          "SWRoomStableId=19259A5845787A6112948CAC0100EB9E"
+        ]
+      },
+      "after": {
+        "squad_id": "Final",
+        "enemy_ship_archetype": {
+          "object_path": "/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"
+        },
+        "tags": [
+          "Enemy",
+          "DebugShip04_18",
+          "SWRoomStableId=19259A5845787A6112948CAC0100EB9E"
+        ]
+      },
+      "transform": {
+        "location": [
+          -225144.88156767457,
+          -6904.550908979922,
+          0.00015482181879633572
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "original_transforms_and_unrequested_audited_properties_unchanged": true
+}

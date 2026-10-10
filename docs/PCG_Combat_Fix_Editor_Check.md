@@ -2,6 +2,12 @@
 
 구현·저장값 대조: 2026-10-08.
 
+## 2026-10-10 Lvl_CY 적용 완료
+
+WonjunJang의 최신 저장 레벨에서 `PCG_Biome → BrushComponent0`의 Profile을 `Custom`에서 `PCGVolumeBounds`로 변경했다. `LV_ET`를 읽어 충돌 응답이 일치함을 확인하고, Lvl_CY 사본에 적용한 뒤 저장·재로드 검증을 통과한 파일을 반영했다. PCG 그래프·생성 상태·생성 Mesh 충돌·인스턴스 수와 전체 액터의 배치 및 검사 대상 EnemyShip 설정은 유지됐다. 아래 2026-10-08 표의 Lvl_CY 적용 필요 상태는 이전 기록이다.
+
+보고서: `Saved/LvlCYExtraction/PCG_CY_Application/report.json`. 적용 전 백업: 같은 폴더의 `Lvl_CY.before.umap`. 실제 PIE 전투 검증은 수행하지 않았다.
+
 ## 현재 구현과 적용 상태
 
 `DefaultEngine.ini`에 `PCGVolumeBounds` Collision Profile을 등록했다. Query Only / WorldStatic / Arrow=Block / 나머지 등록 채널=Ignore 설정을 보존하며, PCG 생성 Mesh에 적용하지 않는다.
