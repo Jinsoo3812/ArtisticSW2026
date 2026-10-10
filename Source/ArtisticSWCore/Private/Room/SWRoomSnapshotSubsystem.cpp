@@ -190,6 +190,7 @@ void USWRoomSnapshotSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	if (UGameInstance* GameInstance = InWorld.GetGameInstance())
 		if (const USWRoomProgressSubsystem* Room = GameInstance->GetSubsystem<USWRoomProgressSubsystem>())
 			bRestoring = Room->IsHostedRoom() && !Room->IsNewRoomPending()
+				&& !Room->IsWorldRecoveryPending()
 				&& !Room->IsReturnTravelPending() && !Room->IsFinalDepartureTravelPending()
 				&& !Room->IsGameOverTravelPending();
 	SpawnHandle = InWorld.AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateUObject(this, &USWRoomSnapshotSubsystem::HandleActorSpawned));

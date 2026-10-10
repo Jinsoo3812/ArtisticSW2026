@@ -3,6 +3,7 @@
 #include "Components/EditableTextBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
+#include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/KismetSystemLibrary.h"
 
@@ -31,6 +32,21 @@ void USWConnectionLobbyWidget::NativeOnInitialized()
 void USWConnectionLobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// Hide legacy connectivity guidance authored in the lobby widget asset.
+	if (WidgetTree) WidgetTree->ForEachWidget([](UWidget* Widget)
+	{
+		if (UTextBlock* Text = Cast<UTextBlock>(Widget))
+		{
+			const FString Value = Text->GetText().ToString();
+			if (Value.Contains(TEXT("CGNAT"), ESearchCase::IgnoreCase)
+				|| Value.Contains(TEXT("방화벽")) || Value.Contains(TEXT("firewall"), ESearchCase::IgnoreCase)
+				|| Value.Contains(TEXT("NAT loopback"), ESearchCase::IgnoreCase))
+			{
+				Text->SetText(FText::GetEmpty());
+				Text->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+	});
 	if (USWRoomSubsystem* Room = GetRoom()) Room->OnRoomChanged.AddUniqueDynamic(this, &ThisClass::HandleRoomChanged);
 	Refresh();
 }

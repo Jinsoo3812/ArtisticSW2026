@@ -42,6 +42,7 @@ private:
 	UFUNCTION() void HandleGameOverRestart();
 	void HandlePostLoadMap(UWorld* World);
 	bool TickRestore(float DeltaTime);
+	bool RecoverWorld(UWorld* World, const FString& Reason);
 	FDelegateHandle PostLoadHandle;
 	FTSTicker::FDelegateHandle RestoreTickerHandle;
 	TWeakObjectPtr<UWorld> PendingWorld;

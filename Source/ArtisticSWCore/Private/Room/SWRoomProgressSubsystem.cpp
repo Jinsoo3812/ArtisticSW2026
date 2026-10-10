@@ -120,6 +120,33 @@ void USWRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	}
 }
 
+bool USWRoomProgressSubsystem::BeginWorldRecovery()
+{
+	if (!bHostedRoom || bStartupError || !ActiveRoom || bNewRoomPending || bWorldRecoveryAttempted
+		|| bReturnTravelPending || bFinalDepartureTravelPending || bGameOverTravelPending) return false;
+	bWorldRecoveryAttempted = true;
+	bWorldRecoveryPending = true;
+	// Keep the committed file intact; discard only world-dependent resume state in memory.
+	auto ResetWorldReferences = [](FSWRoomPlayerProgress& Progress)
+	{
+		Progress.bHasResumeTransform = false;
+		Progress.ShipStableId.Invalidate();
+		Progress.bWasMounted = false;
+		Progress.MountedDeviceId.Invalidate();
+		Progress.bWasSwimming = false;
+		Progress.bHasMovement = false;
+		Progress.WorldVelocity = FVector::ZeroVector;
+		Progress.bWasDead = false;
+		Progress.CurrentHealth = Progress.MaximumHealth;
+		Progress.bRestoreFullHealth = true;
+		Progress.bEffectsCaptured = true;
+		Progress.ActiveEffects.Reset();
+	};
+	ResetWorldReferences(ActiveRoom->HostProgress);
+	for (FSWRoomGuestProgress& Guest : ActiveRoom->Guests) ResetWorldReferences(Guest.Progress);
+	return true;
+}
+
 bool USWRoomProgressSubsystem::WriteCheckpoint()
 {
 	if (!bHostedRoom || bStartupError || !ActiveRoom || bSaving || !ActiveRoom->bComplete)

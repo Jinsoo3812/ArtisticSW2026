@@ -341,20 +341,28 @@ void USWRoomSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	ServerStartElapsed += FMath::Max(DeltaTime, 0.0f);
+	FString StartupFailure;
+	if (FFileHelper::LoadFileToString(StartupFailure, *(MarkerPath() + TEXT(".failed"))))
+	{
+		Fail(FText::FromString(StartupFailure));
+		return;
+	}
 	if (!ServerHandle.IsValid() || !FPlatformProcess::IsProcRunning(ServerHandle)) { Fail(FText::FromString(TEXT("서버가 준비되기 전에 종료되었습니다."))); return; }
 	FString Marker;
 	if (FFileHelper::LoadFileToString(Marker, *MarkerPath()))
 	{
 		TArray<FString> Parts;
 		Marker.ParseIntoArrayLines(Parts, true);
-		if (Parts.Num() == 3 && Parts[0] == RoomRunId.ToString(EGuidFormats::DigitsWithHyphens)
+		if ((Parts.Num() == 3 || (Parts.Num() == 4 && Parts[3] == TEXT("WorldRecovered")))
+			&& Parts[0] == RoomRunId.ToString(EGuidFormats::DigitsWithHyphens)
 			&& FCString::Strtoui64(*Parts[1], nullptr, 10) == ServerPid && Parts[2] == TEXT("7777"))
 		{
 			if (!FSWRoomCode::Encode(PublicAddress, RoomPort, DisplayCode)) { Fail(FText::FromString(TEXT("참가 코드를 만들 수 없습니다."))); return; }
 			UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerReady Result=Success ElapsedMs=%d Port=%d"), *RoomRunId.ToString(), OperationId, FMath::RoundToInt(ServerStartElapsed * 1000), RoomPort);
 			bAwaitingHostJoin = true;
 			SWRoomLoadDiagnostics::Mark(TEXT("Host.ReadyMarkerReceived"));
-			SetState(ESWRoomState::StartingServer, FText::FromString(bUsingBackup
+			SetState(ESWRoomState::StartingServer, FText::FromString(Parts.Num() == 4
+				? TEXT("월드 복원에 실패하여 초기화했습니다. 진행 데이터는 유지됩니다. 서버 접속을 누르세요.") : bUsingBackup
 				? TEXT("복구본 사용. 방 준비 완료. 참가 코드를 복사한 뒤 서버 접속을 누르세요.")
 				: TEXT("방 준비 완료. 참가 코드를 복사한 뒤 서버 접속을 누르세요.")));
 			return;
@@ -368,7 +376,7 @@ bool USWRoomSubsystem::ConnectHostedRoom()
 	if (!bOwnsServer || !bAwaitingHostJoin || State != ESWRoomState::StartingServer) return false;
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=HostJoin OperationId=%llu RoomRunId=%s Phase=Requested"), OperationId, *RoomRunId.ToString());
 	bAwaitingHostJoin = false;
-	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("서버 연결 중... UDP 7777 포트 전달과 NAT loopback을 확인하세요.")));
+	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("서버 연결 중...")));
 	USWConnectionSubsystem* Connection = GetGameInstance()->GetSubsystem<USWConnectionSubsystem>();
 	if (!Connection || !Connection->ConnectDirectWithName(FString::Printf(TEXT("%s:%d"), *PublicAddress, RoomPort), DisplayName, HostKey))
 	{
@@ -503,7 +511,7 @@ void USWRoomSubsystem::HandleConnectionFailed(FSWConnectionFailure Failure)
 	else if (Failure.Reason == ESWConnectionFailureReason::NetworkFailure
 		&& Failure.EngineMessage.Contains(TEXT("Rejected"), ESearchCase::IgnoreCase))
 		Text = FText::FromString(TEXT("서버에서 접속 거절"));
-	if (bOwnsServer) Text = FText::Format(FText::FromString(TEXT("방 생성 실패: {0}. NAT loopback과 UDP 7777 설정을 확인하세요.")), Text);
+	if (bOwnsServer) Text = FText::Format(FText::FromString(TEXT("방 생성 실패: {0}")), Text);
 	UE_LOG(LogSWConnection, Warning, TEXT("Side=%s OperationId=%llu AttemptId=%d Phase=Connection Result=Failed Reason=%s Type=%s"), bOwnsServer ? TEXT("HostClient") : TEXT("JoinClient"), OperationId, Failure.AttemptId, *UEnum::GetValueAsString(Failure.Reason), *Failure.EngineFailureType);
 	Fail(Text);
 }

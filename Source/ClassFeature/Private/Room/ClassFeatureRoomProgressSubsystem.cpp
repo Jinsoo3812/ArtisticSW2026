@@ -7,6 +7,7 @@
 #include "BasePlayerController.h"
 #include "Engine/GameInstance.h"
 #include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "MultiGameMode.h"
@@ -14,6 +15,11 @@
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
 #include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomRuntimePaths.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Network/SWNetworkLog.h"
 #include "Network/SWRoomLoadDiagnostics.h"
 #include "Room/SWLevelEntryPoint.h"
@@ -214,6 +220,31 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 	RestoreTickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UClassFeatureRoomProgressSubsystem::TickRestore), 0.0f);
 }
 
+bool UClassFeatureRoomProgressSubsystem::RecoverWorld(UWorld* World, const FString& Reason)
+{
+	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
+	if (!World || !Room || !Room->BeginWorldRecovery())
+	{
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=WorldRecovery Result=Unavailable Reason=%s"), *Reason);
+		FString RunText;
+		FGuid RunId;
+		if (FParse::Value(FCommandLine::Get(), TEXT("SWRoomRunId="), RunText) && FGuid::Parse(RunText, RunId))
+		{
+			const FString Directory = FSWRoomRuntimePaths::GetHostDirectory();
+			if (!Directory.IsEmpty()) FFileHelper::SaveStringToFile(
+				TEXT("월드 복구에 실패했습니다. 이전 저장은 유지됩니다."),
+				*FPaths::Combine(Directory, RunId.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(".ready.failed")));
+		}
+		FPlatformMisc::RequestExit(false);
+		return false;
+	}
+	UE_LOG(LogSWRoom, Warning, TEXT("Flow=WorldRecovery Phase=ReloadFreshWorld Reason=%s OriginalSavePreserved=1"), *Reason);
+	// Non-seamless reload: no partially restored actors survive.
+	PendingWorld.Reset();
+	UGameplayStatics::OpenLevel(World, FName(*World->GetOutermost()->GetName()), true);
+	return false;
+}
+
 bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE_CONDITIONAL(SWRoom_TickRestore, SWRoomLoadDiagnostics::IsEnabled());
@@ -230,8 +261,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 	{
 		if (FPlatformTime::Seconds() < RestoreDeadline) { DevelopmentScope.bKeep=true; return true; }
 		UE_LOG(LogSWRoom, Error, TEXT("Hosted room world did not become ready"));
-		FPlatformMisc::RequestExit(false);
-		return false;
+		return RecoverWorld(World, TEXT("World readiness timeout"));
 	}
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	if (!Room || !Room->GetActiveRoom()) return false;
@@ -257,6 +287,11 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 			*Room->GetActiveRoom()->RoomId.ToString(), Room->IsNewRoomPending() ? TEXT("New")
 			: Room->IsFinalDepartureTravelPending() ? TEXT("FinalDeparture")
 			: Room->IsReturnTravelPending() ? TEXT("Return") : Room->IsGameOverTravelPending() ? TEXT("GameOver") : TEXT("Continue"));
+	if (Room->IsWorldRecoveryPending() && !bWorldSnapshotRestored)
+	{
+		bWorldSnapshotRestored = true;
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=WorldRecovery Phase=FreshWorldReady"));
+	}
 	if ((Room->IsNewRoomPending() || Room->IsReturnTravelPending()
 		|| Room->IsFinalDepartureTravelPending() || Room->IsGameOverTravelPending()) && !bWorldSnapshotRestored)
 	{
@@ -279,8 +314,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		if (!Snapshot || !Snapshot->Restore(Room->GetActiveRoom()->WorldSnapshot, Error, false))
 		{
 			UE_LOG(LogSWRoom, Error, TEXT("Hosted room snapshot restore failed: %s"), *Error);
-			FPlatformMisc::RequestExit(false);
-			return false;
+			return RecoverWorld(World, Error);
 		}
 		bWorldSnapshotRestored = true;
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=WorldRestore Phase=SnapshotApplied Actors=%d"), Room->GetActiveRoom()->WorldSnapshot.Actors.Num());
@@ -306,20 +340,20 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		int32 ShipCount = 0;
   for (TActorIterator<AKelvinShip> It(World); It; ++It) if (!It->ActorHasTag(TEXT("Enemy"))) { Ship = *It; ++ShipCount; }
   if (ShipCount != 1 || !Mode->RegisterPlayerRespawnShip(Ship))
-  { UE_LOG(LogSWRoom, Error, TEXT("RespawnShipMissing Count=%d"), ShipCount); FPlatformMisc::RequestExit(false); return false; }
+  { UE_LOG(LogSWRoom, Error, TEXT("RespawnShipMissing Count=%d"), ShipCount); return RecoverWorld(World, TEXT("Player ship missing")); }
   if (Ship->IsSinking()) Mode->NotifyPlayerShipSinking(Ship);
 		ShipEntry = ResolveShipEntry(World, Room->IsFinalDepartureTravelPending(), MarkerCount);
 		if (Room->IsFinalDepartureTravelPending())
 			FSWFinalEncounterDiagnostics::Write(TEXT("FinalRestore"), TEXT("MarkerResolved"),
 				FString::Printf(TEXT("Count=%d Transform=%s"), MarkerCount,
 					ShipEntry ? *ShipEntry->GetActorTransform().ToString() : TEXT("Missing")));
-		if (!Ship || !ShipEntry) { UE_LOG(LogSWRoom, Error, TEXT("Return ship or entry missing")); return false; }
+		if (!Ship || !ShipEntry) { UE_LOG(LogSWRoom, Error, TEXT("Return ship or entry missing")); return RecoverWorld(World, TEXT("Ship entry missing")); }
 		FString Placement;
 		if (!PlaceShipSafely(World, Ship, ShipEntry,
-			Room->IsNewRoomPending() || Room->IsReturnTravelPending()
+			Room->IsWorldRecoveryPending() || Room->IsNewRoomPending() || Room->IsReturnTravelPending()
 				|| Room->IsFinalDepartureTravelPending() || Room->IsGameOverTravelPending(), Placement))
-		{ UE_LOG(LogSWRoom, Error, TEXT("Room ship safety failed: %s"), *Placement); FPlatformMisc::RequestExit(false); return false; }
-		if (!Room->IsNewRoomPending() && !Room->IsReturnTravelPending()
+		{ UE_LOG(LogSWRoom, Error, TEXT("Room ship safety failed: %s"), *Placement); return RecoverWorld(World, Placement); }
+		if (!Room->IsWorldRecoveryPending() && !Room->IsNewRoomPending() && !Room->IsReturnTravelPending()
 			&& !Room->IsFinalDepartureTravelPending() && !Room->IsGameOverTravelPending())
 		{
 			const USWRoomSnapshotComponent* Id = Ship->FindComponentByClass<USWRoomSnapshotComponent>();
@@ -349,10 +383,10 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		int32 ShipCount = 0;
   for (TActorIterator<AKelvinShip> It(World); It; ++It) if (!It->ActorHasTag(TEXT("Enemy"))) { Ship = *It; ++ShipCount; }
   if (ShipCount != 1 || !Mode->RegisterPlayerRespawnShip(Ship))
-  { UE_LOG(LogSWRoom, Error, TEXT("RespawnShipMissing Count=%d"), ShipCount); FPlatformMisc::RequestExit(false); return false; }
+  { UE_LOG(LogSWRoom, Error, TEXT("RespawnShipMissing Count=%d"), ShipCount); return RecoverWorld(World, TEXT("Player ship missing")); }
   if (Ship->IsSinking()) Mode->NotifyPlayerShipSinking(Ship);
 		ShipEntry = ResolveShipEntry(World, Room->IsFinalDepartureTravelPending(), MarkerCount);
-		if (!Ship || !ShipEntry) return false;
+		if (!Ship || !ShipEntry) return RecoverWorld(World, TEXT("Ship entry missing after placement"));
 		// Placement was validated before physics resumed; subsequent contacts belong to the physics solver.
 		if (LastShipSafetyDiagnosticWorldTime < 0.0 || World->GetTimeSeconds() - LastShipSafetyDiagnosticWorldTime >= 1.0)
 		{
@@ -367,8 +401,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 	{
 		if (FPlatformTime::Seconds() < RestoreDeadline) { DevelopmentScope.bKeep=true; return true; }
 		UE_LOG(LogSWRoom, Error, TEXT("Hosted room shared progress restore failed"));
-		FPlatformMisc::RequestExit(false);
-		return false;
+		return RecoverWorld(World, TEXT("Shared progress restore failed"));
 	}
 	bFinalDepartureSharedRestored = true;
 	if (Room->IsReturnTravelPending() && !Room->IsFinalDepartureTravelPending() && !bReturnEntryReady)
@@ -418,7 +451,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		if (!Snapshot->CompleteRestore(FinalizeError))
 		{
 			UE_LOG(LogSWRoom, Error, TEXT("Hosted room final restore failed: %s"), *FinalizeError);
-			return false;
+			return RecoverWorld(World, FinalizeError);
 		}
 	}
 	for (TActorIterator<ABasePlayer> It(World); It; ++It)
@@ -488,7 +521,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 	}
 	Room->ClearGameOverTravelPending();
 	Room->ClearGameOverRetryTravelPending(); bHasRetryRollback = false; RollbackHost = FSWRoomPlayerProgress(); RollbackGuests.Reset(); RollbackShared = FSWRoomSharedProgress(); Room->ExpectedTransitionPlayers.Reset();
-	if (!bTransitionRestore && !Room->IsNewRoomPending() && !Room->IsReturnTravelPending()
+	if (!Room->IsWorldRecoveryPending() && !bTransitionRestore && !Room->IsNewRoomPending() && !Room->IsReturnTravelPending()
 		&& !Room->IsFinalDepartureTravelPending())
 	{
 		if (USWRoomSnapshotSubsystem* Snapshot = World->GetSubsystem<USWRoomSnapshotSubsystem>())
@@ -508,7 +541,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 				for (const FString& Difference : Differences)
 					SW_ROOM_DETAIL_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit %s"), *Difference);
 				UE_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit Result=Failed Reason=%s Differences=%d"), *AuditError, Differences.Num());
-				return false;
+				return RecoverWorld(World, Differences.IsEmpty() ? AuditError : Differences[0]);
 			}
 		}
 		const USWRoomSaveGame* SavedRoom = Room->GetActiveRoom();
@@ -559,6 +592,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		if (ABasePlayerController* Controller = Cast<ABasePlayerController>(It->Get())) Controller->ReleaseFrozenLifeProgress();
 	if (!Room->IsNewRoomPending()) Mode->SetHostedRoomWorldReady();
 	Mode->MarkHostedRoomWorldReady();
+	Room->CompleteWorldRecovery();
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=WorldRestore RoomId=%s Result=Ready ReturnPending=%d"),
 		*Room->GetActiveRoom()->RoomId.ToString(), Room->IsReturnTravelPending());
 	Mode->OnGameOverRequested.AddDynamic(this, &UClassFeatureRoomProgressSubsystem::HandleGameOverRestart);
