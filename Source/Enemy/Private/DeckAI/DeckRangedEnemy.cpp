@@ -155,6 +155,8 @@ void ADeckEnemy::BeginPlay()
 
 void ADeckEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority())
+		if (AEnemyShip* Host = GetDeckHostShip()) Host->NotifyCrewEnemyDeactivated(this);
 	if (auto* Host = BoundRuntimeHost.Get())
 		(HasAuthority() ? Host->OnRuntimeStateChanged : Host->OnRuntimePresentationChanged).Remove(RuntimeHostHandle);
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
@@ -297,6 +299,7 @@ void ADeckEnemy::DeactivateToPool()
 	if (AEnemyShip* Host = GetDeckHostShip())
 	{
 		Host->ReleaseAllDeckPointsFor(this);
+		Host->NotifyCrewEnemyDeactivated(this);
 	}
 
 	if (AAIController* OwningAIController = Cast<AAIController>(GetController()))

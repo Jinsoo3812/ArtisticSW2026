@@ -232,7 +232,7 @@ void AChestSpawnPoint::ApplyAuthoringSettings(
 	const FChestSpawnPointChestSettings& ChestSettings,
 	const FChestSpawnPointLootSettings& LootSettings)
 {
-	bIsBossChest = ChestSettings.bIsBossChest;
+	bIsBossChest = ChestSettings.OwningShip ? BossGuard.IsValid() : ChestSettings.bIsBossChest;
 	RequiredBossTag = ChestSettings.RequiredBossTag;
 	GuaranteedBossQuestItemTag = ChestSettings.GuaranteedBossQuestItemTag;
 	GuaranteedBossQuestItemCount = FMath::Max(1, ChestSettings.GuaranteedBossQuestItemCount);
@@ -254,6 +254,13 @@ void AChestSpawnPoint::ApplyAuthoringSettings(
 	GroundClearance = FMath::Max(0.f, LootSettings.GroundClearance);
 	GroundTraceUpDistance = FMath::Max(0.f, LootSettings.GroundTraceUpDistance);
 	GroundTraceDownDistance = FMath::Max(0.f, LootSettings.GroundTraceDownDistance);
+	if (IsValid(ActiveChestInstance))
+	{
+		TArray<ABaseCharacter*> ActiveGuards;
+		for (ABaseCharacter* Guard : GuardCharacters) ActiveGuards.Add(Guard);
+		ActiveChestInstance->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, ActiveGuards, OwningShip);
+		if (ABaseCharacter* Boss = BossGuard.Get()) ActiveChestInstance->AddBossGuardCharacter(Boss);
+	}
 }
 
 void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
@@ -561,6 +568,7 @@ void AChestSpawnPoint::RegisterBossGuard(ABaseCharacter* Boss)
 {
 	if (!HasAuthority() || !IsValid(Boss)) return;
 	BossGuard = Boss;
+	bIsBossChest = true;
 	if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddBossGuardCharacter(Boss);
 	int32 ManagerCount = 0;
 	AGlobalLootSpawnManager* Manager = nullptr;

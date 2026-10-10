@@ -82,6 +82,7 @@ void AStorageChest::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArr
 	State.bGuardFailed = bGuardFailed;
 	State.bRequiresGuardClear = bRequiresGuardClear;
 	State.bBossEncounterReserved = bBossEncounterReserved;
+	State.bIsBossChest = bIsBossChest;
 	State.bEnablePhysicsAndBuoyancy = bEnablePhysicsAndBuoyancy;
 	State.LootSeed = LootSeed;
 	State.ChestDefinitionPath = ChestDefinition ? FSoftObjectPath(ChestDefinition) : FSoftObjectPath();
@@ -160,6 +161,7 @@ bool AStorageChest::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& Ou
 	bGuardFailed = State.bGuardFailed;
 	bRequiresGuardClear = State.bRequiresGuardClear;
 	bBossEncounterReserved = State.bBossEncounterReserved;
+	bIsBossChest = State.bIsBossChest;
 	SetLocked(State.bLocked);
 	SetPhysicsAndBuoyancyEnabled(State.bEnablePhysicsAndBuoyancy);
 	PendingRoomState = State;
@@ -286,6 +288,7 @@ void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 
 	DOREPLIFETIME(AStorageChest, bLocked);
 	DOREPLIFETIME(AStorageChest, bGuardFailed);
+	DOREPLIFETIME(AStorageChest, bIsBossChest);
 	DOREPLIFETIME(AStorageChest, bEnablePhysicsAndBuoyancy);
 	DOREPLIFETIME(AStorageChest, bDistanceOptimizationDormant);
 	DOREPLIFETIME(AStorageChest, bStoryGateDormant);
@@ -408,6 +411,7 @@ void AStorageChest::AddGuardCharacter(ABaseCharacter* NewGuard)
 	}
 
 	GuardCharacters.AddUnique(NewGuard);
+	NewGuard->OnDestroyed.AddUniqueDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	bRequiresGuardClear = true;
 
 	UBaseHealthComponent* GuardHealth = NewGuard->FindComponentByClass<UBaseHealthComponent>();
@@ -489,6 +493,9 @@ void AStorageChest::AddBossGuardCharacter(ABaseCharacter* Boss)
 		BossGuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
 	}
 	BossGuardCharacter = Boss;
+	bIsBossChest = true;
+	ForceNetUpdate();
+	Boss->OnDestroyed.AddUniqueDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	BossGuardHealth = Boss->FindComponentByClass<UBaseHealthComponent>();
 	if (IsBossGuardAlive())
 	{
@@ -501,12 +508,29 @@ void AStorageChest::RemoveGuardCharacter(ABaseCharacter* Guard)
 {
 	if (!HasAuthorityOrIsTesting() || !Guard) return;
 	GuardCharacters.Remove(Guard);
+	Guard->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	if (UBaseHealthComponent* Health = Guard->FindComponentByClass<UBaseHealthComponent>())
 	{
 		Health->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
 		AliveGuardHealthComponents.Remove(Health);
 	}
 	RecalculateGuardLock();
+}
+
+void AStorageChest::HandleGuardDestroyed(AActor* DestroyedActor)
+{
+	if (!HasAuthorityOrIsTesting()) return;
+	ABaseCharacter* Guard = Cast<ABaseCharacter>(DestroyedActor);
+	if (!Guard) return;
+	RemoveGuardCharacter(Guard);
+	if (BossGuardCharacter == Guard)
+	{
+		if (BossGuardHealth)
+			BossGuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		BossGuardHealth = nullptr;
+		BossGuardCharacter = nullptr;
+		RecalculateGuardLock();
+	}
 }
 
 void AStorageChest::EnsureGuaranteedLoot(const TArray<FStorageItemEntry>& GuaranteedItems)
@@ -974,6 +998,7 @@ void AStorageChest::InitializeGuardState()
 		}
 
 		++ValidConfiguredGuardCount;
+		GuardCharacter->OnDestroyed.AddUniqueDynamic(this, &AStorageChest::HandleGuardDestroyed);
 		if (!GuardHealth->IsDead())
 		{
 			AliveGuardHealthComponents.Add(GuardHealth);
@@ -1007,10 +1032,16 @@ void AStorageChest::InitializeGuardState()
 
 void AStorageChest::ClearGuardBindings()
 {
+	for (ABaseCharacter* Guard : GuardCharacters)
+		if (IsValid(Guard)) Guard->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
+	if (IsValid(BossGuardCharacter))
+		BossGuardCharacter->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	for (UBaseHealthComponent* GuardHealth : AliveGuardHealthComponents)
 	{
 		if (GuardHealth)
 		{
+			if (AActor* Guard = GuardHealth->GetOwner())
+				Guard->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
 			GuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
 		}
 	}

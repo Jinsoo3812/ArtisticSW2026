@@ -222,6 +222,8 @@ public:
 	void RegisterBossGuard(ABaseCharacter* Boss);
 	void SetBossEncounterReserved(bool bReserved);
 	ABaseCharacter* GetRegisteredBossGuard() const { return BossGuard.Get(); }
+	UFUNCTION(BlueprintPure, Category = "Chest|Boss")
+	bool IsBossChest() const { return bIsBossChest; }
 	UPROPERTY(BlueprintAssignable, Category = "Chest|Spawn")
 	FOnChestSpawned OnChestSpawned;
 

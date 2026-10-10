@@ -29,6 +29,7 @@ struct FSWRoomChestState
 	UPROPERTY(SaveGame) bool bGuardFailed = false;
 	UPROPERTY(SaveGame) bool bRequiresGuardClear = false;
 	UPROPERTY(SaveGame) bool bBossEncounterReserved = false;
+	UPROPERTY(SaveGame) bool bIsBossChest = false;
 	UPROPERTY(SaveGame) bool bEnablePhysicsAndBuoyancy = false;
 	UPROPERTY(SaveGame) int32 LootSeed = 0;
 	UPROPERTY(SaveGame) FSoftObjectPath ChestDefinitionPath;
@@ -80,6 +81,8 @@ public:
 	int32 GetAliveGuardCount() const { return AliveGuardHealthComponents.Num(); }
 	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
 	bool HasBossGuard() const { return BossGuardCharacter != nullptr; }
+	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
+	bool IsBossChest() const { return bIsBossChest; }
 	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
 	bool IsBossGuardAlive() const;
 	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
@@ -208,6 +211,8 @@ protected:
 	TArray<TObjectPtr<ABaseCharacter>> GuardCharacters;
 	UPROPERTY(Transient)
 	TObjectPtr<ABaseCharacter> BossGuardCharacter;
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Guarding")
+	bool bIsBossChest = false;
 	UPROPERTY(Transient)
 	bool bBossEncounterReserved = false;
 	UPROPERTY(Transient)
@@ -256,6 +261,9 @@ protected:
 
 	UFUNCTION()
 	void HandleOwningShipDestroyed(AActor* DestroyedActor);
+
+	UFUNCTION()
+	void HandleGuardDestroyed(AActor* DestroyedActor);
 
 	UFUNCTION()
 	void HandleStorageChanged();

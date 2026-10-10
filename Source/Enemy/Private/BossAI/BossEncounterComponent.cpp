@@ -481,20 +481,13 @@ void UBossEncounterComponent::UpdateBossReservation()
 {
 	AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner());
 	if (!HostShip || !HostShip->HasAuthority()) return;
-	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	const UStoryFacadeSubsystem* Story = GameInstance
-		? GameInstance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
-	const bool bStoppedWithoutBoss = Story && Story->IsStoryNodeReached(StopAfterStoryNode)
-		&& !IsValid(SpawnedBoss);
-	const bool bReserved = bEncounterEnabled && !bStoppedWithoutBoss
-		&& (EncounterState == EBossEncounterState::Waiting
-			|| EncounterState == EBossEncounterState::Spawning);
 	TInlineComponentArray<UChildActorComponent*> Components(HostShip);
 	for (UChildActorComponent* Component : Components)
 	{
 		if (AChestSpawnPoint* Point = Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr)
 		{
-			if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->SetBossEncounterReserved(bReserved);
+			// Only actual guards lock a chest; waiting for a campaign encounter does not.
+			if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->SetBossEncounterReserved(false);
 		}
 	}
 }

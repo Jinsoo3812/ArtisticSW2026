@@ -262,7 +262,9 @@ void AEnemyShip::ApplyChestSpawnPointSettings()
 		DeckChestSettings.GuardCharacters.Reset();
 		for (ABaseEnemy* Crew : RegisteredCrewEnemies)
 		{
-			if (IsValid(Crew)) DeckChestSettings.GuardCharacters.AddUnique(Crew);
+			const ADeckEnemy* DeckCrew = Cast<ADeckEnemy>(Crew);
+			if (IsValid(Crew) && (!DeckCrew || DeckCrew->IsPoolActive()))
+				DeckChestSettings.GuardCharacters.AddUnique(Crew);
 		}
 	}
 
@@ -348,6 +350,12 @@ void AEnemyShip::BeginPlay()
 	{
 		if (EnemyShipArchetype)
 		{
+			AuthoredEncounterArchetype = EnemyShipArchetype;
+			if (NormalFallbackArchetype && BossEncounterComponent
+				&& !BossEncounterComponent->IsCampaignGateOpen())
+			{
+				EnemyShipArchetype = NormalFallbackArchetype;
+			}
 			EnemyShipArchetype->ApplyToShip(this);
 		}
 	}
@@ -1340,8 +1348,23 @@ void AEnemyShip::OnRep_RuntimeState()
 
 void AEnemyShip::HandleRoomRestoreCompleted()
 {
+	if (HasAuthority() && AuthoredEncounterArchetype && BossEncounterComponent)
+	{
+		UEnemyShipArchetypeData* Selected = NormalFallbackArchetype && !BossEncounterComponent->IsCampaignGateOpen()
+			? NormalFallbackArchetype.Get() : AuthoredEncounterArchetype.Get();
+		// Shared campaign facts load after BeginPlay on resume. Keep restored health and ship stats.
+		if (Selected != EnemyShipArchetype) ConfigureEnemyShipArchetype(Selected);
+	}
 	ApplyEffectiveDormancyState();
 	ApplyStoryGatePresentation();
+	ApplyChestSpawnPointSettings();
+	if (HasAuthority() && IsValid(RegisteredBoss))
+	{
+		TInlineComponentArray<UChildActorComponent*> Components(this);
+		for (UChildActorComponent* Component : Components)
+			if (AChestSpawnPoint* Point = Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr)
+				if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->RegisterBossGuard(RegisteredBoss);
+	}
 }
 
 void AEnemyShip::Tick(float DeltaTime)
@@ -1770,8 +1793,20 @@ void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
 		Weakening->RegisterMember(this, CrewEnemy);
 	}
 	CrewEnemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
-	RegisterDeckEnemyChestGuard(CrewEnemy);
+	if (const ADeckEnemy* DeckCrew = Cast<ADeckEnemy>(CrewEnemy); !DeckCrew || DeckCrew->IsPoolActive())
+		RegisterDeckEnemyChestGuard(CrewEnemy);
 	EvaluateCrewControlState();
+}
+
+void AEnemyShip::NotifyCrewEnemyDeactivated(ABaseEnemy* CrewEnemy)
+{
+	if (!HasAuthority() || !CrewEnemy) return;
+	TInlineComponentArray<UChildActorComponent*> Components(this);
+	for (UChildActorComponent* Component : Components)
+	{
+		if (AChestSpawnPoint* Point = Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr)
+			Point->UnregisterGuardCharacter(CrewEnemy);
+	}
 }
 
 void AEnemyShip::NotifyCrewEnemyReactivated(ABaseEnemy* CrewEnemy)

@@ -233,6 +233,11 @@ bool UPlayerDialogueComponent::CommitServerOutcome(
 	}
 
 	const bool bHasItemTransaction = !Rule.ConsumedItems.IsEmpty() || !Rule.RewardItems.IsEmpty();
+	const bool bNewBossQuest = Rule.bCompleteStoryNode
+		&& !Story->IsStoryNodeReached(Rule.StoryNodeToComplete)
+		&& (Rule.StoryNodeToComplete == EStoryNode::ReconQuestAccepted
+			|| Rule.StoryNodeToComplete == EStoryNode::SupplyPatrolQuestAccepted
+			|| Rule.StoryNodeToComplete == EStoryNode::SuppressJapaneseForcesQuestAccepted);
 	if (bHasItemTransaction)
 	{
 		if (!Inventory
@@ -252,6 +257,7 @@ bool UPlayerDialogueComponent::CommitServerOutcome(
 		}
 		return false;
 	}
+	if (bNewBossQuest) OnBossQuestAccepted.ExecuteIfBound(GetOwner());
 	return true;
 }
 

@@ -377,6 +377,11 @@ bool AShipBossEnemy::SummonOneDeckEnemy(ADeckEnemy*& OutEnemy)
 	Request.MinimumDistanceFromTarget = MinimumSummonDistanceFromTarget;
 
 	FDeckPointReservation Reservation;
+	// 적 제작 참고: 추가 소환은 새 액터 생성이 아니라 소속 배에 미리 준비된 비활성 선원을 사용한다.
+	// 풀 검색은 클래스의 정확한 일치를 요구한다. 현재 보스의 SummonedEnemyClass는 BP_DeckMeleeEnemy지만,
+	// Mid_1의 SpawnPlan은 T1_BP_DeckMeleeEnemy, Mid_3은 T3_BP_DeckRangedEnemy라 일치하는 후보가 없다.
+	// 배의 SpawnPlan과 보스의 SummonedEnemyClass, 비활성 후보 수를 함께 맞춰야 한다. 부모/자식 클래스도
+	// 동일 클래스로 취급하지 않는다. 이 문제의 수정은 보류 중이며 보스 스탯 행 변경만으로 해결되지 않는다.
 	if (!HostShip->TryReserveDeckEnemySpawnPoint(Request, Reservation)
 		|| !HostShip->GetDeckEnemySpawnerComponent()->ActivateEnemyAtReservation(Reservation, Target, OutEnemy,
 			SummonedEnemyClass, bUseEncounterBalance ? EncounterBalance.SummonStats : FDataTableRowHandle()))

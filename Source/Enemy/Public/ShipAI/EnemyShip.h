@@ -243,6 +243,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
+	/** Used at encounter initialization when this ship's boss campaign gate is closed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
+	TObjectPtr<UEnemyShipArchetypeData> NormalFallbackArchetype;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UEnemyShipArchetypeData> AuthoredEncounterArchetype;
+
+	void NotifyCrewEnemyDeactivated(ABaseEnemy* CrewEnemy);
+
 	/** Override the archetype's normal cannon lead for this ship, including during PIE on the server. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Cannon Lead")
 	bool bOverrideCannonLeadSpeed = false;
