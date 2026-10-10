@@ -32,6 +32,9 @@ public:
 	void GetActiveEventsSnapshot(double ServerTime, TArray<FSWShipWakeEvent>& OutEvents) const;
 	float GetWakeHeight(const FVector& WorldPosition, double ServerTime) const;
 	FVector2D GetWakeGradient(const FVector& WorldPosition, double ServerTime) const;
+	/** Water-query API: omit local prediction without changing the shared rendering/event store. */
+	float GetAuthoritativeWakeHeight(const FVector& WorldPosition, double ServerTime) const;
+	FVector2D GetAuthoritativeWakeGradient(const FVector& WorldPosition, double ServerTime) const;
 	double GetServerTime() const;
 	int32 GetEventCount() const;
 
@@ -52,6 +55,8 @@ public:
 	static int32 GetMaxCapacity();
 
 private:
+	friend class FSWShipWakeAuthoritativeQueryTest;
+	void GetActiveAuthoritativeEventsSnapshot(double ServerTime, TArray<FSWShipWakeEvent>& OutEvents) const;
 	void AddOrUpdateCapped(const FSWShipWakeEvent& Event);
 	void RemoveExpiredEvents(double ServerTime);
 	void UpdateEventTexture();

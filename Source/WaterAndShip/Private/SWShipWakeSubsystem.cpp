@@ -482,6 +482,37 @@ FVector2D USWShipWakeSubsystem::GetWakeGradient(
 	return FSWShipWakeEvaluator::EvaluateGradient(FVector2D(WorldPosition), ServerTime, Active);
 }
 
+void USWShipWakeSubsystem::GetActiveAuthoritativeEventsSnapshot(
+	const double ServerTime, TArray<FSWShipWakeEvent>& OutEvents) const
+{
+	OutEvents.Reset();
+	FReadScopeLock Lock(EventsLock);
+	OutEvents.Reserve(FMath::Min(Events.Num(), 128));
+	for (const FSWShipWakeEvent& Event : Events)
+	{
+		// SubmitPredictedEvent reserves negative IDs; zero is the authority fallback before replicator registration.
+		if (Event.EventId >= 0 && Event.IsActiveAt(ServerTime)) OutEvents.Add(Event);
+	}
+}
+
+float USWShipWakeSubsystem::GetAuthoritativeWakeHeight(
+	const FVector& WorldPosition, const double ServerTime) const
+{
+	if (CVarEnable.GetValueOnAnyThread() == 0) return 0.0f;
+	TArray<FSWShipWakeEvent> Active;
+	GetActiveAuthoritativeEventsSnapshot(ServerTime, Active);
+	return FSWShipWakeEvaluator::EvaluateHeight(FVector2D(WorldPosition), ServerTime, Active);
+}
+
+FVector2D USWShipWakeSubsystem::GetAuthoritativeWakeGradient(
+	const FVector& WorldPosition, const double ServerTime) const
+{
+	if (CVarEnable.GetValueOnAnyThread() == 0) return FVector2D::ZeroVector;
+	TArray<FSWShipWakeEvent> Active;
+	GetActiveAuthoritativeEventsSnapshot(ServerTime, Active);
+	return FSWShipWakeEvaluator::EvaluateGradient(FVector2D(WorldPosition), ServerTime, Active);
+}
+
 double USWShipWakeSubsystem::GetServerTime() const
 {
 	if (!GetWorld()) return 0.0;
