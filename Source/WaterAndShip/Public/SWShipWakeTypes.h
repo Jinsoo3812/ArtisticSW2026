@@ -56,9 +56,22 @@ struct FSWShipWakeDebugSample
 	FString DetailLog;
 };
 
+struct FSWShipWakeEventDiagnosticSample
+{
+	float Height = 0.0f;
+	float Alpha = -1.0f;
+	float Age = 0.0f;
+	float StampMask = 0.0f;
+	float FadeIn = 0.0f;
+	bool bHasRoot = false;
+};
+
 /** Identical deterministic function used by GT water queries and Async Physics. */
 struct WATERANDSHIP_API FSWShipWakeEvaluator
 {
+	static FSWShipWakeEventDiagnosticSample EvaluateEventDiagnostic(
+		const FVector2D& QueryPosition, double ServerTime, const FSWShipWakeEvent& Event);
+
 	static float EvaluateEventHeight(
 		const FVector2D& QueryPosition,
 		double ServerTime,

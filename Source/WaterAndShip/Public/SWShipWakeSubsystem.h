@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SWShipWakeTypes.h"
+#include "SWShipWakeRenderingDiagnostics.h"
 #include "SWShipWakeSubsystem.generated.h"
 
 class ASWShipWakeReplicator;
@@ -73,6 +74,9 @@ private:
 	TAtomic<uint32> Revision { 0 };
 	uint32 UploadedRevision = MAX_uint32;
 	int32 LastUploadedCount = 0;
+	int32 LastUploadedRenderMode = -1;
+	int32 LastUploadedCapacity = -1;
+	FSWShipWakeRenderingDiagnostics RenderingDiagnostics;
 	int32 NextPredictedEventId = -1;
 	float PhysicsHistoryRetentionSeconds = 2.0f;
 	float MaterialRefreshAccumulator = 0.0f;

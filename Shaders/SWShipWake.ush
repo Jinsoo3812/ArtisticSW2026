@@ -62,9 +62,9 @@
             if (abs(SW_B) > 1.0e-5) \
             { \
                 float SW_LinTau = -SW_C / SW_B; \
-                if (SW_LinTau >= -1.0e-3 && SW_LinTau <= SW_DeltaT + 1.0e-3 && SW_LinTau <= SW_Trem) \
+                if (SW_LinTau >= 0.0 && SW_LinTau < SW_DeltaT && SW_LinTau <= SW_Trem) \
                 { \
-                    SW_Tau = clamp(SW_LinTau, 0.0, SW_DeltaT); \
+                    SW_Tau = SW_LinTau; \
                 } \
             } \
         } \
@@ -77,19 +77,15 @@
                 const float SW_Inv2A = 0.5 / SW_A; \
                 const float SW_Tau1 = (-SW_B - SW_SqrtDisc) * SW_Inv2A; \
                 const float SW_Tau2 = (-SW_B + SW_SqrtDisc) * SW_Inv2A; \
-                const bool bV1 = (SW_Tau1 >= -1.0e-3 && SW_Tau1 <= SW_DeltaT + 1.0e-3 && SW_Tau1 <= SW_Trem); \
-                const bool bV2 = (SW_Tau2 >= -1.0e-3 && SW_Tau2 <= SW_DeltaT + 1.0e-3 && SW_Tau2 <= SW_Trem); \
-                if (bV1 && bV2) \
+                const bool bV1 = (SW_Tau1 >= 0.0 && SW_Tau1 < SW_DeltaT && SW_Tau1 <= SW_Trem); \
+                const bool bV2 = (SW_Tau2 >= 0.0 && SW_Tau2 < SW_DeltaT && SW_Tau2 <= SW_Trem); \
+                if (bV1) \
                 { \
-                    SW_Tau = (SW_Tau1 >= 0.0 && SW_Tau1 <= SW_DeltaT) ? SW_Tau1 : SW_Tau2; \
-                } \
-                else if (bV1) \
-                { \
-                    SW_Tau = clamp(SW_Tau1, 0.0, SW_DeltaT); \
+                    SW_Tau = SW_Tau1; \
                 } \
                 else if (bV2) \
                 { \
-                    SW_Tau = clamp(SW_Tau2, 0.0, SW_DeltaT); \
+                    SW_Tau = SW_Tau2; \
                 } \
             } \
         } \

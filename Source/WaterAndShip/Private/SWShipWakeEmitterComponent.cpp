@@ -1,4 +1,5 @@
 #include "SWShipWakeEmitterComponent.h"
+#include "SWShipWakeRenderingDiagnostics.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Actor.h"
@@ -216,6 +217,15 @@ void USWShipWakeEmitterComponent::TickComponent(
 
 	if (!bHasSample || Speed < MinimumSpeedCmPerSecond || bDirectionFlipped)
 	{
+		if (FSWShipWakeRenderingDiagnostics::IsEnabled() && (bDirectionFlipped
+			|| FVector2D::Distance(LastSamplePosition, Apex) >= 1.0))
+		{
+			UE_LOG(LogSWShipWakeEmitter, Log,
+				TEXT("[KelvinDiag:1:Reset] World=%s Owner=%s Net=%d T=%.6f Predicted=%d DirectionFlipped=%d Speed=%.2f Minimum=%.2f DiscardedDt=%.4f"),
+				*GetNameSafe(World), *GetNameSafe(Owner), static_cast<int32>(World->GetNetMode()),
+				ServerTime, bPredicted, bDirectionFlipped, Speed, MinimumSpeedCmPerSecond,
+				ServerTime - LastSampleServerTime);
+		}
 		// if (bLogging && bDirectionFlipped)
 		// {
 			// UE_LOG(LogSWShipWakeEmitter, Log,
@@ -258,6 +268,14 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		FMath::Square(WakeLengthCm) + FMath::Square(WakeHalfWidthCm));
 	const float Lifetime = FMath::Max(
 		(MaximumRadius + EnvelopeWidthCm) / FMath::Max(PropagationSpeedCmPerSecond, 1.0f), 1.0f);
+	if (FSWShipWakeRenderingDiagnostics::IsEnabled())
+	{
+		UE_LOG(LogSWShipWakeEmitter, Log,
+			TEXT("[KelvinDiag:1:Emit] World=%s Owner=%s Net=%d T=%.6f Predicted=%d Segment=[%.6f,%.6f] WithheldDt=%.4f Distance=%.2f TurnDeg=%.2f Triggers=%d/%d/%d Segments=%d Speed=%.2f Amp=%.3f"),
+			*GetNameSafe(GetWorld()), *GetNameSafe(GetOwner()), static_cast<int32>(GetWorld()->GetNetMode()),
+			ServerTime, bPredicted, LastSampleServerTime, ServerTime, Elapsed, Distance, TurnDegrees,
+			bDistanceTrigger, bTurnTrigger, bTimeTrigger, SegmentCount, HorizontalSpeed, MaximumAmplitudeCm * SpeedFade);
+	}
 
 	// const bool bLogging = IsDebugLogEnabled();
 	// if (bLogging)

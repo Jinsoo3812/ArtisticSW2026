@@ -9,7 +9,8 @@ namespace
 		const FVector2D& QueryPosition,
 		const double ServerTime,
 		const FSWShipWakeEvent& Event,
-		float& OutHeight)
+		float& OutHeight,
+		FSWShipWakeEventDiagnosticSample* Diagnostic = nullptr)
 	{
 		OutHeight = 0.0f;
 		if (!Event.IsActiveAt(ServerTime) || !FSWKelvinWakeAtlas::Get().IsReady()) return false;
@@ -41,9 +42,9 @@ namespace
 			if (FMath::Abs(B) > 1.0e-5f)
 			{
 				const float LinearTau = -C_coeff / B;
-				if (LinearTau >= -1.0e-3f && LinearTau <= DeltaT + 1.0e-3f && LinearTau <= Trem)
+				if (LinearTau >= 0.0f && LinearTau < DeltaT && LinearTau <= Trem)
 				{
-					Tau = FMath::Clamp(LinearTau, 0.0f, DeltaT);
+					Tau = LinearTau;
 				}
 			}
 		}
@@ -55,19 +56,16 @@ namespace
 				const float SqrtDisc = FMath::Sqrt(Disc);
 				const float Tau1 = (-B - SqrtDisc) / (2.0f * A);
 				const float Tau2 = (-B + SqrtDisc) / (2.0f * A);
-				const bool bValid1 = (Tau1 >= -1.0e-3f && Tau1 <= DeltaT + 1.0e-3f && Tau1 <= Trem);
-				const bool bValid2 = (Tau2 >= -1.0e-3f && Tau2 <= DeltaT + 1.0e-3f && Tau2 <= Trem);
-				if (bValid1 && bValid2)
+				// The next segment owns the shared endpoint; never clamp an out-of-range root onto it.
+				const bool bValid1 = (Tau1 >= 0.0f && Tau1 < DeltaT && Tau1 <= Trem);
+				const bool bValid2 = (Tau2 >= 0.0f && Tau2 < DeltaT && Tau2 <= Trem);
+				if (bValid1)
 				{
-					Tau = (Tau1 >= 0.0f && Tau1 <= DeltaT) ? Tau1 : Tau2;
-				}
-				else if (bValid1)
-				{
-					Tau = FMath::Clamp(Tau1, 0.0f, DeltaT);
+					Tau = Tau1;
 				}
 				else if (bValid2)
 				{
-					Tau = FMath::Clamp(Tau2, 0.0f, DeltaT);
+					Tau = Tau2;
 				}
 			}
 		}
@@ -77,6 +75,12 @@ namespace
 		const float Alpha = FMath::Clamp(Tau / DeltaT, 0.0f, 1.0f);
 		const float Age = Trem - Tau;
 		if (Age < 0.0f) return false;
+		if (Diagnostic)
+		{
+			Diagnostic->bHasRoot = true;
+			Diagnostic->Alpha = Alpha;
+			Diagnostic->Age = Age;
+		}
 
 		const float DecayRate = FMath::Max(Event.DecayRate, 0.0f);
 		const float Decay = FMath::Exp(-DecayRate * Age);
@@ -108,6 +112,7 @@ namespace
 			const float VNorm = FMath::Abs(V_signed) / WidthCut;
 			const float VFade = 1.0f - FMath::SmoothStep(0.60f, 1.0f, VNorm);
 			const float StampMask = UFadeIn * UFadeOut * VFade;
+			if (Diagnostic) Diagnostic->StampMask = StampMask;
 
 			if (StampMask > 0.0001f)
 			{
@@ -120,8 +125,22 @@ namespace
 			? FMath::SmoothStep(0.0f, Event.FadeInSeconds, Age) : 1.0f;
 
 		OutHeight = Amp * Golden * FadeIn * Decay;
+		if (Diagnostic)
+		{
+			Diagnostic->FadeIn = FadeIn;
+			Diagnostic->Height = OutHeight;
+		}
 		return true;
 	}
+}
+
+FSWShipWakeEventDiagnosticSample FSWShipWakeEvaluator::EvaluateEventDiagnostic(
+	const FVector2D& QueryPosition, const double ServerTime, const FSWShipWakeEvent& Event)
+{
+	FSWShipWakeEventDiagnosticSample Sample;
+	float Height = 0.0f;
+	EvaluateGoldenSample(QueryPosition, ServerTime, Event, Height, &Sample);
+	return Sample;
 }
 
 float FSWShipWakeEvaluator::EvaluateEventHeight(
