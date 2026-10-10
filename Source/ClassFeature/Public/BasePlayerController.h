@@ -187,7 +187,15 @@ public:
 	void RequestRoomSaveAndExit();
 	void CloseRoomMenu();
 	UFUNCTION(Server, Reliable) void ServerRequestRoomSave(uint64 RequestId);
+	UFUNCTION(Server, Reliable) void ServerSetYiSunSinDialogueTestMode(bool bEnabled);
+	UFUNCTION(Server, Reliable) void ServerRequestMiddleBossAndReturn(int32 BossNumber);
 	UFUNCTION(Client, Reliable) void ClientRoomSaveResult(uint64 RequestId, bool bSuccess, const FString& Message);
+
+private:
+	void SyncYiSunSinDialogueTestMode();
+	void ConsumeMiddleBossReturnRequest();
+	int32 LastYiSunSinDialogueTestValue = INDEX_NONE;
+public:
 	UFUNCTION(Client, Reliable) void ClientBeginRoomReturn();
 	UFUNCTION(Client, Reliable) void ClientBeginFinalDeparture(int32 AttemptId);
 	UFUNCTION(Client, Reliable) void ClientCancelRoomReturn();

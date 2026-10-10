@@ -20,7 +20,8 @@ bool SWRoomLogging::IsDetailedEnabled()
 	return false;
 #else
 	if (IsRunningCommandlet()) return false;
-	static const bool bEnabled = FParse::Param(FCommandLine::Get(), TEXT("SWRoomDetailedLog"));
+	static const bool bEnabled = FParse::Param(FCommandLine::Get(), TEXT("SWRoomDetailedLog"))
+		|| SWRoomLoadDiagnostics::IsEnabled();
 	return bEnabled;
 #endif
 }
@@ -31,20 +32,32 @@ FSWConnectionFileOutputDevice::FSWConnectionFileOutputDevice(bool bInRoomFlow, b
 	if (IsRunningCommandlet()) return;
 	LastDrainAt = FPlatformTime::Seconds();
 	Side = IsRunningDedicatedServer() ? TEXT("Server") : TEXT("Client");
-	const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Logs"), TEXT("SWRoom"));
+	FString AbsoluteLog;
+	const bool bCollected = SWRoomLoadDiagnostics::IsEnabled()
+		&& FParse::Value(FCommandLine::Get(), TEXT("abslog="), AbsoluteLog) && !FPaths::IsRelative(AbsoluteLog);
+	const FString Directory = bCollected
+		? FPaths::Combine(FPaths::GetPath(AbsoluteLog), TEXT("RoomDiagnostics"),
+			FString::Printf(TEXT("%s_%u"), *FPaths::GetBaseFilename(AbsoluteLog), FPlatformProcess::GetCurrentProcessId()))
+		: FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Logs"), TEXT("SWRoom"));
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	if (Files.CreateDirectoryTree(*Directory))
 	{
 		const FString Name = bSaveTrace
 			? FString::Printf(TEXT("RoomSave_%s_%u.txt"), *Side, FPlatformProcess::GetCurrentProcessId())
 			: bRoomFlow ? FString::Printf(TEXT("RoomFlow_%s_%u.txt"), *Side, FPlatformProcess::GetCurrentProcessId())
+			: bCollected ? FString::Printf(TEXT("Connection_%s_%u.txt"), *Side, FPlatformProcess::GetCurrentProcessId())
 			: (Side == TEXT("Server") ? TEXT("Connection_Server.txt") : TEXT("Connection_Client.txt"));
 		const FString Path = FPaths::Combine(Directory, Name);
 		FileHandle.Reset(Files.OpenWrite(*Path, bRoomFlow || bSaveTrace, bRoomFlow || bSaveTrace));
 	}
 	if (!FileHandle) WarnOnce();
-	else if (bRoomFlow || bSaveTrace) Serialize(TEXT("Flow=Process Phase=Started"), ELogVerbosity::Display,
-		bSaveTrace ? LogSWRoomSave.GetCategoryName() : LogSWRoom.GetCategoryName());
+	else
+	{
+		UE_LOG(LogTemp, Display, TEXT("[SWRoomDiagnostics] Version=20261010 Pid=%u Side=%s Directory=%s SaveTrace=%d RoomFlow=%d Detailed=%d"),
+			FPlatformProcess::GetCurrentProcessId(), *Side, *Directory, bSaveTrace, bRoomFlow, SWRoomLogging::IsDetailedEnabled());
+		if (bRoomFlow || bSaveTrace) Serialize(TEXT("Flow=Process Phase=Started Version=20261010"), ELogVerbosity::Display,
+			bSaveTrace ? LogSWRoomSave.GetCategoryName() : LogSWRoom.GetCategoryName());
+	}
 }
 
 FSWConnectionFileOutputDevice::~FSWConnectionFileOutputDevice()
@@ -75,6 +88,8 @@ void FSWConnectionFileOutputDevice::Serialize(const TCHAR* Message, ELogVerbosit
 {
 	if (bSaveTrace ? Category != LogSWRoomSave.GetCategoryName()
 		: bRoomFlow ? Category != LogSWRoom.GetCategoryName() && Category != LogSWConnection.GetCategoryName()
+			&& !(SWRoomLoadDiagnostics::IsEnabled() && Category == FName(TEXT("LogTemp"))
+				&& Message && (FCString::Strstr(Message, TEXT("[SWVoyageDiag]")) || FCString::Strstr(Message, TEXT("[SWLoadDiag]"))))
 		: Category != LogSWConnection.GetCategoryName()) return;
 	const bool bDiagnostic = SWRoomLoadDiagnostics::IsEnabled();
 	TRACE_CPUPROFILER_EVENT_SCOPE_CONDITIONAL(SWLog_Serialize, bDiagnostic);

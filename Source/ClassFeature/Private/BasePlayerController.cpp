@@ -61,6 +61,14 @@ ABasePlayerController::ABasePlayerController()
 #include "Network/Lobby/SWRoomSubsystem.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/IConsoleManager.h"
+#include "StoryFacadeSubsystem.h"
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+static TAutoConsoleVariable<int32> CVarMiddleBossAndReturn(
+	TEXT("sw.Campaign.MiddleBossAndReturn"), 0,
+	TEXT("One-shot: 1/2/3 replaces campaign progress with that middle-boss quest stage and requests return. Inventory is unchanged. Resets to 0 after consumption."),
+	ECVF_Cheat);
+#endif
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 static TAutoConsoleVariable<int32> CVarSWShipMotionDiag(
@@ -1404,6 +1412,8 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	SyncYiSunSinDialogueTestMode();
+	ConsumeMiddleBossReturnRequest();
 	TickDeathFlow(DeltaTime);
 	TickShipMotionDiagnostics();
 	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
@@ -1421,6 +1431,69 @@ void ABasePlayerController::Tick(float DeltaTime)
 			}
 		}
 	}
+}
+
+void ABasePlayerController::SyncYiSunSinDialogueTestMode()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (!IsLocalController() || HasAuthority()) return;
+	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
+	if (!Toggle) return;
+	const int32 Value = Toggle->GetInt() != 0 ? 1 : 0;
+	if (Value == LastYiSunSinDialogueTestValue) return;
+	const bool bInitialDefault = LastYiSunSinDialogueTestValue == INDEX_NONE && Value == 0
+		&& (Toggle->GetFlags() & ECVF_SetByMask) == ECVF_SetByConstructor;
+	LastYiSunSinDialogueTestValue = Value;
+	if (!bInitialDefault) ServerSetYiSunSinDialogueTestMode(Value != 0);
+#endif
+}
+
+void ABasePlayerController::ServerSetYiSunSinDialogueTestMode_Implementation(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
+	if (!HasAuthority() || !PlayerState || !Toggle) return;
+	Toggle->Set(bEnabled ? 1 : 0, ECVF_SetByConsole);
+	UE_LOG(LogTemp, Display, TEXT("[YiDialogueTest] Server toggle=%d requested by %s"), bEnabled, *GetNameSafe(PlayerState));
+#endif
+}
+
+void ABasePlayerController::ConsumeMiddleBossReturnRequest()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if ((!IsLocalController() && !HasAuthority()) || !PlayerState || !GetLifeCharacter()) return;
+	const int32 BossNumber = CVarMiddleBossAndReturn.GetValueOnGameThread();
+	if (BossNumber == 0) return;
+	CVarMiddleBossAndReturn.AsVariable()->Set(0, ECVF_SetByConsole);
+	if (BossNumber < 1 || BossNumber > 3)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[CampaignTest] Invalid middle boss %d; expected 1/2/3"), BossNumber);
+		return;
+	}
+	ServerRequestMiddleBossAndReturn(BossNumber);
+#endif
+}
+
+void ABasePlayerController::ServerRequestMiddleBossAndReturn_Implementation(int32 BossNumber)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	UWorld* World = GetWorld();
+	AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	UGameInstance* Instance = GetGameInstance();
+	UStoryFacadeSubsystem* Story = Instance ? Instance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+	UClassFeatureRoomProgressSubsystem* Progress = Instance ? Instance->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr;
+	ABasePlayer* Requester = GetLifeCharacter();
+	if (!HasAuthority() || !PlayerState || BossNumber < 1 || BossNumber > 3
+		|| !Mode || !Mode->CanMutateGameplay(this) || !Requester || !Story || !Progress)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[CampaignTest] MiddleBossAndReturn rejected Boss=%d Controller=%s"), BossNumber, *GetName());
+		return;
+	}
+	const bool bStageSet = Story->ActivateDevelopmentMiddleBoss(BossNumber);
+	const bool bReturnAccepted = bStageSet && Progress->TryReturn(World, Requester);
+	UE_LOG(LogTemp, Display, TEXT("[CampaignTest] MiddleBossAndReturn Boss=%d StageSet=%d ReturnAccepted=%d"), BossNumber, bStageSet, bReturnAccepted);
+	if (!bReturnAccepted) ClientMessage(TEXT("Campaign test: stage/return failed; see server log."));
+#endif
 }
 
 void ABasePlayerController::TickShipMotionDiagnostics()

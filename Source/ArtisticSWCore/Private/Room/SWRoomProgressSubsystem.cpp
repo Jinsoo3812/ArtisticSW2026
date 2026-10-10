@@ -64,6 +64,7 @@ void USWRoomProgressSubsystem::Deinitialize()
 }
 
 #include "Room/SWRoomSaveGame.h"
+#include "Network/SWRoomLoadDiagnostics.h"
 #include "Room/SWRoomSaveStore.h"
 #include "Network/SWNetworkLog.h"
 #include "Misc/CommandLine.h"
@@ -115,6 +116,7 @@ void USWRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	{
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=ServerStartup RunId=%s RoomId=%s Mode=%s Result=Loaded Backup=%d Sequence=%llu"),
 			*RunText, *RoomText, *Mode, ActiveRoom->bRecoveredFromBackup ? 1 : 0, ActiveRoom->CaptureSequence);
+		SWRoomLoadDiagnostics::LogRoom(TEXT("DiskLoaded"), ActiveRoom);
 	}
 }
 
@@ -135,6 +137,7 @@ bool USWRoomProgressSubsystem::WriteCheckpoint()
 		*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence, bNewRoomPending);
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=Checkpoint Phase=WriteRequested RoomId=%s Kind=%s Sequence=%llu NewPending=%d"),
 		*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence, bNewRoomPending);
+	SWRoomLoadDiagnostics::LogRoom(TEXT("BeforeWrite"), ActiveRoom);
 	const bool bSuccess = bNewRoomPending
 		? (FSWRoomSaveStore::StageCompleteNewRoom(ActiveRoom) && FSWRoomSaveStore::CommitStagedNewRoom())
 		: FSWRoomSaveStore::WriteCurrentRoom(ActiveRoom);

@@ -403,15 +403,20 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 {
 	if (Path.IsEmpty()) return nullptr;
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.LoadPath"));
+	auto FailRead = [&Path, bHeaderOnly](const TCHAR* Reason) -> USWRoomSaveGame*
+	{
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileRead Result=Unavailable Path=%s HeaderOnly=%d Reason=%s"), *Path, bHeaderOnly, Reason);
+		return nullptr;
+	};
 	TArray<uint8> Bytes;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	const int64 Size = Files.FileSize(*Path);
-	if (Size <= 0 || Size > MaxRoomFileBytes) return nullptr;
+	if (Size <= 0 || Size > MaxRoomFileBytes) return FailRead(TEXT("MissingEmptyOrOversized"));
 	{
 		SWRoomLoadDiagnostics::FScopedPhase ReadScope(TEXT("SaveStore.DiskRead"));
-		if (!FFileHelper::LoadFileToArray(Bytes, *Path)) return nullptr;
+		if (!FFileHelper::LoadFileToArray(Bytes, *Path)) return FailRead(TEXT("DiskRead"));
 	}
-	if (Bytes.Num() < HeaderBytes) return nullptr;
+	if (Bytes.Num() < HeaderBytes) return FailRead(TEXT("TruncatedHeader"));
 	uint32 Magic = 0;
 	uint64 PayloadSize = 0;
 	uint32 Checksum = 0;
@@ -419,7 +424,7 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 	FMemory::Memcpy(&PayloadSize, Bytes.GetData() + sizeof(Magic), sizeof(PayloadSize));
 	FMemory::Memcpy(&Checksum, Bytes.GetData() + sizeof(Magic) + sizeof(PayloadSize), sizeof(Checksum));
 	if (Magic != RoomMagic || PayloadSize != static_cast<uint64>(Bytes.Num() - HeaderBytes)
-		|| FCrc::MemCrc32(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize)) != Checksum) return nullptr;
+		|| FCrc::MemCrc32(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize)) != Checksum) return FailRead(TEXT("MagicSizeOrChecksum"));
 	TArray<uint8> Payload;
 	Payload.Append(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize));
 	USWRoomSaveGame* Room;
@@ -429,9 +434,13 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 	}
 	{
 		SWRoomLoadDiagnostics::FScopedPhase ValidateScope(TEXT("SaveStore.ValidateReadback"));
-		if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return nullptr;
+		if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return FailRead(TEXT("DeserializeOrValidation"));
 	}
 	if (Outer && Room) Room->Rename(nullptr, Outer);
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
+		TEXT("Flow=FileRead Result=Validated RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d Bytes=%d Checksum=%u Actors=%d Unloaded=%d Systems=%d Guests=%d"),
+		*Room->RoomId.ToString(), Room->CaptureSequence, *Path, bHeaderOnly, Bytes.Num(), Checksum,
+		Room->WorldSnapshot.Actors.Num(), Room->WorldSnapshot.UnloadedActors.Num(), Room->WorldSnapshot.Systems.Num(), Room->Guests.Num());
 	return Room;
 }
 

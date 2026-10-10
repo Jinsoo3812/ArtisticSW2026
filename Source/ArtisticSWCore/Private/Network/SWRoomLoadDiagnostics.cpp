@@ -7,6 +7,10 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "ProfilingDebugging/MiscTrace.h"
+#include "Network/SWNetworkLog.h"
+#include "Room/SWRoomSaveGame.h"
+#include "Misc/Crc.h"
+#include "UObject/UnrealType.h"
 
 namespace SWRoomLoadDiagnostics
 {
@@ -29,6 +33,69 @@ bool IsEnabled()
 	static const bool bEnabled = FParse::Param(FCommandLine::Get(), TEXT("SWRoomLoadDiag"));
 	return bEnabled;
 #endif
+}
+
+namespace
+{
+void LogFields(const TCHAR* Phase, const FGuid& RoomId, uint64 Sequence, const FString& Owner,
+	const UScriptStruct* Type, const void* Data)
+{
+	if (!IsEnabled()) return;
+	for (TFieldIterator<FProperty> It(Type); It; ++It)
+	{
+		const FProperty* Property = *It;
+		if (!Property->HasAnyPropertyFlags(CPF_SaveGame)) continue;
+		FString Value;
+		Property->ExportTextItem_Direct(Value, Property->ContainerPtrToValuePtr<void>(Data), nullptr, nullptr, PPF_None);
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=StateEvidence Version=20261010 Phase=%s RoomId=%s Sequence=%llu Owner=%s Field=%s Value=%s"),
+			Phase, *RoomId.ToString(), Sequence, *Owner, *Property->GetName(), *Value);
+	}
+}
+}
+
+void LogPlayer(const TCHAR* Phase, const FGuid& RoomId, uint64 Sequence, const FString& PlayerKey, const FSWRoomPlayerProgress& Progress)
+{
+	LogFields(Phase, RoomId, Sequence, TEXT("Player:") + PlayerKey, FSWRoomPlayerProgress::StaticStruct(), &Progress);
+}
+
+void LogSnapshot(const TCHAR* Phase, const FGuid& RoomId, const FSWRoomWorldSnapshot& Snapshot)
+{
+	if (!IsEnabled()) return;
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SnapshotEvidence Version=20261010 Phase=%s RoomId=%s Sequence=%llu Map=%s Actors=%d Unloaded=%d Systems=%d Tombstones=%d Issues=%d"),
+		Phase, *RoomId.ToString(), Snapshot.CaptureSequence, *Snapshot.MapPath.ToString(), Snapshot.Actors.Num(),
+		Snapshot.UnloadedActors.Num(), Snapshot.Systems.Num(), Snapshot.DestroyedLevelActorIds.Num(), Snapshot.CaptureIssues.Num());
+	auto LogActors = [&](const TArray<FSWRoomActorRecord>& Records, const TCHAR* Scope)
+	{
+		for (const FSWRoomActorRecord& Record : Records)
+		{
+			UE_LOG(LogSWRoomSave, Display, TEXT("Flow=ActorEvidence Phase=%s RoomId=%s Sequence=%llu Scope=%s Id=%s Class=%s Partition=%s Adapter=%s AdapterVersion=%d Transform=%s Velocity=%s SaveBytes=%d SaveCRC=%u AdapterBytes=%d AdapterCRC=%u Components=%d"),
+				Phase, *RoomId.ToString(), Snapshot.CaptureSequence, Scope, *Record.StableId.ToString(), *Record.ClassPath.ToString(),
+				*Record.LevelPartition.PackagePath.ToString(), *Record.AdapterType.ToString(), Record.AdapterVersion,
+				*Record.WorldTransform.ToString(), *Record.MotionState.LinearVelocity.ToString(), Record.SaveGameBytes.Num(),
+				FCrc::MemCrc32(Record.SaveGameBytes.GetData(), Record.SaveGameBytes.Num()), Record.AdapterBytes.Num(),
+				FCrc::MemCrc32(Record.AdapterBytes.GetData(), Record.AdapterBytes.Num()), Record.Components.Num());
+			for (const FSWRoomComponentRecord& Component : Record.Components)
+				UE_LOG(LogSWRoomSave, Display, TEXT("Flow=ComponentEvidence Phase=%s RoomId=%s Sequence=%llu Id=%s Key=%s Transform=%s Bytes=%d CRC=%u"),
+					Phase, *RoomId.ToString(), Snapshot.CaptureSequence, *Record.StableId.ToString(), *Component.StableKey.ToString(),
+					*Component.WorldTransform.ToString(), Component.SaveGameBytes.Num(), FCrc::MemCrc32(Component.SaveGameBytes.GetData(), Component.SaveGameBytes.Num()));
+		}
+	};
+	LogActors(Snapshot.Actors, TEXT("Loaded"));
+	LogActors(Snapshot.UnloadedActors, TEXT("Unloaded"));
+	for (const FSWRoomSystemRecord& System : Snapshot.Systems)
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SystemEvidence Phase=%s RoomId=%s Sequence=%llu Key=%s Contract=%d Bytes=%d CRC=%u"),
+			Phase, *RoomId.ToString(), Snapshot.CaptureSequence, *System.StableKey.ToString(), System.ContractVersion,
+			System.SaveGameBytes.Num(), FCrc::MemCrc32(System.SaveGameBytes.GetData(), System.SaveGameBytes.Num()));
+}
+
+void LogRoom(const TCHAR* Phase, const USWRoomSaveGame* Room)
+{
+	if (!IsEnabled() || !Room) return;
+	LogSnapshot(Phase, Room->RoomId, Room->WorldSnapshot);
+	LogPlayer(Phase, Room->RoomId, Room->CaptureSequence, Room->HostDisplayName, Room->HostProgress);
+	for (const FSWRoomGuestProgress& Guest : Room->Guests)
+		LogPlayer(Phase, Room->RoomId, Room->CaptureSequence, Guest.DisplayName, Guest.Progress);
+	LogFields(Phase, Room->RoomId, Room->CaptureSequence, TEXT("Shared"), FSWRoomSharedProgress::StaticStruct(), &Room->SharedProgress);
 }
 
 void Mark(const TCHAR* Phase)

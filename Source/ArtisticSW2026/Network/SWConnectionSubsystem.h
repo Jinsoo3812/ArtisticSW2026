@@ -54,6 +54,10 @@ public:
 	FOnSWConnectionFailed OnConnectionFailed;
 
 private:
+	friend class FRoomReturnTimeoutTest;
+	void ApplyReturnReconnectTimeout(UNetDriver* NetDriver);
+	void RestoreReturnReconnectTimeout();
+	float GetActiveReadinessTimeout() const;
 	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString);
 	void HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& ErrorString);
 	void HandlePreLoadMap(const FWorldContext& WorldContext, const FString& MapName);
@@ -83,6 +87,10 @@ private:
 	int32 ConsecutiveReadyTicks = 0;
 	uint8 LastLoggedReadinessMask = 0;
 	static constexpr float ReadinessTimeoutSeconds = 30.0f;
+	static constexpr float ReturnReconnectTimeoutSeconds = 60.0f;
+	TWeakObjectPtr<UNetDriver> ReturnTimeoutDriver;
+	float PreviousInitialConnectTimeout = 0.0f;
+	float PreviousConnectionTimeout = 0.0f;
 	static constexpr int32 RequiredConsecutiveReadyTicks = 3;
 	TSharedPtr<SWidget> LoadingOverlayWidget;
 	UPROPERTY(Transient)

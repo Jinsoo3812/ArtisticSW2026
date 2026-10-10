@@ -1,4 +1,41 @@
 #include "NPCDialogueData.h"
+#include "HAL/IConsoleManager.h"
+#include "StoryFacadeSubsystem.h"
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+static TAutoConsoleVariable<int32> CVarYiSunSinDialogueTest(
+	TEXT("sw.Dialogue.YiSunSin.SkipRequirements"), 0,
+	TEXT("Development only: advance Yi Sun Sin campaign dialogue without boss kills or quest items. Local player controllers forward changes to the server."),
+	ECVF_Cheat);
+#endif
+
+bool UNPCDialogueData::IsYiSunSinTestMode() const
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	return CVarYiSunSinDialogueTest.GetValueOnGameThread() != 0
+		&& GetPathName() == TEXT("/Game/Campaign/DataAsset/Dialogue/DA_YiSunSinDialogue.DA_YiSunSinDialogue");
+#else
+	return false;
+#endif
+}
+
+void UNPCDialogueData::PrepareYiSunSinTestProgress(UStoryFacadeSubsystem* Story) const
+{
+	if (!Story || !IsYiSunSinTestMode()) return;
+	const TPair<EStoryNode, EStoryNode> Encounters[] = {
+		{EStoryNode::ReconQuestAccepted, EStoryNode::MiddleBoss1Defeated},
+		{EStoryNode::SupplyPatrolQuestAccepted, EStoryNode::MiddleBoss2Defeated},
+		{EStoryNode::SuppressJapaneseForcesQuestAccepted, EStoryNode::MiddleBoss3Defeated},
+		{EStoryNode::UldolmokBattleQuestAccepted, EStoryNode::FinalBossDefeated}};
+	for (const auto& Encounter : Encounters)
+	{
+		if (Story->IsStoryNodeReached(Encounter.Key) && !Story->IsStoryNodeReached(Encounter.Value))
+		{
+			Story->CompleteStoryNode(Encounter.Value);
+			break;
+		}
+	}
+}
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"

@@ -535,9 +535,14 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 			FSWRoomWorldSnapshot Observed;
 			FString AuditError;
 			TArray<FString> Differences;
-			if (!Snapshot->Capture(Observed, ESWRoomSaveKind::Manual,
-				Room->GetActiveRoom()->CaptureSequence, AuditError)
-				|| !Snapshot->CompareRestored(Room->GetActiveRoom()->WorldSnapshot, Observed, Differences))
+			const bool bCaptured = Snapshot->Capture(Observed, ESWRoomSaveKind::Manual,
+				Room->GetActiveRoom()->CaptureSequence, AuditError);
+			const bool bMatches = bCaptured && Snapshot->CompareRestored(Room->GetActiveRoom()->WorldSnapshot, Observed, Differences);
+			if (bCaptured) SWRoomLoadDiagnostics::LogSnapshot(TEXT("RestoreObserved"), Room->GetActiveRoom()->RoomId, Observed);
+			SW_ROOM_DETAIL_LOG(LogSWRoom, Display, TEXT("Flow=RestoreAudit Scope=World RoomId=%s Sequence=%llu Result=%s Captured=%d Differences=%d SavedIssues=%d"),
+				*Room->GetActiveRoom()->RoomId.ToString(), Room->GetActiveRoom()->CaptureSequence,
+				bMatches ? TEXT("MatchDeclaredState") : TEXT("Failed"), bCaptured, Differences.Num(), Room->GetActiveRoom()->WorldSnapshot.CaptureIssues.Num());
+			if (!bMatches)
 			{
 				for (const FString& Difference : Differences)
 					SW_ROOM_DETAIL_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit %s"), *Difference);
@@ -559,6 +564,8 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 			if (!Expected) continue;
 			FSWRoomPlayerProgress Actual;
 			Player->CaptureRoomProgress(Actual);
+			SWRoomLoadDiagnostics::LogPlayer(TEXT("RestoreExpected"), SavedRoom->RoomId, SavedRoom->CaptureSequence, Player->GetPathName(), *Expected);
+			SWRoomLoadDiagnostics::LogPlayer(TEXT("RestoreObserved"), SavedRoom->RoomId, SavedRoom->CaptureSequence, Player->GetPathName(), Actual);
 			const bool bStatsMatch = FMath::IsNearlyEqual(Expected->CurrentHealth, Actual.CurrentHealth, 0.01f)
 				&& FMath::IsNearlyEqual(Expected->MaximumHealth, Actual.MaximumHealth, 0.01f)
 				&& FMath::IsNearlyEqual(Expected->BaseStrength, Actual.BaseStrength, 0.01f)
@@ -575,6 +582,8 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 					&& (Before.DurationRemaining < 0.f || FMath::Abs(Before.DurationRemaining - After.DurationRemaining) <= TimerTolerance)
 					&& (Before.NextPeriodRemaining < 0.f || FMath::Abs(Before.NextPeriodRemaining - After.NextPeriodRemaining) <= TimerTolerance);
 			}
+			SW_ROOM_DETAIL_LOG(LogSWRoom, Display, TEXT("Flow=RestoreAudit Scope=PlayerStatsEffectsEquipment RoomId=%s Sequence=%llu Player=%s Stats=%d Effects=%d Equipment=%d"),
+				*SavedRoom->RoomId.ToString(), SavedRoom->CaptureSequence, *Player->GetPathName(), bStatsMatch, bEffectsMatch, Expected->EquippedItemTag == Actual.EquippedItemTag);
 			if (!bStatsMatch || !bEffectsMatch || Expected->EquippedItemTag != Actual.EquippedItemTag)
 			{
 				UE_LOG(LogSWRoom, Error,
@@ -822,6 +831,12 @@ void UClassFeatureRoomProgressSubsystem::RestorePlayer(ABasePlayer* Player)
 	{
 		FString EffectsError;
 		if (!Player->FinalizeRoomProgressEffects(EffectsError)) { Player->bInitialLifeRestoreSuccessful = false; UE_LOG(LogSWRoom, Error, TEXT("Immediate player effects restore failed: %s"), *EffectsError); }
+		if (SWRoomLoadDiagnostics::IsEnabled())
+		{
+			FSWRoomPlayerProgress Observed;
+			Player->CaptureRoomProgress(Observed);
+			SWRoomLoadDiagnostics::LogPlayer(TEXT("PlayerAppliedImmediate"), Save->RoomId, Save->CaptureSequence, Player->GetPathName(), Observed);
+		}
 	}
 	if (Mode->GetPlayerIndex(Player->GetController()) == 0 && Room->IsNewRoomPending())
 	{

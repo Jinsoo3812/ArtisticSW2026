@@ -2,6 +2,8 @@
 #include "Network/SWLoadingScreenWidget.h"
 
 #include "Engine/Engine.h"
+#include "Engine/NetDriver.h"
+#include "Engine/PendingNetGame.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
@@ -65,6 +67,7 @@ void USWConnectionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void USWConnectionSubsystem::Deinitialize()
 {
+	RestoreReturnReconnectTimeout();
 	StopReadinessCheck();
 	HideLoadingPresentation();
 	if (GEngine)
@@ -87,6 +90,14 @@ void USWConnectionSubsystem::Deinitialize()
 
 void USWConnectionSubsystem::Tick(float DeltaTime)
 {
+	if (RoomLoadingReason == ERoomLoadingReason::Return && GEngine)
+	{
+		const UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
+		const FWorldContext* Context = World ? GEngine->GetWorldContextFromWorld(World) : nullptr;
+		if (Context && Context->PendingNetGame)
+			ApplyReturnReconnectTimeout(Context->PendingNetGame->NetDriver);
+	}
+	if (!bReadinessCheckActive) return;
 	ReadinessElapsedSeconds += FMath::Max(DeltaTime, 0.0f);
 	const uint8 ReadinessMask = BuildReadinessMask();
 	if (ReadinessMask != LastLoggedReadinessMask)
@@ -104,7 +115,7 @@ void USWConnectionSubsystem::Tick(float DeltaTime)
 		CompleteReadiness();
 		return;
 	}
-	if (ReadinessElapsedSeconds >= ReadinessTimeoutSeconds)
+	if (ReadinessElapsedSeconds >= GetActiveReadinessTimeout())
 	{
 		RecordFailure(ESWConnectionFailureReason::ReadinessTimeout, TEXT("ReadinessTimeout"), GetReadinessDebugStatus());
 	}
@@ -112,7 +123,34 @@ void USWConnectionSubsystem::Tick(float DeltaTime)
 
 bool USWConnectionSubsystem::IsTickable() const
 {
-	return bReadinessCheckActive && !IsTemplate();
+	return (bReadinessCheckActive || RoomLoadingReason == ERoomLoadingReason::Return) && !IsTemplate();
+}
+
+void USWConnectionSubsystem::ApplyReturnReconnectTimeout(UNetDriver* NetDriver)
+{
+	if (RoomLoadingReason != ERoomLoadingReason::Return || !NetDriver || ReturnTimeoutDriver.Get() == NetDriver) return;
+	RestoreReturnReconnectTimeout();
+	ReturnTimeoutDriver = NetDriver;
+	PreviousInitialConnectTimeout = NetDriver->InitialConnectTimeout;
+	PreviousConnectionTimeout = NetDriver->ConnectionTimeout;
+	NetDriver->InitialConnectTimeout = ReturnReconnectTimeoutSeconds;
+	NetDriver->ConnectionTimeout = ReturnReconnectTimeoutSeconds;
+	UE_LOG(LogSWConnection, Display, TEXT("Flow=Return Phase=ReconnectTimeout Driver=%s Timeout=%.1f"), *NetDriver->GetName(), ReturnReconnectTimeoutSeconds);
+}
+
+void USWConnectionSubsystem::RestoreReturnReconnectTimeout()
+{
+	if (UNetDriver* Driver = ReturnTimeoutDriver.Get())
+	{
+		Driver->InitialConnectTimeout = PreviousInitialConnectTimeout;
+		Driver->ConnectionTimeout = PreviousConnectionTimeout;
+	}
+	ReturnTimeoutDriver.Reset();
+}
+
+float USWConnectionSubsystem::GetActiveReadinessTimeout() const
+{
+	return RoomLoadingReason == ERoomLoadingReason::Return ? ReturnReconnectTimeoutSeconds : ReadinessTimeoutSeconds;
 }
 
 TStatId USWConnectionSubsystem::GetStatId() const
@@ -184,6 +222,7 @@ bool USWConnectionSubsystem::ConnectDirectWithName(const FString& Address, const
 
 void USWConnectionSubsystem::DisconnectToDefaultMap()
 {
+	RestoreReturnReconnectTimeout();
 	if (ConnectionState == ESWConnectionState::Idle) return;
 	RoomLoadingReason = ERoomLoadingReason::None;
 	UGameInstance* GameInstance = GetGameInstance();
@@ -288,6 +327,7 @@ void USWConnectionSubsystem::RecordFailure(ESWConnectionFailureReason Reason, co
 {
 	if (ConnectionState == ESWConnectionState::Failed && LastFailure.Reason == Reason && LastFailure.EngineFailureType == EngineFailureType && LastFailure.EngineMessage == EngineMessage) return;
 	const bool bWasReturning = RoomLoadingReason != ERoomLoadingReason::None;
+	RestoreReturnReconnectTimeout();
 	RoomLoadingReason = ERoomLoadingReason::None;
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
@@ -373,7 +413,7 @@ void USWConnectionSubsystem::StartReadinessCheck(UWorld* LoadedWorld)
 	LastLoggedReadinessMask = 0;
 	bReadinessCheckActive = true;
 	TransitionTo(ESWConnectionState::Synchronizing);
-	UE_LOG(LogSWConnection, Display, TEXT("Readiness check started. AttemptId=%d Timeout=%.1f"), ActiveAttemptId, ReadinessTimeoutSeconds);
+	UE_LOG(LogSWConnection, Display, TEXT("Readiness check started. AttemptId=%d Timeout=%.1f"), ActiveAttemptId, GetActiveReadinessTimeout());
 }
 
 void USWConnectionSubsystem::StopReadinessCheck()
@@ -405,6 +445,7 @@ void USWConnectionSubsystem::CompleteReadiness()
 	bConnectionAttemptActive = false;
 	FSWInputDiag::Record(GetGameInstance(), TEXT("Ready"));
 	const bool bFinalDeparture = RoomLoadingReason == ERoomLoadingReason::FinalDeparture;
+	RestoreReturnReconnectTimeout();
 	RoomLoadingReason = ERoomLoadingReason::None;
 	TransitionTo(ESWConnectionState::Playing);
 	if (ConnectionState != ESWConnectionState::Playing) return;
@@ -484,6 +525,7 @@ bool USWConnectionSubsystem::BeginRoomFinalDeparturePresentation(int32 AttemptId
 void USWConnectionSubsystem::CancelRoomReturnPresentation()
 {
 	if (RoomLoadingReason == ERoomLoadingReason::None) return;
+	RestoreReturnReconnectTimeout();
 	const bool bFinalDeparture = RoomLoadingReason == ERoomLoadingReason::FinalDeparture;
 	RoomLoadingReason = ERoomLoadingReason::None;
 	bConnectionAttemptActive = false;

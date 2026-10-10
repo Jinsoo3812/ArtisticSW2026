@@ -152,6 +152,7 @@ void UPlayerDialogueComponent::BeginServerDialogue(UNPCDialogueSourceComponent* 
 		? GetWorld()->GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>()
 		: nullptr;
 	IDialogueInventoryProvider* Inventory = FindInventoryProvider();
+	if (const UNPCDialogueData* Data = Source->GetDialogueData()) Data->PrepareYiSunSinTestProgress(Story);
 	const FNPCDialogueRule* Rule = Source->ResolveBestRule(Story, Inventory);
 	if (!Rule)
 	{
@@ -232,12 +233,16 @@ bool UPlayerDialogueComponent::CommitServerOutcome(
 		return false;
 	}
 
-	const bool bHasItemTransaction = !Rule.ConsumedItems.IsEmpty() || !Rule.RewardItems.IsEmpty();
+	const UNPCDialogueSourceComponent* Source = ServerDialogueSource.Get();
+	const UNPCDialogueData* Data = Source ? Source->GetDialogueData() : nullptr;
+	const bool bTestMode = Data && Data->IsYiSunSinTestMode();
+	const bool bHasItemTransaction = !bTestMode && (!Rule.ConsumedItems.IsEmpty() || !Rule.RewardItems.IsEmpty());
 	const bool bNewBossQuest = Rule.bCompleteStoryNode
 		&& !Story->IsStoryNodeReached(Rule.StoryNodeToComplete)
 		&& (Rule.StoryNodeToComplete == EStoryNode::ReconQuestAccepted
 			|| Rule.StoryNodeToComplete == EStoryNode::SupplyPatrolQuestAccepted
-			|| Rule.StoryNodeToComplete == EStoryNode::SuppressJapaneseForcesQuestAccepted);
+			|| Rule.StoryNodeToComplete == EStoryNode::SuppressJapaneseForcesQuestAccepted
+			|| (bTestMode && Rule.StoryNodeToComplete == EStoryNode::UldolmokBattleQuestAccepted));
 	if (bHasItemTransaction)
 	{
 		if (!Inventory
@@ -464,6 +469,20 @@ void UPlayerDialogueComponent::ServerSelectReply_Implementation(
 	}
 	if (Reply->EndAction == ENPCDialogueReplyEndAction::BeginFinalDeparture)
 	{
+		if (Data->IsYiSunSinTestMode())
+		{
+			FNPCDialogueRule TestOutcome = *Rule;
+			TestOutcome.bCompleteStoryNode = true;
+			TestOutcome.StoryNodeToComplete = EStoryNode::UldolmokBattleQuestAccepted;
+			if (!CommitServerOutcome(TestOutcome, Inventory))
+			{
+				ClientDialogueFailed(ENPCDialogueFailureReason::StoryCommitFailed);
+				return;
+			}
+			ClientCloseDialogue(ServerSessionId);
+			EndServerDialogue();
+			return;
+		}
 		if (!OnFinalDepartureRequested.IsBound()
 			|| !OnFinalDepartureRequested.Execute(GetOwner()))
 		{
