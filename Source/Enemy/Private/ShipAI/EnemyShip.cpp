@@ -1715,7 +1715,7 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 
 bool AEnemyShip::AllowsPlayerAnchorControl(AActor* Interactor) const
 {
-	return !IsStoryGateDormant() && !bDeathHandled && bCrewDefeated;
+	return !IsStoryGateDormant() && !bDeathHandled;
 }
 
 float AEnemyShip::GetIncomingDamageMultiplier() const
