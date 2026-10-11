@@ -5,6 +5,7 @@
 #include "AI/PointSelectionFailure.h"
 #include "BaseGameplayTags.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "BossAI/BossDeckRecoveryComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
@@ -122,7 +123,11 @@ void UAbilityTask_BossVanishRelocation::RelocateHidden()
 		? Boss->GetHostShip()->GetShipDeckMesh()->GetUpVector().GetSafeNormal() : FVector::UpVector;
 	const FVector Forward = FVector::VectorPlaneProject(ResolveFacingPosition() - Destination.GetLocation(), Up).GetSafeNormal();
 	if (!Forward.IsNearlyZero()) Destination.SetRotation(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat());
-	if (!Boss->RelocateWhileHidden(Destination))
+	const UDeckWalkAreaComponent* Area = CapturedShip->GetDeckWalkAreaComponent();
+	const bool bRelocated = Boss->RelocateWhileHidden(Destination, Area ? Area->GetFloorComponent(CapturedDestination) : nullptr);
+	if (UBossDeckRecoveryComponent* Recovery = Boss->GetDeckRecoveryComponent())
+		Recovery->NotifyRelocated(CapturedDestination);
+	if (!bRelocated)
 	{
 		EnemyPointSelectionFailure::Log(this, Boss, TEXT("Vanish point is no longer available for placement."));
 		Fail();

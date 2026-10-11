@@ -5,6 +5,7 @@
 #include "BaseGameplayTags.h"
 #include "BossAI/BossVanishFeedback.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "BossAI/SamuraiDashRecoveryComponent.h"
 #include "Components/CombatHitResolverComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
 #include "GAS/Tasks/AbilityTask_BossSlashDashExecution.h"
@@ -215,6 +216,8 @@ void UGA_BossChainSlashDash::FinishSequence(bool bCancelled)
 void UGA_BossChainSlashDash::CancelForPointFailure(const TCHAR* Reason)
 {
 	EnemyPointSelectionFailure::Log(this, GetBossAvatar(), Reason);
+	if (auto* Boss = GetBossAvatar())
+		if (auto* Policy = Boss->GetSamuraiDashRecoveryComponent()) Policy->RecordPointFailure(GetBossTarget(), Reason);
 	FinishSequence(true);
 }
 
@@ -224,6 +227,9 @@ void UGA_BossChainSlashDash::EndAbility(const FGameplayAbilitySpecHandle Handle,
 {
 	if (!IsActive() || bEndingSequence) return;
 	bEndingSequence = true;
+	if (!bWasCancelled)
+		if (auto* Boss = GetBossAvatar())
+			if (auto* Policy = Boss->GetSamuraiDashRecoveryComponent()) Policy->RecordDashSuccess();
 	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(NextStepTimer);
 	if (RelocationTask)
 	{
