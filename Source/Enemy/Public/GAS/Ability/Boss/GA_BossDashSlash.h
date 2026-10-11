@@ -51,6 +51,7 @@ public:
 	FName GetDashHoldSectionName() const { return MontageConfig.TravelHoldSectionName; }
 	FName GetRecoverySectionName() const { return MontageConfig.RecoverySectionName; }
 	float GetWindupHoldDuration() const { return MontageConfig.WindupHoldDuration; }
+	float GetWindupDuration() const;
 	float GetMinimumDashDistance() const { return MinimumDashDistance; }
 	UPathCombatPresentationDataAsset* GetPathPresentation() const { return PathPresentation; }
 	const FDashSlashMontageConfig& GetMontageConfig() const { return MontageConfig; }
@@ -79,6 +80,11 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash|Montage")
 	FDashSlashMontageConfig MontageConfig;
+
+	/** Total single-dash preparation time, including the Windup entry animation.
+	 * Takes precedence over encounter telegraph balancing. Chain steps use WaitBeforeDash. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "0.0", Units = "s"))
+	float DashWindupDuration = 2.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "0.05", Units = "s"))
 	float DashDuration = 0.45f;

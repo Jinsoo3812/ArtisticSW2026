@@ -1,4 +1,5 @@
 #include "GAS/Ability/Boss/GA_BossDashSlash.h"
+#include "BossAI/SamuraiDashRecoveryComponent.h"
 #include "GAS/Tasks/AbilityTask_BossSlashDashExecution.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -70,7 +71,8 @@ void UGA_BossDashSlash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	AShipBossEnemy* Boss = GetBossAvatar();
 	FString Error;
 	if (!Boss || !Boss->HasAuthority() || !Boss->CanEngageActor(GetBossTarget())
-		|| !UAbilityTask_BossSlashDashExecution::ValidateConfig(MontageConfig, -1.f, Error))
+		|| !FMath::IsFinite(DashWindupDuration) || DashWindupDuration < 0.f
+		|| !UAbilityTask_BossSlashDashExecution::ValidateConfig(MontageConfig, GetWindupDuration(), Error))
 	{
 		UE_LOG(LogBossDashSlash, Warning, TEXT("DashSlash activation rejected: %s"), *Error);
 		HandleExecutionFailed();
@@ -92,10 +94,22 @@ void UGA_BossDashSlash::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		|| FVector::VectorPlaneProject(Goal.GetLocation() - Boss->GetActorLocation(), Up).Size() < FMath::Max(1.f, MinimumDashDistance))
 	{
 		EnemyPointSelectionFailure::Log(this, Boss, TEXT("Preselected DashSlash point or path is unsuitable."));
+		if (auto* Policy = Boss->GetSamuraiDashRecoveryComponent())
+			Policy->RecordPointFailure(GetBossTarget(), TEXT("Preselected DashSlash point or path is unsuitable."));
 		HandleExecutionFailed();
 		return;
 	}
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo) || !StartDashExecution()) HandleExecutionFailed();
+}
+
+float UGA_BossDashSlash::GetWindupDuration() const
+{
+	// Always allow the authored entry animation to finish before releasing the dash.
+	const int32 SectionIndex = MontageConfig.Montage
+		? MontageConfig.Montage->GetSectionIndex(MontageConfig.WindupEnterSectionName) : INDEX_NONE;
+	const float EntryDuration = SectionIndex != INDEX_NONE && MontageConfig.PlayRate > 0.f
+		? MontageConfig.Montage->GetSectionLength(SectionIndex) / MontageConfig.PlayRate : 0.f;
+	return FMath::Max(EntryDuration, DashWindupDuration);
 }
 
 bool UGA_BossDashSlash::StartDashExecution(float TotalWaitOverride, bool bSkipWindup, bool bSkipRecovery)
@@ -106,7 +120,8 @@ bool UGA_BossDashSlash::StartDashExecution(float TotalWaitOverride, bool bSkipWi
 	// Open a new damage window once per dash so later steps may hit again.
 	if (!PrepareStrengthAttack(Coefficient)) return false;
 	ExecutionTask = UAbilityTask_BossSlashDashExecution::Execute(this, Boss, MontageConfig,
-		DashDuration, MinimumDashDistance, DashHitRadius, PathPresentation, ChargingGameplayCueTag, TotalWaitOverride,
+		DashDuration, MinimumDashDistance, DashHitRadius, PathPresentation, ChargingGameplayCueTag,
+		TotalWaitOverride >= 0.f ? TotalWaitOverride : GetWindupDuration(),
 		bSkipWindup, bSkipRecovery);
 	if (!ExecutionTask) return false;
 	ExecutionTask->OnCompleted.AddDynamic(this, &ThisClass::HandleExecutionCompleted);
@@ -119,6 +134,8 @@ bool UGA_BossDashSlash::StartDashExecution(float TotalWaitOverride, bool bSkipWi
 void UGA_BossDashSlash::HandleExecutionCompleted()
 {
 	ExecutionTask = nullptr;
+	if (auto* Boss = GetBossAvatar())
+		if (auto* Policy = Boss->GetSamuraiDashRecoveryComponent()) Policy->RecordDashSuccess();
 	if (IsActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 

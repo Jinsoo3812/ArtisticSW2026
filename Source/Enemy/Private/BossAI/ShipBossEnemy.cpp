@@ -3,6 +3,7 @@
 #include "Components/StatusComponent.h"
 #include "Components/CombatHurtboxComponent.h"
 #include "GAS/Ability/Boss/BossStunEffects.h"
+#include "StatusEffectLibrary.h"
 
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
@@ -10,6 +11,8 @@
 #include "AI/BaseAIController.h"
 #include "BaseGameplayTags.h"
 #include "BossAI/ShipBossAIController.h"
+#include "BossAI/BossDeckRecoveryComponent.h"
+#include "BossAI/SamuraiDashRecoveryComponent.h"
 #include "Components/BaseHealthComponent.h"
 #include "GAS/Ability/Boss/GA_BossDashSlash.h"
 #include "GAS/Ability/Boss/GA_BossBasicAttack.h"
@@ -47,6 +50,8 @@ AShipBossEnemy::AShipBossEnemy(const FObjectInitializer& ObjectInitializer)
 {
 	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
 	DeckTargetResolver = CreateDefaultSubobject<UDeckCombatTargetResolverComponent>(TEXT("DeckTargetResolver"));
+	DeckRecoveryComponent = CreateDefaultSubobject<UBossDeckRecoveryComponent>(TEXT("DeckRecoveryComponent"));
+	SamuraiDashRecoveryComponent = CreateDefaultSubobject<USamuraiDashRecoveryComponent>(TEXT("SamuraiDashRecoveryComponent"));
 	CombatHurtboxComponent->Mode = ECombatHurtboxMode::AnimatedPhysicsAsset;
 	HeadHitStunEffect = UBossHeadHitStunEffect::StaticClass();
 	HealthThresholdStunEffect = UBossHealthThresholdStunEffect::StaticClass();
@@ -136,6 +141,8 @@ void AShipBossEnemy::BeginPlay()
 
 void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (SamuraiDashRecoveryComponent) SamuraiDashRecoveryComponent->ResetPolicy();
+	if (DeckRecoveryComponent) DeckRecoveryComponent->ResetRecovery();
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	GetHealthComponent()->OnConfirmedDamage.RemoveAll(this);
@@ -160,7 +167,20 @@ void AShipBossEnemy::HandleConfirmedDamage(float Damage, const FGameplayEffectCo
 	const FHitResult* Hit = Context.GetHitResult();
 	if (HasAuthority() && Damage > 0.f && !bPeriodic && Hit && StunHeadBones.Contains(Hit->BoneName)
 		&& GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking))
-		StatusComponent->ApplyStatus(HeadHitStunEffect, GetAbilitySystemComponent(), Context);
+		ApplyBossStun(HeadHitStunEffect, HeadHitStunDuration, Context);
+}
+
+void AShipBossEnemy::ApplyBossStun(TSubclassOf<UGameplayEffect> EffectClass, float Duration,
+	const FGameplayEffectContextHandle& Context)
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!HasAuthority() || !ASC || !EffectClass || !FMath::IsFinite(Duration) || Duration <= 0.f) return;
+	const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(EffectClass, 1.f,
+		Context.IsValid() ? Context : ASC->MakeEffectContext());
+	if (!Spec.IsValid()) return;
+	Spec.Data->SetDuration(Duration, true);
+	// Keep the shared immunity, death and non-refreshing status policy.
+	UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(ASC, Spec, FGameplayTag());
 }
 
 void AShipBossEnemy::HandleStunHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor* InstigatorActor)
@@ -170,7 +190,7 @@ void AShipBossEnemy::HandleStunHealthChanged(UBaseHealthComponent* Health, float
 	if (OldHealth > Threshold && NewHealth <= Threshold)
 	{
 		bStunHealthThresholdConsumed = true;
-		if (NewHealth > 0.f) StatusComponent->ApplyStatus(HealthThresholdStunEffect, GetAbilitySystemComponent(), {});
+		if (NewHealth > 0.f) ApplyBossStun(HealthThresholdStunEffect, HealthThresholdStunDuration, {});
 	}
 }
 
@@ -195,6 +215,9 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 		return false;
 	}
 
+	if (SamuraiDashRecoveryComponent) SamuraiDashRecoveryComponent->ResetPolicy();
+	if (DeckRecoveryComponent) DeckRecoveryComponent->ResetRecovery(true);
+	if (bHiddenRelocationActive) FinishHiddenRelocation();
 	ClearDestination();
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	UnbindHostShip();
@@ -225,7 +248,9 @@ void AShipBossEnemy::SetBossCombatTarget(AActor* NewTarget)
 		return;
 	}
 
-	BossCombatTarget = CanEngageActor(NewTarget) ? NewTarget : nullptr;
+	AActor* ValidTarget = CanEngageActor(NewTarget) ? NewTarget : nullptr;
+	if (BossCombatTarget != ValidTarget && SamuraiDashRecoveryComponent) SamuraiDashRecoveryComponent->ResetPolicy();
+	BossCombatTarget = ValidTarget;
 	DeckTargetResolver->Reset();
 	if (ABaseAIController* BossController = Cast<ABaseAIController>(GetController()))
 	{
@@ -322,7 +347,8 @@ void AShipBossEnemy::OnDeckMoveFailed() { ClearDestination(); }
 
 bool AShipBossEnemy::CanMoveOnDeck() const
 {
-	return HasAuthority() && !bDeathHandled && !bBossHidden && IsValid(HostShip);
+	return HasAuthority() && !bDeathHandled && !bBossHidden && IsValid(HostShip)
+		&& (!DeckRecoveryComponent || !DeckRecoveryComponent->IsRecovering());
 }
 
 bool AShipBossEnemy::CanSummonDeckEnemy() const
@@ -486,6 +512,7 @@ bool AShipBossEnemy::BeginHiddenRelocation()
 
 	// Visibility is removed before any movement state can change. The ability
 	// keeps this state for a separate net-update interval before teleporting.
+	if (DeckRecoveryComponent) DeckRecoveryComponent->NotifyHidden();
 	SetBossHidden(true);
 	if (AAIController* BossAIController = Cast<AAIController>(GetController()))
 	{
@@ -493,6 +520,9 @@ bool AShipBossEnemy::BeginHiddenRelocation()
 	}
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
+		HiddenRelocationBase = GetMovementBase();
+		if (HiddenRelocationBase.IsValid())
+			HiddenRelocationLocalTransform = GetActorTransform().GetRelativeTransform(HiddenRelocationBase->GetComponentTransform());
 		Movement->StopMovementImmediately();
 		Movement->DisableMovement();
 	}
@@ -502,25 +532,27 @@ bool AShipBossEnemy::BeginHiddenRelocation()
 	return true;
 }
 
-bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform)
+bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform, UPrimitiveComponent* DestinationBase)
 {
 	if (!HasAuthority() || bDeathHandled || !bHiddenRelocationActive || !bBossHidden || !IsValid(HostShip))
 	{
 		return false;
 	}
 
-	SetActorLocationAndRotation(
+	if (DestinationTransform.ContainsNaN()) return false;
+	const bool bMoved = SetActorLocationAndRotation(
 		DestinationTransform.GetLocation(),
 		DestinationTransform.GetRotation(),
 		false,
 		nullptr,
 		ETeleportType::TeleportPhysics);
+	if (!bMoved || !GetActorLocation().Equals(DestinationTransform.GetLocation(), 1.f)) return false;
+	HiddenRelocationBase = DestinationBase;
+	if (HiddenRelocationBase.IsValid())
+		HiddenRelocationLocalTransform = GetActorTransform().GetRelativeTransform(HiddenRelocationBase->GetComponentTransform());
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
-		if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
-		{
-			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
-		}
+		Movement->SetBase(HiddenRelocationBase.Get());
 		Movement->StopMovementImmediately();
 	}
 
@@ -530,12 +562,15 @@ bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform)
 	return true;
 }
 
-void AShipBossEnemy::FinishHiddenRelocation()
+void AShipBossEnemy::FinishHiddenRelocation(bool bFromRecovery)
 {
 	if (!HasAuthority())
 	{
 		return;
 	}
+	// A cancelled combat task no longer owns visibility once recovery starts.
+	if (!bDeathHandled && !bFromRecovery && DeckRecoveryComponent && DeckRecoveryComponent->IsRecovering()) return;
+	if (!bDeathHandled && !bHiddenRelocationActive && !bBossHidden) return;
 
 	if (bDeathHandled)
 	{
@@ -543,21 +578,30 @@ void AShipBossEnemy::FinishHiddenRelocation()
 	}
 	else if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
+		// MOVE_None does not follow based movement. Apply the saved relative pose
+		// to the live base once; this is transform following, not a floor query.
+		if (HiddenRelocationBase.IsValid())
+		{
+			const FTransform WorldTransform = HiddenRelocationLocalTransform * HiddenRelocationBase->GetComponentTransform();
+			SetActorLocationAndRotation(WorldTransform.GetLocation(), WorldTransform.GetRotation(),
+				false, nullptr, ETeleportType::TeleportPhysics);
+		}
 		Movement->StopMovementImmediately();
 		Movement->SetMovementMode(MOVE_Walking);
-		if (UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr)
-		{
-			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
-		}
+		Movement->SetBase(HiddenRelocationBase.Get());
 	}
 
 	bHiddenRelocationActive = false;
+	HiddenRelocationBase.Reset();
 	SetBossHidden(false);
 	ForceNetUpdate();
+	if (!bDeathHandled && DeckRecoveryComponent) DeckRecoveryComponent->NotifyRevealed();
 }
 
 void AShipBossEnemy::HandleDeath_Implementation()
 {
+	if (SamuraiDashRecoveryComponent) SamuraiDashRecoveryComponent->ResetPolicy();
+	if (DeckRecoveryComponent) DeckRecoveryComponent->ResetRecovery();
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
 	// Capture before ability/BT cleanup. A dash may be between authored points;
@@ -708,6 +752,8 @@ void AShipBossEnemy::HandleHostShipDestroyed(AActor* DestroyedActor)
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (HasAuthority() && DestroyedActor == HostShip && !IsActorBeingDestroyed())
 	{
+		if (SamuraiDashRecoveryComponent) SamuraiDashRecoveryComponent->ResetPolicy();
+		if (DeckRecoveryComponent) DeckRecoveryComponent->ResetRecovery();
 		ClearDestination();
 		Destroy();
 	}
@@ -843,6 +889,9 @@ bool AShipBossEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& O
 		OutError = TEXT("Invalid ship boss state");
 		return false;
 	}
+	if (SamuraiDashRecoveryComponent) SamuraiDashRecoveryComponent->ResetPolicy();
+	if (DeckRecoveryComponent) DeckRecoveryComponent->ResetRecovery(true);
+	HiddenRelocationBase.Reset();
 	ClearDestination();
 	InitialSpawnPointId = State.InitialSpawnPointId;
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ResetNavigationState();
