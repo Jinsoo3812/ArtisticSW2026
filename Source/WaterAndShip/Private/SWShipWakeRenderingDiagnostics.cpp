@@ -9,8 +9,9 @@ namespace
 {
 	TAutoConsoleVariable<int32> CVarDiagnosticEnable(TEXT("sw.ShipWake.Diag.Enable"), 0,
 		TEXT("Enable Kelvin emission, boundary and prediction diagnostics (CPU render-input estimates)."));
-	TAutoConsoleVariable<int32> CVarRenderEvents(TEXT("sw.ShipWake.Diag.RenderEvents"), 0,
-		TEXT("Rendering only: 0=all, 1=authoritative, 2=predicted. Does not change water queries or physics."));
+	// 예측과 권위를 별도 파동으로 합산하지 않도록 렌더 기본값만 권위 전용으로 둔다.
+	TAutoConsoleVariable<int32> CVarRenderEvents(TEXT("sw.ShipWake.Diag.RenderEvents"), 1,
+		TEXT("Rendering only: 0=all, 1=authoritative (default), 2=predicted. Does not change water queries or physics."));
 	TAutoConsoleVariable<float> CVarLogInterval(TEXT("sw.ShipWake.Diag.Interval"), 0.5f,
 		TEXT("Kelvin diagnostic summary interval in seconds (minimum 0.1)."));
 	TAutoConsoleVariable<float> CVarProbeSpacing(TEXT("sw.ShipWake.Diag.ProbeSpacing"), 1000.0f,
@@ -38,9 +39,11 @@ namespace
 			if (Sample.Alpha <= 0.01f || Sample.Alpha >= 0.99f) ++EndpointContributors;
 			if (Printed++ < 6)
 			{
-				Details += FString::Printf(TEXT(" E%d:%s H=%.3f Alpha=%.5f Age=%.3f Mask=%.4f Fade=%.3f"),
+				Details += FString::Printf(TEXT(" E%d:%s H=%.3f Alpha=%.5f Age=%.3f Mask=%.4f Fade=%.3f Amp=%.3f A0=%.3f A1=%.3f EmitT=%.6f"),
 					Event.EventId, Event.EventId < 0 ? TEXT("P") : TEXT("A"), Sample.Height,
-					Sample.Alpha, Sample.Age, Sample.StampMask, Sample.FadeIn);
+					Sample.Alpha, Sample.Age, Sample.StampMask, Sample.FadeIn, Sample.AmplitudeCm,
+					Event.InitialAmplitudeCm, Event.GetEndAmplitudeCm(),
+					Time - Sample.Age);
 			}
 		}
 		return FString::Printf(TEXT("T=%.6f Q=(%.1f,%.1f) H=%.3f Delta=%.3f RawA=%.3f RawP=%.3f Contributors=%d EndpointContributors=%d%s"),
@@ -94,6 +97,7 @@ void FSWShipWakeRenderingDiagnostics::Update(const UWorld* World, const double S
 		MaxSetDelta = MaxFrameDelta = 0.0f;
 		SetEvidence.Reset();
 		FrameEvidence.Reset();
+		PreviousFrameEvidence.Reset();
 		LastMode = Mode;
 		LastReset = Reset;
 		LastSpacing = Spacing;
@@ -111,18 +115,22 @@ void FSWShipWakeRenderingDiagnostics::Update(const UWorld* World, const double S
 			const float Height = FSWShipWakeEvaluator::EvaluateHeight(Point, ServerTime, RenderingEvents);
 			if (PreviousTime >= 0.0)
 			{
-				const float SetDelta = Height - FSWShipWakeEvaluator::EvaluateHeight(Point, ServerTime, PreviousEvents);
+				const float OldSetHeightAtNow = FSWShipWakeEvaluator::EvaluateHeight(Point, ServerTime, PreviousEvents);
+				const float SetDelta = Height - OldSetHeightAtNow;
 				const float FrameDelta = Height - PreviousHeights[ProbeIndex];
 				if (FMath::Abs(SetDelta) > MaxSetDelta)
 				{
 					MaxSetDelta = FMath::Abs(SetDelta);
-					SetEvidence = DescribeProbe(Point, ServerTime, Height, SetDelta, RenderingEvents);
+					SetEvidence = DescribeProbe(Point, ServerTime, Height, SetDelta, RenderingEvents)
+						+ TEXT(" OldSetAtNow{") + DescribeProbe(Point, ServerTime, OldSetHeightAtNow, 0.0f, PreviousEvents) + TEXT("}");
 				}
 				if (FMath::Abs(FrameDelta) > MaxFrameDelta)
 				{
 					MaxFrameDelta = FMath::Abs(FrameDelta);
 					FrameEvidence = FString::Printf(TEXT("Dt=%.6f "), ServerTime - PreviousTime)
 						+ DescribeProbe(Point, ServerTime, Height, FrameDelta, RenderingEvents);
+					PreviousFrameEvidence = FString::Printf(TEXT("ForT=%.6f "), ServerTime)
+						+ DescribeProbe(Point, PreviousTime, PreviousHeights[ProbeIndex], 0.0f, PreviousEvents);
 				}
 			}
 			PreviousHeights[ProbeIndex] = Height;
@@ -170,7 +178,7 @@ void FSWShipWakeRenderingDiagnostics::Update(const UWorld* World, const double S
 					&& FVector2D::Distance(A.EndOrigin, B.Origin) <= 1.0)
 				{
 					++AdjacentCandidates;
-					const float AmplitudeGap = FMath::Abs(A.InitialAmplitudeCm - B.InitialAmplitudeCm);
+					const float AmplitudeGap = FMath::Abs(A.GetEndAmplitudeCm() - B.InitialAmplitudeCm);
 					const float DirectionGap = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
 						static_cast<float>(FVector2D::DotProduct(A.EndForward.GetSafeNormal(), B.Forward.GetSafeNormal())), -1.0f, 1.0f)));
 					if (BoundaryEvidence.IsEmpty() || AmplitudeGap > MaxAmplitudeGap || DirectionGap > MaxDirectionGap)
@@ -192,10 +200,15 @@ void FSWShipWakeRenderingDiagnostics::Update(const UWorld* World, const double S
 		UE_LOG(LogSWKelvinDiagnostics, Log,
 			TEXT("[KelvinDiag:3:Summary] %s T=%.6f DuplicateCandidates=%d StoredRenderEvents=%d CPU_ESTIMATE_NOT_GPU_READBACK"),
 			*Context, ServerTime, DuplicateCandidates, RenderingEvents.Num());
+		if (!PreviousFrameEvidence.IsEmpty())
+		{
+			UE_LOG(LogSWKelvinDiagnostics, Log, TEXT("[KelvinDiag:2:Previous] %s %s"), *Context, *PreviousFrameEvidence);
+		}
 		LastLogTime = ServerTime;
 		MaxSetDelta = MaxFrameDelta = 0.0f;
 		SetEvidence.Reset();
 		FrameEvidence.Reset();
+		PreviousFrameEvidence.Reset();
 	}
 	PreviousEvents.Reset(RenderingEvents.Num());
 	PreviousEvents.Append(RenderingEvents.GetData(), RenderingEvents.Num());

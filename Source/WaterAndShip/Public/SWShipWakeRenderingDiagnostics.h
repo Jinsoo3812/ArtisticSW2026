@@ -28,4 +28,5 @@ private:
 	float MaxFrameDelta = 0.0f;
 	FString SetEvidence;
 	FString FrameEvidence;
+	FString PreviousFrameEvidence;
 };

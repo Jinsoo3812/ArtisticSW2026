@@ -158,7 +158,7 @@ void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FSWKelvinWakeAtlas::Get().Initialize();
 	if (IsRunningDedicatedServer()) return;
 
-	EventTexture = UTexture2D::CreateTransient(MaxWakeCapacity, 4, PF_A32B32G32R32F,
+	EventTexture = UTexture2D::CreateTransient(MaxWakeCapacity, 5, PF_A32B32G32R32F,
 		TEXT("SWShipWakeM7Events"));
 	if (EventTexture)
 	{
@@ -457,11 +457,11 @@ void USWShipWakeSubsystem::AddOrUpdateCapped(const FSWShipWakeEvent& Event)
 	{
 		const double Now = GetServerTime();
 		UE_LOG(LogSWShipWake, Log,
-			TEXT("[KelvinDiag:1:Store] World=%s Net=%d T=%.6f E%d Kind=%s Updated=%d Evicted=%d EvictedId=%d Segment=[%.6f,%.6f] EndLag=%.4f Amp=%.3f P0=(%.1f,%.1f) P1=(%.1f,%.1f)"),
+			TEXT("[KelvinDiag:1:Store] World=%s Net=%d T=%.6f E%d Kind=%s Updated=%d Evicted=%d EvictedId=%d Segment=[%.6f,%.6f] EndLag=%.4f Amp=%.3f EndAmp=%.3f P0=(%.1f,%.1f) P1=(%.1f,%.1f)"),
 			*GetNameSafe(GetWorld()), GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1,
 			Now, Event.EventId, Event.EventId < 0 ? TEXT("Predicted") : TEXT("Authoritative"),
 			bUpdated, bEvicted, EvictedId, Event.StartServerTime, Event.EndServerTime,
-			Now - Event.EndServerTime, Event.InitialAmplitudeCm, Event.Origin.X, Event.Origin.Y,
+			Now - Event.EndServerTime, Event.InitialAmplitudeCm, Event.GetEndAmplitudeCm(), Event.Origin.X, Event.Origin.Y,
 			Event.EndOrigin.X, Event.EndOrigin.Y);
 	}
 }
@@ -589,7 +589,7 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 	});
 	const int32 Count = FMath::Min(Snapshot.Num(), MaxCap);
 	TArray<FLinearColor> Pixels;
-	Pixels.SetNumZeroed(MaxWakeCapacity * 4);
+	Pixels.SetNumZeroed(MaxWakeCapacity * 5);
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		const FSWShipWakeEvent& E = Snapshot[Index];
@@ -612,6 +612,8 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 			E.WakeHalfWidthCm, E.DecayRate);
 		Pixels[Index + MaxWakeCapacity * 3] = FLinearColor(
 			Yaw0, Yaw1, E.FadeInSeconds, E.LengthCutRatio);
+		// 5번째 행 R에 종료 진폭을 전달한다. 시작 진폭(2번째 행 B)과 셰이더에서 보간한다.
+		Pixels[Index + MaxWakeCapacity * 4] = FLinearColor(E.GetEndAmplitudeCm(), 0.0f, 0.0f, 0.0f);
 	}
 	const int32 UploadCount = FMath::Clamp(Count, 1, MaxWakeCapacity);
 	if (FTexture2DResource* Resource = static_cast<FTexture2DResource*>(EventTexture->GetResource()))
@@ -619,7 +621,7 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 		ENQUEUE_RENDER_COMMAND(UpdateSWShipWakeM7Events)(
 			[Resource, Data = MoveTemp(Pixels), UploadCount](FRHICommandListImmediate& RHICmdList)
 			{
-				const FUpdateTextureRegion2D Region(0, 0, 0, 0, UploadCount, 4);
+				const FUpdateTextureRegion2D Region(0, 0, 0, 0, UploadCount, 5);
 				RHICmdList.UpdateTexture2D(Resource->GetTexture2DRHI(), 0, Region,
 					MaxWakeCapacity * sizeof(FLinearColor), reinterpret_cast<const uint8*>(Data.GetData()));
 			});

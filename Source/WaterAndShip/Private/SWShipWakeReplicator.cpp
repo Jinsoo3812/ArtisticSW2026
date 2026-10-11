@@ -70,7 +70,7 @@ void ASWShipWakeReplicator::GetLifetimeReplicatedProps(
 
 bool ASWShipWakeReplicator::AddServerEvent(const FSWShipWakeEvent& EventTemplate)
 {
-	if (!HasAuthority() || EventTemplate.InitialAmplitudeCm <= 0.0f)
+	if (!HasAuthority() || FMath::Max(EventTemplate.InitialAmplitudeCm, EventTemplate.GetEndAmplitudeCm()) <= 0.0f)
 	{
 		return false;
 	}
