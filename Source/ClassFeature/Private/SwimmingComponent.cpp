@@ -37,7 +37,7 @@
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 static TAutoConsoleVariable<int32> CVarSwimNetDiagnostics(
-	TEXT("sw.Swim.NetDiag"), 1,
+	TEXT("sw.Swim.NetDiag"), 0,
 	TEXT("Swimming network diagnostics: 0 off, 1 frame/physics samples at 10Hz plus correction events, 2 every physics step. Development only."),
 	ECVF_Default);
 #endif

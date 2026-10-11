@@ -1023,6 +1023,11 @@ void AShip::Tick(float DeltaTime)
 			if (USWShipWakeSubsystem* ShipWakeState = GetWorld()->GetSubsystem<USWShipWakeSubsystem>())
 			{
 				ShipWakeState->GetEventsSnapshot(TempShipWakeEvents);
+				// 부력도 권위 Kelvin만 사용한다. 예측/권위 중복 합산을 피하되 과거 PT 시각 평가용 이력은 보존한다.
+				TempShipWakeEvents.RemoveAll([](const FSWShipWakeEvent& Event)
+				{
+					return Event.EventId < 0;
+				});
 			}
 
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
