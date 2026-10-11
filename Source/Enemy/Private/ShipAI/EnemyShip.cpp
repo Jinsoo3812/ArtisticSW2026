@@ -58,6 +58,8 @@
 #include "Misc/ScopeExit.h"
 #include "StoryFacadeSubsystem.h"
 #include "Network/SWFinalEncounterDiagnostics.h"
+#include "SWShipWakeEmitterComponent.h"
+#include "ShipAI/NavalAIController.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipChestSpawnPoint, Log, All);
 static const FName FinalBossSquadId(TEXT("Final"));
@@ -1088,13 +1090,13 @@ void AEnemyShip::ApplyStoryGatePresentation()
 {
 	if (!IsFinalBossSquadShip()) return;
 	RefreshMountedCannons();
-	SetActorHiddenInGame(IsStoryGateDormant());
+	SetActorHiddenInGame(IsStoryGateDormant() || bBundlePoolIdle);
 	for (ACannon* Cannon : MountedCannons)
 	{
 		if (IsValid(Cannon))
 		{
 			if (IsStoryGateDormant() && HasActorBegunPlay()) Cannon->ResetAIFiringState();
-			Cannon->SetActorHiddenInGame(IsStoryGateDormant());
+			Cannon->SetActorHiddenInGame(IsStoryGateDormant() || bBundlePoolIdle);
 		}
 	}
 	if (!HasActorBegunPlay()) return;
@@ -1140,7 +1142,7 @@ void AEnemyShip::RefreshStoryGateOwnedActors()
 				Cannon->SetActorTickEnabled(false);
 			}
 		}
-		Cannon->SetActorHiddenInGame(IsStoryGateDormant());
+		Cannon->SetActorHiddenInGame(IsStoryGateDormant() || bBundlePoolIdle);
 	}
 }
 
@@ -1179,9 +1181,9 @@ void AEnemyShip::ApplyEffectiveDormancyState()
 	ON_SCOPE_EXIT { bApplyingRuntimeState = false; PublishRuntimeState(); };
 	const auto* Room = HasAuthority() ? GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>() : nullptr;
 	const bool bRestoring = Room && Room->IsRestoringSnapshot();
-	const bool bShouldDormant = !HasAuthority() && RuntimeState.Revision != 0
+	const bool bShouldDormant = bBundlePoolIdle || (!HasAuthority() && RuntimeState.Revision != 0
 		? (RuntimeState.Phase == EEnemyShipRuntimePhase::Dormant || RuntimeState.Phase == EEnemyShipRuntimePhase::Restoring)
-		: bDistanceOptimizationDormant || IsStoryGateDormant() || bRestoring;
+		: bDistanceOptimizationDormant || IsStoryGateDormant() || bRestoring);
 	if (bShouldDormant == bEffectiveDormancyApplied) return;
 	if (IsFinalBossSquadShip())
 		FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), bShouldDormant ? TEXT("Dormant") : TEXT("Active"),
@@ -1313,7 +1315,7 @@ bool AEnemyShip::CanDeployDeckEnemies() const
 	const auto* Room = GetWorld() ? GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>() : nullptr;
 	return HasAuthority() && RuntimeState.Revision != 0 && RuntimeState.IsActive()
 		&& !bEndingPlay && !bApplyingRuntimeState && !bEffectiveDormancyApplied
-		&& !bDistanceOptimizationDormant && !IsStoryGateDormant() && !bDeathHandled && !IsSinking()
+		&& !bDistanceOptimizationDormant && !bBundlePoolIdle && !IsStoryGateDormant() && !bDeathHandled && !IsSinking()
 		&& !bCrewDefeated && !(Room && Room->IsRestoringSnapshot());
 }
 
@@ -1321,7 +1323,7 @@ void AEnemyShip::PublishRuntimeState()
 {
 	if (!HasAuthority() || bApplyingRuntimeState) return;
 	FEnemyShipRuntimeState Next;
-	if (bDistanceOptimizationDormant) Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Distance);
+	if (bDistanceOptimizationDormant || bBundlePoolIdle) Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Distance);
 	if (IsStoryGateDormant()) Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Story);
 	if (const auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>(); Room && Room->IsRestoringSnapshot())
 		Next.BlockingReasons |= static_cast<uint8>(EEnemyShipRuntimeBlock::Restore);
@@ -1963,11 +1965,198 @@ void AEnemyShip::HandleCrewEnemyRemoved(ABaseEnemy* Enemy, EWaveEnemyRemoveReaso
 	if (Reason == EWaveEnemyRemoveReason::Death) EvaluateCrewControlState();
 }
 
+void AEnemyShip::CollectBundleActors(TArray<AActor*>& OutActors) const
+{
+	OutActors.Reset();
+	OutActors.Add(const_cast<AEnemyShip*>(this));
+	for (int32 Index = 0; Index < OutActors.Num(); ++Index)
+	{
+		AActor* Actor = OutActors[Index];
+		TArray<AActor*> Attached;
+		Actor->GetAttachedActors(Attached);
+		for (AActor* Child : Attached)
+			if (IsValid(Child) && !(Cast<APawn>(Child) && Cast<APawn>(Child)->IsPlayerControlled())) OutActors.AddUnique(Child);
+		TInlineComponentArray<UChildActorComponent*> BundleChildComponents(Actor);
+		for (UChildActorComponent* Child : BundleChildComponents)
+			if (IsValid(Child->GetChildActor())) OutActors.AddUnique(Child->GetChildActor());
+		if (APawn* Pawn = Cast<APawn>(Actor))
+			if (IsValid(Pawn->GetController())) OutActors.AddUnique(Pawn->GetController());
+	}
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* Actor = *It;
+		const ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(Actor);
+		const AStorageChest* Chest = Cast<AStorageChest>(Actor);
+		if ((DeckEnemy && DeckEnemy->GetDeckHostShip() == this)
+			|| (Chest && Chest->GetOwningShip() == this)
+			|| (Actor->GetOwner() == this && Actor->IsA<AShipBossEnemy>()))
+		{
+			OutActors.AddUnique(Actor);
+			if (APawn* Pawn = Cast<APawn>(Actor))
+				if (IsValid(Pawn->GetController())) OutActors.AddUnique(Pawn->GetController());
+		}
+	}
+}
+
+void AEnemyShip::OnRep_BundlePoolIdle()
+{
+	if (bBundlePoolIdle)
+	{
+		ApplyEffectiveDormancyState();
+		if (HasAuthority())
+			if (AAIController* AI = Cast<AAIController>(GetController()))
+			{
+				AI->StopMovement();
+				if (ANavalAIController* Naval = Cast<ANavalAIController>(AI)) Naval->SetTargetShip(nullptr);
+				if (UBrainComponent* Brain = AI->GetBrainComponent()) Brain->StopLogic(TEXT("Enemy ship bundle pooling"));
+				if (UAIPerceptionComponent* Perception = AI->GetPerceptionComponent())
+				{
+					Perception->SetSenseEnabled(UAISense_Sight::StaticClass(), false);
+					Perception->Deactivate();
+				}
+				AI->SetActorTickEnabled(false);
+			}
+		TInlineComponentArray<UActorComponent*> ShipComponents(this);
+		for (UActorComponent* Component : ShipComponents)
+			if (Component->IsComponentTickEnabled())
+			{
+				DistanceDormancySuspendedTickComponents.AddUnique(Component);
+				Component->SetComponentTickEnabled(false);
+			}
+		SetActorTickEnabled(false);
+		SetActorEnableCollision(false);
+		SetShipRuntimePhysicsEnabled(false);
+		if (BundleSuspendedActors.IsEmpty())
+		{
+			TArray<AActor*> Actors;
+			CollectBundleActors(Actors);
+			for (AActor* Actor : Actors)
+			{
+				if (Actor == this) continue;
+				FBundleSuspendedActor& State = BundleSuspendedActors.AddDefaulted_GetRef();
+				State.Actor = Actor;
+				State.bTick = Actor->IsActorTickEnabled();
+				State.bCollision = Actor->GetActorEnableCollision();
+				State.bHidden = Actor->IsA<ACannon>() ? Actor->GetClass()->GetDefaultObject<AActor>()->IsHidden() : Actor->IsHidden();
+				TInlineComponentArray<UActorComponent*> Components(Actor);
+				for (UActorComponent* Component : Components)
+					if (Component->IsComponentTickEnabled())
+					{
+						State.TickingComponents.Add(Component);
+						Component->SetComponentTickEnabled(false);
+					}
+				Actor->SetActorTickEnabled(false);
+				Actor->SetActorEnableCollision(false);
+				Actor->SetActorHiddenInGame(true);
+				Actor->ForceNetUpdate();
+			}
+		}
+	}
+	else
+	{
+		for (const FBundleSuspendedActor& State : BundleSuspendedActors)
+			if (AActor* Actor = State.Actor.Get())
+			{
+				Actor->SetActorTickEnabled(State.bTick);
+				Actor->SetActorEnableCollision(State.bCollision);
+				Actor->SetActorHiddenInGame(State.bHidden || IsStoryGateDormant());
+				for (const auto& Component : State.TickingComponents)
+					if (Component.IsValid()) Component->SetComponentTickEnabled(true);
+				Actor->ForceNetUpdate();
+			}
+		BundleSuspendedActors.Reset();
+	}
+	ApplyEffectiveDormancyState();
+	SetActorHiddenInGame(bBundlePoolIdle || IsStoryGateDormant());
+}
+
+void AEnemyShip::SetBundlePoolIdle(bool bIdle)
+{
+	if (!HasAuthority()) return;
+	FlushNetDormancy();
+	SetNetDormancy(DORM_Awake);
+	bBundlePoolIdle = bIdle;
+	if (!bIdle) bDistanceOptimizationDormant = false;
+	OnRep_BundlePoolIdle();
+	ForceNetUpdate();
+}
+
+void AEnemyShip::RefreshBundleStoryBindings()
+{
+	if (!HasAuthority()) return;
+	if (UStoryFacadeSubsystem* Story = GetGameInstance() ? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr)
+	{
+		Story->OnStoryChanged.RemoveDynamic(this, &AEnemyShip::HandleStoryGateChanged);
+		if (IsFinalBossSquadShip()) Story->OnStoryChanged.AddUniqueDynamic(this, &AEnemyShip::HandleStoryGateChanged);
+	}
+	TInlineComponentArray<UChildActorComponent*> BundleChildComponents(this);
+	for (UChildActorComponent* Child : BundleChildComponents)
+		if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Child->GetChildActor()))
+		{
+			Point->OnChestSpawned.RemoveDynamic(this, &AEnemyShip::HandleStoryGatedChestSpawned);
+			if (IsFinalBossSquadShip()) Point->OnChestSpawned.AddUniqueDynamic(this, &AEnemyShip::HandleStoryGatedChestSpawned);
+		}
+	RefreshStoryGateOwnedActors();
+}
+
+void AEnemyShip::PrepareFreshBundleEncounter(const FTransform& HomeTransform)
+{
+	if (!HasAuthority()) return;
+	if (BossEncounterComponent) BossEncounterComponent->ResetForNewEncounter();
+	RegisteredBoss = nullptr;
+	if (NavigationComponent) NavigationComponent->ResetSpawnHome(HomeTransform);
+	SetActorTransform(HomeTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->CancelAllAbilities();
+		ASC->RemoveActiveEffects(FGameplayEffectQuery());
+		if (bStoryGateCannonTagAdded) ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+		if (bCaptureCannonTagAdded) ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+		bStoryGateCannonTagAdded = bCaptureCannonTagAdded = false;
+	}
+	if (AuthoredEncounterArchetype && BossEncounterComponent)
+		EnemyShipArchetype = NormalFallbackArchetype && !BossEncounterComponent->IsCampaignGateOpen()
+			? NormalFallbackArchetype.Get() : AuthoredEncounterArchetype.Get();
+	if (EnemyShipArchetype) EnemyShipArchetype->ApplyToShip(this);
+	ResetAfterReturnToSpawn();
+	ResetNetworkPhysicsForReuse();
+	if (ANavalAIController* AI = Cast<ANavalAIController>(GetController()))
+	{
+		AI->SetTargetShip(nullptr);
+		if (UAIPerceptionComponent* Perception = AI->GetPerceptionComponent()) Perception->ForgetAll();
+	}
+	TInlineComponentArray<USWShipWakeEmitterComponent*> Emitters(this);
+	for (USWShipWakeEmitterComponent* Emitter : Emitters) Emitter->ResetSamplingForTeleport();
+	ApplyChestSpawnPointSettings();
+	TInlineComponentArray<UChildActorComponent*> BundleChildComponents(this);
+	for (UChildActorComponent* Child : BundleChildComponents)
+	{
+		if (AStorageChest* Chest = Cast<AStorageChest>(Child->GetChildActor())) Chest->ResetForNewEncounter();
+		if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Child->GetChildActor()))
+		{
+			if (AActor* Chest = Point->GetSpawnedActor())
+			{
+				Chest->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+				if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(Chest);
+			}
+			Point->ResetSpawnPoint(true);
+		}
+	}
+	if (DeckEnemySpawnerComponent)
+	{
+		InitializeDeckEnemyPool();
+		DeckEnemySpawnerComponent->RestartSpawnStartDelay();
+	}
+	RefreshBundleStoryBindings();
+}
+
 void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShip, bCrewDefeated);
 	DOREPLIFETIME(AEnemyShip, bDistanceOptimizationDormant);
+	DOREPLIFETIME(AEnemyShip, bBundlePoolIdle);
+	DOREPLIFETIME(AEnemyShip, BundleAuthoredName);
 	DOREPLIFETIME(AEnemyShip, RuntimeState);
 	DOREPLIFETIME(AEnemyShip, bStoryGateOpen);
 }

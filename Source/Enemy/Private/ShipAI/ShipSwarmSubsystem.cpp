@@ -6,6 +6,7 @@
 #include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipAvoidanceSettings.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
+#include "ShipAI/EnemyShipBundlePool.h"
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
@@ -162,7 +163,7 @@ namespace EnemyShipAvoidance
 		}
 
 		// A total ordering means exactly one ordinary ship yields and prevents reciprocal deadlock.
-		return Other.GetFName().LexicalLess(Ship.GetFName());
+		return Other.GetBundleAuthoredName().LexicalLess(Ship.GetBundleAuthoredName());
 	}
 }
 
@@ -305,7 +306,7 @@ TArray<AEnemyShip*> UShipSwarmSubsystem::GetSquadMembers(FName SquadID)
 		// 역순으로 탐색하여 파괴된 객체(Null) 정리와 동시에 유효한 멤버 수집
 		for (int32 i = SquadArray->Num() - 1; i >= 0; --i)
 		{
-			if (AEnemyShip* Member = (*SquadArray)[i].Get())
+			if (AEnemyShip* Member = (*SquadArray)[i].Get(); Member && !Member->IsBundlePoolIdle())
 			{
 				ValidMembers.Add(Member);
 			}
@@ -334,7 +335,7 @@ void UShipSwarmSubsystem::RecalculateSquadOrbitDistances(FName SquadID)
 
 	Members.Sort([](const AEnemyShip& Left, const AEnemyShip& Right)
 	{
-		return Left.GetFName().LexicalLess(Right.GetFName());
+		return Left.GetBundleAuthoredName().LexicalLess(Right.GetBundleAuthoredName());
 	});
 
 	float IdealDistanceSum = 0.0f;
@@ -348,8 +349,11 @@ void UShipSwarmSubsystem::RecalculateSquadOrbitDistances(FName SquadID)
 	const float AverageIdealDistance = IdealDistanceSum / Members.Num();
 	const float AverageSpacing = SpacingSum / Members.Num();
 	const float CenterIndex = (Members.Num() - 1) * 0.5f;
+	const auto* PoolSubsystem = GetWorld()->GetSubsystem<UEnemyShipBundlePoolSubsystem>();
+	const AEnemyShipBundlePool* Pool = PoolSubsystem ? PoolSubsystem->GetPool() : nullptr;
 	for (int32 Index = 0; Index < Members.Num(); ++Index)
 	{
+		if (Pool && Pool->ApplyLogicalOrbitDistance(Members[Index])) continue;
 		const float AssignedDistance = AverageIdealDistance + (Index - CenterIndex) * AverageSpacing;
 		Members[Index]->SetSquadAssignedIdealDistance(FMath::Max(1.0f, AssignedDistance));
 	}

@@ -531,6 +531,20 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 	return true;
 }
 
+void AGlobalLootSpawnManager::RefillPooledGuardedChest(AChestSpawnPoint* Point, int32 Seed)
+{
+	if (!HasAuthority() || !Point || !bProgressionFinalized) return;
+	AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor());
+	const USettings_Item* Settings = GetDefault<USettings_Item>();
+	const UItemData* Items = Settings ? Settings->ItemAssetRegistry.LoadSynchronous() : nullptr;
+	const int32 ZoneIndex = static_cast<int32>(Point->GetProgressionZone());
+	if (!Chest || !Items || ZoneIndex < 0 || ZoneIndex >= 4) return;
+	Chest->ReplaceProgressionLoot(LastZoneDrops[ZoneIndex], Items, Seed);
+	const UFixedChestDropData* FixedDrops = Settings ? Settings->FixedChestDropData.LoadSynchronous() : nullptr;
+	if (FixedDrops) Point->ApplyFixedChanceDrops(FixedDrops, Seed);
+	EnsureBossGuaranteedLoot(Point);
+}
+
 void AGlobalLootSpawnManager::EnsureBossGuaranteedLoot(AChestSpawnPoint* Point)
 {
 	if (!HasAuthority() || !IsValid(Point) || Point->GetSpawnMode() != EChestSpawnMode::Guarded

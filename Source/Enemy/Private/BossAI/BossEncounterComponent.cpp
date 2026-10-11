@@ -7,6 +7,7 @@
 #include "DeckAI/DeckWaypointComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Controller.h"
 #include "Interactable/InteractableComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Ship.h"
@@ -494,6 +495,31 @@ void UBossEncounterComponent::UpdateBossReservation()
 
 void UBossEncounterComponent::HandleStoryChanged()
 {
+	UpdateBossReservation();
+}
+
+void UBossEncounterComponent::ResetForNewEncounter()
+{
+	AEnemyShip* Host = Cast<AEnemyShip>(GetOwner());
+	if (!Host || !Host->HasAuthority()) return;
+	GetWorld()->GetTimerManager().ClearTimer(SightEvaluationTimerHandle);
+	if (IsValid(SpawnedBoss))
+	{
+		if (UBaseHealthComponent* Health = SpawnedBoss->GetHealthComponent())
+			Health->OnDeathStarted.RemoveDynamic(this, &UBossEncounterComponent::HandleBossDeathStarted);
+		Host->UnregisterCrewEnemy(SpawnedBoss);
+		SpawnedBoss->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+		if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(SpawnedBoss);
+		if (AController* Controller = SpawnedBoss->GetController()) Controller->Destroy();
+		SpawnedBoss->Destroy();
+	}
+	SpawnedBoss = nullptr;
+	bHasPendingRoomState = false;
+	UnbindItemBox();
+	EnemyItemBox = nullptr;
+	SetEncounterState(EBossEncounterState::Waiting);
+	EnemyItemBox = ResolveConfiguredEnemyItemBox();
+	BindItemBox();
 	UpdateBossReservation();
 }
 

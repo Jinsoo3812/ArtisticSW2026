@@ -302,6 +302,31 @@ void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, con
 	}
 }
 
+void AStorageChest::ResetForNewEncounter()
+{
+	if (!HasAuthority()) return;
+	ClearGuardBindings();
+	GuardCharacters.Reset();
+	BossGuardCharacter = nullptr;
+	BossGuardHealth = nullptr;
+	OwningShip = nullptr;
+	OwningShipHealthComponent = nullptr;
+	AliveGuardHealthComponents.Reset();
+	bHasBeenOpened = false;
+	bGuardFailed = false;
+	bRequiresGuardClear = false;
+	bBossEncounterReserved = false;
+	bIsBossChest = false;
+	bHasPendingRoomState = false;
+	ClearLegacyChestDefinition();
+	if (StorageComponent)
+		StorageComponent->ConfigureStorage(FMath::Max(1, StorageComponent->GetSlotCount()),
+			FMath::Max(1, StorageComponent->GetStorageColumns()), TArray<FStorageItemEntry>());
+	GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+	SetLocked(false);
+	ForceNetUpdate();
+}
+
 void AStorageChest::SetPhysicsAndBuoyancyEnabled(bool bEnabled)
 {
 	if (!HasAuthority())

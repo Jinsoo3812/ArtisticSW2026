@@ -70,7 +70,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		for (const FSWRoomDomainPart& Part : Payload.Parts)
 		{
 			const uint8 Domain = static_cast<uint8>(Part.Domain);
-			if (Domain <= PreviousDomain || Domain > static_cast<uint8>(ESWRoomDomain::Boss)
+			if (Domain <= PreviousDomain || Domain > static_cast<uint8>(ESWRoomDomain::EnemyShipPool)
 				|| Part.Version <= 0 || Part.Bytes.IsEmpty() || Part.Bytes.Num() > MaxRecordBytes) return false;
 			PreviousDomain = Domain;
 		}

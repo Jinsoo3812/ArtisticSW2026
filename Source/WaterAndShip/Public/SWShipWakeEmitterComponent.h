@@ -14,6 +14,7 @@ class WATERANDSHIP_API USWShipWakeEmitterComponent : public UActorComponent
 public:
 	USWShipWakeEmitterComponent();
 	virtual void BeginPlay() override;
+	void ResetSamplingForTeleport();
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 		FActorComponentTickFunction* ThisTickFunction) override;
 

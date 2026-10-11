@@ -98,6 +98,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
 	bool TryStartEncounter(AActor* TriggerActor);
 	void RefreshChestReservations() { UpdateBossReservation(); }
+	void ResetForNewEncounter();
 
 	UPROPERTY(BlueprintAssignable, Category = "Boss|Encounter")
 	FOnBossEncounterStateChangedSignature OnEncounterStateChanged;

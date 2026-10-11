@@ -616,6 +616,7 @@ public:
 	 * async callback, which SetSimulatePhysics alone does not do for this ship.
 	 */
 	void SetShipRuntimePhysicsEnabled(bool bEnabled);
+	void ResetNetworkPhysicsForReuse();
 	bool IsShipRuntimePhysicsEnabled() const { return bShipRuntimePhysicsEnabled; }
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */

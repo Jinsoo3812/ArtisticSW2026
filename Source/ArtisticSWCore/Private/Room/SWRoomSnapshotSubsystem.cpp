@@ -31,7 +31,8 @@ namespace
 {
 bool IsExcluded(const AActor* Actor)
 {
-	return !Actor || Actor->IsA<AController>() || Actor->IsA<APlayerState>()
+	return !Actor || Actor->ActorHasTag(TEXT("SWEnemyShipPoolIdle"))
+		|| Actor->ActorHasTag(TEXT("SWEnemyShipPoolReleased")) || Actor->IsA<AController>() || Actor->IsA<APlayerState>()
 		|| Actor->IsA<AGameModeBase>() || Actor->IsA<AGameStateBase>() || Actor->IsA<AInfo>()
 		|| (Cast<APawn>(Actor) && Cast<APawn>(Actor)->IsPlayerControlled()
 			&& !Actor->FindComponentByClass<USWRoomSnapshotComponent>());
@@ -39,7 +40,8 @@ bool IsExcluded(const AActor* Actor)
 
 bool IsLevelPlacedActor(const AActor* Actor)
 {
-	return Actor && Actor->HasAnyFlags(RF_WasLoaded);
+	return Actor && (Actor->ActorHasTag(TEXT("SWEnemyShipPoolLevelOrigin"))
+		|| (Actor->HasAnyFlags(RF_WasLoaded) && !Actor->ActorHasTag(TEXT("SWEnemyShipPoolAssigned"))));
 }
 
 bool ShouldTraceRoomPhysics(const AActor* Actor)
@@ -277,8 +279,22 @@ void USWRoomSnapshotSubsystem::HandleActorSpawned(AActor* Actor)
 	if (Component->StableId.IsValid()) RegisteredActors.Add(Component->StableId, Actor);
 }
 
+void USWRoomSnapshotSubsystem::ReleaseActorForPooling(AActor* Actor)
+{
+	if (!Actor) return;
+	for (auto It = RegisteredActors.CreateIterator(); It; ++It)
+		if (It.Value().Get() == Actor) It.RemoveCurrent();
+}
+
+void USWRoomSnapshotSubsystem::ClearPooledActorTombstone(const FGuid& Id)
+{
+	DestroyedLevelActorIds.Remove(Id);
+	DestroyedActorPartitions.Remove(Id);
+}
+
 void USWRoomSnapshotSubsystem::HandleActorDestroyed(AActor* Actor)
 {
+	if (IsExcluded(Actor)) return;
 	if (bRestoring || !Actor || !GetWorld() || GetWorld()->bIsTearingDown) return;
 	const USWRoomSnapshotComponent* Component = Actor->FindComponentByClass<USWRoomSnapshotComponent>();
 	if (!Component || !Component->StableId.IsValid()) return;
@@ -974,9 +990,12 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 			*Issue.StableId.ToString(), *Issue.OwnerPath, *Issue.ClassPath.ToString(), *Issue.Domain.ToString(),
 			*Issue.FieldKey.ToString(), *Issue.Reason);
 	TSet<FGuid> SavedIds;
+	OnPrepareRestore.Broadcast(Applied, OutError);
+	if (!OutError.IsEmpty()) return false;
 	for (const FSWRoomActorRecord& Record : Applied.Actors) SavedIds.Add(Record.StableId);
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : RegisteredActors)
-		if (AActor* Actor = Pair.Value.Get(); Actor && !IsLevelPlacedActor(Actor) && !SavedIds.Contains(Pair.Key)
+		if (AActor* Actor = Pair.Value.Get(); Actor && !Actor->ActorHasTag(TEXT("SWEnemyShipPoolManager"))
+			&& !IsLevelPlacedActor(Actor) && !SavedIds.Contains(Pair.Key)
 			&& (!bPartitionRestore || GetPartitionKey(Actor->GetLevel()) == PartitionRestorePackage)) Actor->Destroy();
 	TMap<FGuid, ESWRoomPersistenceClass> RestoredDestroyedClasses;
 	for (const FGuid& Id : Applied.DestroyedLevelActorIds)

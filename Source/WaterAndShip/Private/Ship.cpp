@@ -1097,7 +1097,7 @@ void AShip::Tick(float DeltaTime)
 
 void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 {
-	if (!BuoyancyRoot || bShipRuntimePhysicsEnabled == bEnabled)
+	if (!BuoyancyRoot || (bShipRuntimePhysicsEnabled == bEnabled && BuoyancyRoot->IsSimulatingPhysics() == bEnabled))
 	{
 		return;
 	}
@@ -1126,6 +1126,34 @@ void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 		ShipPhysicsAsync->SetPhysicsObject(BuoyancyRoot->GetPhysicsObjectByName(NAME_None));
 	}
 	BuoyancyRoot->WakeAllRigidBodies();
+}
+
+void AShip::ResetNetworkPhysicsForReuse()
+{
+	CurrentMoveInput = CurrentTurnInput = 0.0f;
+	bIsAnchorDropped = false;
+	ReplicatedState.Location = GetActorLocation();
+	ReplicatedState.Rotation = GetActorRotation();
+	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	GetWorldTimerManager().ClearTimer(SinkingDestroyTimerHandle);
+	for (UShipRepairPointComponent* Point : {RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get()})
+		if (Point) Point->DeactivateLeak();
+	if (NetworkPhysicsComponent && ShipPhysicsAsync)
+	{
+		NetworkPhysicsComponent->RemoveDataHistory();
+		if (FPhysScene* Scene = GetWorld()->GetPhysicsScene())
+			if (Chaos::FPhysicsSolver* Solver = Scene->GetSolver())
+			{
+				Solver->UnregisterAndFreeSimCallbackObject_External(ShipPhysicsAsync);
+				ShipPhysicsAsync = Solver->CreateAndRegisterSimCallbackObject_External<FShipPhysicsAsync>();
+				if (ShipPhysicsAsync)
+				{
+					ShipPhysicsAsync->SetPhysicsObject(bShipRuntimePhysicsEnabled ? BuoyancyRoot->GetPhysicsObjectByName(NAME_None) : nullptr);
+					NetworkPhysicsComponent->CreateDataHistory(ShipPhysicsAsync);
+				}
+			}
+	}
+	ForceNetUpdate();
 }
 
 // Called to bind functionality to input

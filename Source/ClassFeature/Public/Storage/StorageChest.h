@@ -107,6 +107,7 @@ public:
 	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed, float ExpectedValueRatio = 1.f);
 	/** Prevents a chest BP's legacy default definition from injecting snapshot loot. */
 	void ClearLegacyChestDefinition();
+	void ResetForNewEncounter();
 	void ReplaceProgressionLoot(const TArray<FProgressionComputedDrop>& Drops, const UItemData* Definitions, int32 Seed);
 
 	/** Appends independent rare drops after progression replacement without changing its rolls. */

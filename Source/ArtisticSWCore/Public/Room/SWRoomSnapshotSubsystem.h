@@ -9,6 +9,8 @@ class AActor;
 class ULevel;
 class ULevelStreaming;
 
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnSWRoomPrepareRestore, const FSWRoomWorldSnapshot&, FString&);
+
 /** Server authority for registered actor snapshots. */
 UCLASS()
 class ARTISTICSWCORE_API USWRoomSnapshotSubsystem : public UWorldSubsystem
@@ -30,6 +32,9 @@ public:
 	bool CompleteRestore(FString& OutError);
 	/** Broadcast only after all actor references/effects have finalized successfully. Server-local. */
 	FSimpleMulticastDelegate OnRestoreCompleted;
+	FOnSWRoomPrepareRestore OnPrepareRestore;
+	void ReleaseActorForPooling(AActor* Actor);
+	void ClearPooledActorTombstone(const FGuid& Id);
 	void UpdateRegisteredActorId(AActor* Actor, const FGuid& PreviousId, const FGuid& ReservedId);
 
 private:

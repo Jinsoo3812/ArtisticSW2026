@@ -54,6 +54,7 @@ public:
 	/** Resolves the ship's server-captured spawn location. */
 	bool GetResolvedHomeLocation(FVector& OutHomeLocation) const;
 	bool GetSpawnHomeTransform(FTransform& OutTransform) const;
+	void ResetSpawnHome(const FTransform& Transform);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	ENavalCombatState GetCurrentState() const { return CurrentState; }

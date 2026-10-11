@@ -78,6 +78,13 @@ class ENEMY_API AEnemyShip : public AShip, public IIncomingDamageMultiplierInter
 
 public:
 	AEnemyShip();
+	bool IsBundlePoolIdle() const { return bBundlePoolIdle; }
+	void SetBundlePoolIdle(bool bIdle);
+	void PrepareFreshBundleEncounter(const FTransform& HomeTransform);
+	void RefreshBundleStoryBindings();
+	FName GetBundleAuthoredName() const { return BundleAuthoredName.IsNone() ? GetFName() : BundleAuthoredName; }
+	void SetBundleAuthoredName(FName Name) { BundleAuthoredName = Name; }
+	void CollectBundleActors(TArray<AActor*>& OutActors) const;
 	FOnEnemyShipRuntimeStateChanged OnRuntimeStateChanged;
 	/** Client-local presentation notification, never an authority spawn command. */
 	FOnEnemyShipRuntimeStateChanged OnRuntimePresentationChanged;
@@ -399,6 +406,19 @@ protected:
 
 	UPROPERTY(SaveGame, ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
 	bool bDistanceOptimizationDormant = false;
+	UPROPERTY(ReplicatedUsing = OnRep_BundlePoolIdle)
+	bool bBundlePoolIdle = false;
+	UPROPERTY(Replicated) FName BundleAuthoredName;
+	UFUNCTION() void OnRep_BundlePoolIdle();
+	struct FBundleSuspendedActor
+	{
+		TWeakObjectPtr<AActor> Actor;
+		bool bTick = false;
+		bool bCollision = false;
+		bool bHidden = false;
+		TArray<TWeakObjectPtr<UActorComponent>> TickingComponents;
+	};
+	TArray<FBundleSuspendedActor> BundleSuspendedActors;
 	UPROPERTY(ReplicatedUsing = OnRep_StoryGateOpen, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Story")
 	bool bStoryGateOpen = false;
  bool bDevelopmentStoryGateOpened = false;

@@ -66,6 +66,20 @@ void UEnemyShipNavigationComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	Super::EndPlay(EndPlayReason);
 }
 
+void UEnemyShipNavigationComponent::ResetSpawnHome(const FTransform& Transform)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	SpawnHomeLocation = Transform.GetLocation();
+	SpawnHomeRotation = Transform.Rotator();
+	bHasSpawnHomeLocation = true;
+	SetTargetShip(nullptr);
+	ClearAllOverrides();
+	CurrentState = ENavalCombatState::Idle;
+	LostTargetElapsed = 0.0f;
+	ResetAvoidance();
+	ResetTerrainAvoidance();
+}
+
 void UEnemyShipNavigationComponent::TickComponent(
 	float DeltaTime,
 	ELevelTick TickType,

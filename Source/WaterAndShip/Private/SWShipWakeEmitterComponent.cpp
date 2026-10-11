@@ -124,6 +124,14 @@ void USWShipWakeEmitterComponent::BeginPlay()
 	// }
 }
 
+void USWShipWakeEmitterComponent::ResetSamplingForTeleport()
+{
+	bHasSample = false;
+	bLastReversing = false;
+	LastSampleAmplitudeCm = 0.0f;
+	ResolveKelvinFrame(LastSamplePosition, LastSampleForward);
+}
+
 void USWShipWakeEmitterComponent::ResolveKelvinFrame(
 	FVector2D& OutApex, FVector2D& OutForward, const bool bReversing) const
 {

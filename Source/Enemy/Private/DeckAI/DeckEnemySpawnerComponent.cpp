@@ -948,6 +948,13 @@ void UDeckEnemySpawnerComponent::ResetForNewEncounter()
 	DeploymentFailureCount = 0;
 }
 
+void UDeckEnemySpawnerComponent::RestartSpawnStartDelay()
+{
+	if (!GetHostShip() || !GetHostShip()->HasAuthority()) return;
+	SpawnStartReadyTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.f, SpawnStartDelay);
+	RequestReadinessEvaluation();
+}
+
 int32 UDeckEnemySpawnerComponent::GetLivingPooledEnemyCount() const
 {
 	int32 LivingCount = 0;

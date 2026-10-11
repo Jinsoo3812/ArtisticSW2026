@@ -140,6 +140,7 @@ public:
 	void InitializePool();
 	void CancelDeployment();
 	void ResetForNewEncounter();
+	void RestartSpawnStartDelay();
 	void Shutdown();
 
 	bool RequestDeployment(AShip* TriggeringPlayerShip, AActor* InitialCombatTarget = nullptr);

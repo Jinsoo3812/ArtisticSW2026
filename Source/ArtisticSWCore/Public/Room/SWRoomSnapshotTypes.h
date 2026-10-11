@@ -68,7 +68,8 @@ enum class ESWRoomDomain : uint8
 	Projectile = 5,
 	Area = 6,
 	Loot = 7,
-	Boss = 8
+	Boss = 8,
+	EnemyShipPool = 9
 };
 
 USTRUCT()
