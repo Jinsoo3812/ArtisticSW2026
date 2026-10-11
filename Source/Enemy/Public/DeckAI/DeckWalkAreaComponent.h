@@ -59,6 +59,12 @@ public:
 
 	bool ResolveWaypoint(const UDeckWaypointComponent& Point, FDeckWalkLocation& Out) const;
 	bool ResolveActorOnDeck(const AActor& Actor, FDeckWalkLocation& Out) const;
+	/** Fresh support directly beneath the feet in the live ship frame; never uses CurrentFloor. */
+	bool ResolveActorDeckSupport(const ACharacter& Actor, FName SurfaceId, float MaximumFeetGap,
+		FDeckWalkLocation& Out) const;
+	/** Placement query independent of the requester's current support, target and walking path. */
+	bool FindRecoveryLocation(const FVector& PreferredLocalFloor, FName SurfaceId,
+		const ACharacter& Requester, const TSet<int32>& ExcludedNodes, FDeckWalkLocation& Out) const;
 	int32 GetRevision() const { return Revision; }
 	bool IsTrackingSupport(const UPrimitiveComponent* Component) const;
 	/** Returns tracking geometry, not a walk handle; clearance is checked at the selected movement goal. */

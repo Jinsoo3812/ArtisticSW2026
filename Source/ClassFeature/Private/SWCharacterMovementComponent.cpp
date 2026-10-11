@@ -421,6 +421,63 @@ void USWCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations
 	}
 }
 
+bool USWCharacterMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
+{
+	UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	if (MovementMode != MOVE_Walking || !Base || !Base->GetOwner()->IsA<AShip>())
+	{
+		return Super::DoJump(bReplayingMoves, DeltaTime);
+	}
+
+	// A ship's heave must not increase the initial jump speed. Let CMC
+	// retain its normal jump checks, hold/count handling, and prediction.
+	const FVector PreviousVelocity = Velocity;
+	Velocity = FVector::VectorPlaneProject(Velocity, GetGravityDirection());
+	if (!Super::DoJump(bReplayingMoves, DeltaTime))
+	{
+		Velocity = PreviousVelocity;
+		return false;
+	}
+	return true;
+}
+
+FVector USWCharacterMovementComponent::GetImpartedMovementBaseVelocity() const
+{
+	const UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	// Ship displacement is transported by based movement, not added to
+	// the player's velocity. This also avoids an impulse when leaving its edge.
+	if (Base && Base->GetOwner()->IsA<AShip>())
+	{
+		return FVector::ZeroVector;
+	}
+	return Super::GetImpartedMovementBaseVelocity();
+}
+
+void USWCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
+{
+	if (MovementMode == MOVE_Falling && PreviousMovementMode != MOVE_Falling)
+	{
+		UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+		bStayBasedInAir = PreviousMovementMode == MOVE_Walking && Base
+			&& Base->GetOwner()->IsA<AShip>() && !IsDeadPlayerMovement(CharacterOwner);
+		if (bStayBasedInAir)
+		{
+			// Keep the downward base query long enough to cover the jump apex.
+			const float GravityMagnitude = FMath::Abs(GetGravityZ());
+			if (GravityMagnitude > KINDA_SMALL_NUMBER)
+			{
+				StayBasedInAirHeight = FMath::Max(StayBasedInAirHeight,
+					FMath::Square(JumpZVelocity) / (2.0f * GravityMagnitude) + MaxStepHeight + 50.0f);
+			}
+		}
+	}
+	else if (MovementMode != MOVE_Falling)
+	{
+		bStayBasedInAir = false;
+	}
+	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+}
+
 FVector USWCharacterMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const
 {
 	return IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : Super::ConstrainInputAcceleration(InputAcceleration);
@@ -433,7 +490,23 @@ void USWCharacterMovementComponent::UpdateBasedMovement(float DeltaSeconds)
 	const FVector OldLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	// The engine already transports physics bodies when the base itself simulates.
 	const bool bEngineTransportsBodies = Base.IsValid() && Base->IsSimulatingPhysics();
+	const bool bFollowShipJump = IsFalling() && bStayBasedInAir && Base.IsValid()
+		&& Base->GetOwner()->IsA<AShip>();
+	const FQuat PreviousBaseRotation = OldBaseQuat;
 	Super::UpdateBasedMovement(DeltaSeconds);
+	if (bFollowShipJump && CharacterOwner->GetMovementBase() == Base.Get())
+	{
+		FVector BaseLocation;
+		FQuat BaseRotation;
+		if (MovementBaseUtility::GetMovementBaseTransform(Base.Get(),
+			CharacterOwner->GetBasedMovement().BoneName, BaseLocation, BaseRotation))
+		{
+			// Rotate player-controlled horizontal momentum with the deck while
+			// preserving the standard world-vertical jump/gravity trajectory.
+			const float YawDelta = (BaseRotation * PreviousBaseRotation.Inverse()).Rotator().Yaw;
+			Velocity = FRotator(0.0f, YawDelta, 0.0f).RotateVector(Velocity);
+		}
+	}
 	if (Mesh && !bEngineTransportsBodies && UpdatedComponent && Base.IsValid()
 		&& CharacterOwner->GetMovementBase() == Base.Get())
 	{
@@ -620,12 +693,6 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 		return false;
 	}
 
-	// 배 위에서 점프/낙하 중(MOVE_Falling)일 때, 네트워크 물리 시뮬레이션 지연으로 인한 월드 좌표 오차를 수용하여 클라이언트 보정 스냅 방지
-	if (LastStandingShip.IsValid() && (MovementMode == MOVE_Falling || ClientMovementMode == MOVE_Falling))
-	{
-		return false;
-	}
-
 	float RelativeError = 0.0f;
 	if (CanUseShipBasedClientPosition(
 		RelativeClientLocation,
@@ -688,7 +755,7 @@ bool USWCharacterMovementComponent::CanUseShipBasedClientPosition(
 	if (ShipBasedClientAuthorityMaxError <= 0.0f
 		|| !CharacterOwner
 		|| !UpdatedComponent
-		|| MovementMode != MOVE_Walking
+		|| !(MovementMode == MOVE_Walking || (MovementMode == MOVE_Falling && bStayBasedInAir))
 		|| PackNetworkMovementMode() != ClientMovementMode
 		|| !ClientMovementBase)
 	{

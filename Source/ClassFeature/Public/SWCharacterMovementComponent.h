@@ -73,6 +73,9 @@ public:
 	bool TryGetActiveSurfaceWaveServerTime(double& OutServerTime) const;
 
 protected:
+	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
+	virtual FVector GetImpartedMovementBaseVelocity() const override;
+	virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode) override;
 	virtual FVector ConstrainInputAcceleration(const FVector& InputAcceleration) const override;
 	virtual void UpdateBasedMovement(float DeltaSeconds) override;
 	virtual void SmoothCorrection(const FVector& OldLocation, const FQuat& OldRotation,
@@ -108,7 +111,8 @@ protected:
 
 	/**
 	 * Maximum base-local disagreement that the server may absorb while both
-	 * sides agree that the character is walking on the same predicted ship.
+	 * sides agree that the character is walking or staying based in air on
+	 * the same predicted ship.
 	 * This is deliberately separate from the global CMC position tolerance.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Character Movement: Networking|Ship Base", meta = (ClampMin = "0.0", Units = "cm"))

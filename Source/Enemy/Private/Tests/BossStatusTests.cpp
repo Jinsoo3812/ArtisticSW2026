@@ -60,15 +60,20 @@ bool FBossStatusTriggersTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Body hit during attack does not stun"), Boss->StatusComponent->HasStatus(State_Status_Stun));
 	Damage(TEXT("head"), 1.f);
 	TestTrue(TEXT("Attacking head hit stuns without a normal HitReaction GA"), Boss->StatusComponent->HasStatus(State_Status_Stun));
-	TestEqual(TEXT("Head hit selects two second GE"), Duration(), 2.f);
+	TestEqual(TEXT("Head hit defaults to four seconds"), Duration(), 4.f);
 	Damage(TEXT("head"), 1.f);
-	TestEqual(TEXT("Repeated head hit keeps original duration"), Duration(), 2.f);
+	TestEqual(TEXT("Repeated head hit keeps original duration"), Duration(), 4.f);
 	TestFalse(TEXT("Different Stun GE cannot replace head-hit Stun"), Boss->StatusComponent->ApplyStatus(
 		UBossHealthThresholdStunEffect::StaticClass(), ASC, {}).IsValid());
 	Boss->StatusComponent->ClearStatuses();
+	Boss->HeadHitStunDuration = 5.25f;
+	Damage(TEXT("head"), 1.f);
+	TestEqual(TEXT("Head hit uses the boss editor duration instead of the GE default"), Duration(), 5.25f);
+	Boss->StatusComponent->ClearStatuses();
 	ASC->RemoveLooseGameplayTag(State_Attacking);
+	Boss->HealthThresholdStunDuration = 6.f;
 	Damage(TEXT("spine_01"), 50.f);
-	TestEqual(TEXT("HP crossing selects three second GE without attacking"), Duration(), 3.f);
+	TestEqual(TEXT("HP crossing uses its independent editor duration without attacking"), Duration(), 6.f);
 	Boss->StatusComponent->ClearStatuses();
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 80.f);
 	Damage(TEXT("spine_01"), 40.f);

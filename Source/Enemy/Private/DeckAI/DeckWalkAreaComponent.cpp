@@ -323,7 +323,7 @@ bool UDeckWalkAreaComponent::IsLocationAvailable(const FDeckWalkLocation& Locati
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(DeckWalkDestination), false, &Requester);
 	FCollisionResponseParams Responses;
 	Capsule->InitSweepCollisionParams(Params, Responses);
-	return !GetWorld()->OverlapBlockingTestByChannel(Transform.GetLocation(), Capsule->GetComponentQuat(),
+	return !GetWorld()->OverlapBlockingTestByChannel(Transform.GetLocation(), Transform.GetRotation(),
 		Capsule->GetCollisionObjectType(), FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(),
 			Capsule->GetScaledCapsuleHalfHeight()), Params, Responses);
 }
@@ -486,6 +486,67 @@ bool UDeckWalkAreaComponent::ResolveActorOnDeck(const AActor& Actor, FDeckWalkLo
 		if (Error < Best) { Out = MakeLocation(Node); Best = Error; }
 	}
 	return Out.NodeIndex != INDEX_NONE;
+}
+
+bool UDeckWalkAreaComponent::ResolveActorDeckSupport(const ACharacter& Actor, FName SurfaceId,
+	float MaximumFeetGap, FDeckWalkLocation& Out) const
+{
+	Out = FDeckWalkLocation();
+	if (!bReady || !Runtime || !GetFrame() || !FMath::IsFinite(MaximumFeetGap) || MaximumFeetGap < 0.f) return false;
+	const FVector Feet = ToLocal(GetActorFeetWorld(Actor));
+	if (Feet.ContainsNaN()) return false;
+	const FDeckWalkSurfaceSampler Sampler(GetFrame()->GetComponentTransform(), Runtime->Settings, Runtime->Sources, Runtime->Obstacles);
+	float Best = TNumericLimits<float>::Max();
+	for (int32 Surface = 0; Surface < Runtime->Surfaces.Num(); ++Surface)
+	{
+		const FName Id = Runtime->Surfaces[Surface].SurfaceId;
+		if (!SurfaceId.IsNone() && Id != SurfaceId) continue;
+		FVector Floor;
+		int32 Node = INDEX_NONE;
+		if (!Sampler.TraceNear(Feet, Surface, 10.f, MaximumFeetGap, Floor)
+			|| !FindNearestNode(Floor, Id, CellSize, MaximumStepHeight, Node)) continue;
+		const float Error = FMath::Abs(Feet.Z - Floor.Z);
+		if (Error < Best)
+		{
+			Out = MakeLocation(Node);
+			Out.LocalFloor = Floor;
+			Out.bPreciseFloor = true;
+			Best = Error;
+		}
+	}
+	return IsLocationValid(Out);
+}
+
+bool UDeckWalkAreaComponent::FindRecoveryLocation(const FVector& PreferredLocalFloor, FName SurfaceId,
+	const ACharacter& Requester, const TSet<int32>& ExcludedNodes, FDeckWalkLocation& Out) const
+{
+	Out = FDeckWalkLocation();
+	if (!bReady || !Runtime || PreferredLocalFloor.ContainsNaN() || SurfaceId.IsNone()) return false;
+	if (ResolvePreciseLocalFloor(PreferredLocalFloor, SurfaceId, Out)
+		&& !ExcludedNodes.Contains(Out.NodeIndex) && IsLocationAvailable(Out, Requester)) return true;
+	Out = FDeckWalkLocation();
+	TArray<int32> Candidates;
+	for (int32 Node = 0; Node < Runtime->Graph.Nodes.Num(); ++Node)
+	{
+		const auto& Entry = Runtime->Graph.Nodes[Node];
+		if (Entry.bEnabled && Runtime->Surfaces[Entry.Surface].SurfaceId == SurfaceId
+			&& !ExcludedNodes.Contains(Node)) Candidates.Add(Node);
+	}
+	Candidates.Sort([&](int32 A, int32 B)
+	{
+		const double DistanceA = FVector::DistSquared(Runtime->Graph.Nodes[A].Floor, PreferredLocalFloor);
+		const double DistanceB = FVector::DistSquared(Runtime->Graph.Nodes[B].Floor, PreferredLocalFloor);
+		return DistanceA == DistanceB ? A < B : DistanceA < DistanceB;
+	});
+	// Bound live collision work. Recovery must never scan the whole ship every frame.
+	for (int32 Index = 0; Index < FMath::Min(32, Candidates.Num()); ++Index)
+	{
+		const FDeckWalkLocation Candidate = MakeLocation(Candidates[Index]);
+		if (ResolvePreciseLocalFloor(Candidate.LocalFloor, SurfaceId, Out)
+			&& IsLocationAvailable(Out, Requester)) return true;
+	}
+	Out = FDeckWalkLocation();
+	return false;
 }
 
 bool UDeckWalkAreaComponent::ResolvePreciseLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const

@@ -573,6 +573,7 @@ bool FBossDashSlashServerPhasesTest::RunTest(const FString& Parameters)
 		NativeDash->GetWindupSectionName(), FName(TEXT("Windup")));
 	TestEqual(TEXT("Windup hold has a configurable section contract"),
 		NativeDash->GetWindupHoldSectionName(), FName(TEXT("WindupHold")));
+	TestEqual(TEXT("Single dash defaults to two seconds of preparation"), NativeDash->GetWindupDuration(), 2.f);
 
 	UClass* AuthoredDashClass = LoadObject<UClass>(nullptr,
 		TEXT("/Game/GameplayAbilitySystem/Ability/Enemy/Boss/BPGA_SlashDash.BPGA_SlashDash_C"));
@@ -604,6 +605,16 @@ bool FBossDashSlashServerPhasesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Authored montage contains recovery"),
 		Config.Montage->IsValidSectionName(Config.RecoverySectionName));
 	TestTrue(TEXT("Hold duration is separately tunable"), Config.WindupHoldDuration >= 0.0f);
+	// Test the actual authored montage, including the minimum entry-animation duration.
+	UGA_BossDashSlash* TunedDash = NewObject<UGA_BossDashSlash>(GetTransientPackage(), AuthoredDashClass);
+	FFloatProperty* WindupProperty = FindFProperty<FFloatProperty>(TunedDash->GetClass(), TEXT("DashWindupDuration"));
+	if (!TestNotNull(TEXT("Single dash preparation is editable"), WindupProperty)) return false;
+	const float EntryDuration = Config.Montage->GetSectionLength(
+		Config.Montage->GetSectionIndex(Config.WindupEnterSectionName)) / Config.PlayRate;
+	WindupProperty->SetPropertyValue_InContainer(TunedDash, EntryDuration + 3.f);
+	TestEqual(TEXT("Editor duration controls total preparation"), TunedDash->GetWindupDuration(), EntryDuration + 3.f);
+	WindupProperty->SetPropertyValue_InContainer(TunedDash, 0.f);
+	TestEqual(TEXT("Preparation cannot cut off the entry animation"), TunedDash->GetWindupDuration(), EntryDuration);
 	return true;
 }
 

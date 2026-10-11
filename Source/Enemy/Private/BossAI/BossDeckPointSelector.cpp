@@ -154,6 +154,7 @@ bool UBossDeckPointSelector::SelectDestinationLocation(
 		}
 		else if (Purpose == EBossDestinationPurpose::Walk)
 		{
+			if (Settings.MinimumWalkTravelDistance > 0.f && Travel < Settings.MinimumWalkTravelDistance) continue;
 			if (Route->IsGoalRecentlyBlocked(Candidate) || (!Away.IsNearlyZero() && Travel < 75.f)) continue;
 			if (!Away.IsNearlyZero() && FVector::DotProduct((Candidate.LocalFloor - Feet).GetSafeNormal2D(), Away) >= 0.35f
 				&& ++EscapeAttempts > 6) continue;
