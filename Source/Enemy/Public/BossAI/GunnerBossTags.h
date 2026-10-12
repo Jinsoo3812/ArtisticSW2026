@@ -1,0 +1,10 @@
+#pragma once
+#include "NativeGameplayTags.h"
+
+namespace GunnerBossTags
+{
+	ENEMY_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Shot);
+	ENEMY_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Burst);
+	ENEMY_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(ShotCooldown);
+	ENEMY_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(BurstCooldown);
+}
