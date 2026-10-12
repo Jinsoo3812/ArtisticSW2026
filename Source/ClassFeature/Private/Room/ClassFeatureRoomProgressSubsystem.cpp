@@ -41,6 +41,7 @@
 #include "StorySaveGame.h"
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Upgrade/ShipUpgradeTreeDataAsset.h"
 #include "Containers/Ticker.h"
 #include "TimerManager.h"
 
@@ -210,6 +211,7 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 	PendingReturnControllers.Reset();
 	bWorldSnapshotRestored = false;
 	bFinalDepartureSharedRestored = false;
+	LastSharedRestoreFailure.Reset();
 	bReturnShipPlaced = false;
 	bReturnEntryReady = false;
 	ShipSafetyCheckAt = 0.0;
@@ -539,12 +541,25 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 			if (!bMatches)
 			{
 				for (const FString& Difference : Differences)
-					SW_ROOM_DETAIL_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit %s"), *Difference);
+					UE_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit %s"), *Difference);
 				UE_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit Result=Failed Reason=%s Differences=%d"), *AuditError, Differences.Num());
 				return RecoverWorld(World, Differences.IsEmpty() ? AuditError : Differences[0]);
 			}
 		}
 		const USWRoomSaveGame* SavedRoom = Room->GetActiveRoom();
+		ASharedShipUpgradeState* SharedState = ASharedShipUpgradeState::Find(World);
+		UShipUpgradeComponent* SharedUpgrade = SharedState ? SharedState->GetUpgradeComponent() : nullptr;
+		TArray<FName> ExpectedSharedNodes = SavedRoom->SharedProgress.ShipUpgradeNodeIds;
+		TArray<FName> ActualSharedNodes = SharedUpgrade ? SharedUpgrade->GetActiveNodeIds() : TArray<FName>();
+		ExpectedSharedNodes.Sort(FNameLexicalLess());
+		ActualSharedNodes.Sort(FNameLexicalLess());
+		if (!SharedUpgrade || ExpectedSharedNodes != ActualSharedNodes
+			|| (!SavedRoom->SharedProgress.ShipUpgradeTree.IsNull()
+				&& SavedRoom->SharedProgress.ShipUpgradeTree != FSoftObjectPath(SharedUpgrade->UpgradeTree)))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=RestoreAudit Result=Failed Scope=SharedNodes Expected=%d Actual=%d"), ExpectedSharedNodes.Num(), ActualSharedNodes.Num());
+			return RecoverWorld(World, TEXT("Shared node restore mismatch"));
+		}
 		for (TActorIterator<ABasePlayer> It(World); It; ++It)
 		{
 			ABasePlayer* Player = *It;
@@ -566,6 +581,32 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 				&& FMath::IsNearlyEqual(Expected->BaseMoveSpeed, Actual.BaseMoveSpeed, 0.01f)
 				&& FMath::IsNearlyEqual(Expected->BaseMoveSpeedMultiplier, Actual.BaseMoveSpeedMultiplier, 0.01f)
 				&& FMath::IsNearlyEqual(Expected->BaseAttackSpeedMultiplier, Actual.BaseAttackSpeedMultiplier, 0.01f);
+			bool bInventoryMatch = Expected->InventorySlots.Num() == Actual.InventorySlots.Num();
+			for (int32 Index = 0; bInventoryMatch && Index < Expected->InventorySlots.Num(); ++Index)
+			{
+				const FSWInventorySlotSnapshot& Before = Expected->InventorySlots[Index];
+				const FSWInventorySlotSnapshot& After = Actual.InventorySlots[Index];
+				bInventoryMatch = Before.Tab == After.Tab && Before.SlotIndex == After.SlotIndex
+					&& Before.ItemTag == After.ItemTag && Before.Count == After.Count;
+			}
+			TArray<FName> ExpectedPlayerNodes = Expected->UpgradeNodeIds;
+			TArray<FName> ActualPlayerNodes = Actual.UpgradeNodeIds;
+			ExpectedPlayerNodes.Sort(FNameLexicalLess());
+			ActualPlayerNodes.Sort(FNameLexicalLess());
+			bool bSkillsMatch = Expected->Skills.Num() == Actual.Skills.Num();
+			for (const FSWRoomSkillProgress& Before : Expected->Skills)
+			{
+				const FSWRoomSkillProgress* After = Actual.Skills.FindByPredicate([&Before](const FSWRoomSkillProgress& Skill) { return Skill.SkillTag == Before.SkillTag; });
+				bSkillsMatch &= After && Before.bUnlocked == After->bUnlocked && Before.bConditionsMet == After->bConditionsMet;
+			}
+			if (!bInventoryMatch || Expected->QuickSlotItemTags != Actual.QuickSlotItemTags
+				|| ExpectedPlayerNodes != ActualPlayerNodes || !bSkillsMatch)
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=RestoreAudit Result=Failed Scope=PlayerProgress Player=%s Inventory=%d QuickSlots=%d Nodes=%d Skills=%d"),
+					*Player->GetPathName(), bInventoryMatch, Expected->QuickSlotItemTags == Actual.QuickSlotItemTags,
+					ExpectedPlayerNodes == ActualPlayerNodes, bSkillsMatch);
+				return RecoverWorld(World, TEXT("Player inventory/quickslot/node/skill restore mismatch"));
+			}
 			bool bEffectsMatch = Expected->ActiveEffects.Num() == Actual.ActiveEffects.Num();
 			const float TimerTolerance = FMath::Max(World->GetDeltaSeconds(), 1.f / 60.f);
 			for (int32 Index = 0; bEffectsMatch && Index < Expected->ActiveEffects.Num(); ++Index)
@@ -625,11 +666,41 @@ bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 	const USWRoomSaveGame* Save = Room ? Room->GetActiveRoom() : nullptr;
 	if (!World || !Save) return false;
 	const FSWRoomSharedProgress& Shared = Save->SharedProgress;
+	auto FailSharedRestore = [this](const FString& Reason)
+	{
+		if (LastSharedRestoreFailure != Reason)
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SharedRestore Result=Failed Reason=%s"), *Reason);
+		LastSharedRestoreFailure = Reason;
+		return false;
+	};
 	for (const FSWRoomCaptureIssue& Issue : Shared.CaptureIssues)
 		SW_ROOM_DETAIL_LOG(LogSWRoom, Warning, TEXT("Flow=SharedRestore Result=Partial Domain=%s Field=%s Reason=%s"),
 			*Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
 	ASharedShipUpgradeState* Ship = ASharedShipUpgradeState::Find(World);
-	if (!Ship && !Shared.ShipUpgradeNodeIds.IsEmpty() && FPlatformTime::Seconds() < RestoreDeadline) return false;
+	// Shared progression is room infrastructure, not a facility UI prerequisite.
+	// Never let a readiness timeout silently discard stored nodes.
+	if (!Ship) Ship = World->SpawnActor<ASharedShipUpgradeState>();
+	UShipUpgradeComponent* Upgrade = Ship ? Ship->GetUpgradeComponent() : nullptr;
+	if (!Upgrade)
+	{
+		return FailSharedRestore(TEXT("Node state unavailable"));
+	}
+	if (!Shared.ShipUpgradeTree.IsNull())
+	{
+		UShipUpgradeTreeDataAsset* Tree = Cast<UShipUpgradeTreeDataAsset>(Shared.ShipUpgradeTree.TryLoad());
+		if (!Tree)
+		{
+			return FailSharedRestore(TEXT("Node tree unavailable: ") + Shared.ShipUpgradeTree.ToString());
+		}
+		Upgrade->ConfigureForUseCase(Tree, Upgrade->PreviewBaseStats, false);
+	}
+	for (const FName NodeId : Shared.ShipUpgradeNodeIds)
+		if (!Upgrade->UpgradeTree || !Upgrade->UpgradeTree->FindNode(NodeId))
+		{
+			return FailSharedRestore(FString::Printf(TEXT("Unknown node %s in tree %s"), *NodeId.ToString(), *GetPathNameSafe(Upgrade->UpgradeTree)));
+		}
+	const bool bHasStoredStory = Shared.StoryDefinitionId.IsValid() || !Shared.Facts.IsEmpty()
+		|| !Shared.Counters.IsEmpty() || !Shared.AppliedActionKeys.IsEmpty();
 	if (UStorySubsystem* Story = GetGameInstance()->GetSubsystem<UStorySubsystem>())
 	{
 		UStorySaveGame* StoryData = NewObject<UStorySaveGame>(this);
@@ -642,11 +713,19 @@ bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 			Value.CounterTag = Counter.Tag;
 			Value.Value = Counter.Value;
 		}
-		if (Shared.StoryDefinitionId.IsValid() && !Story->ApplyRoomProgress(StoryData)) return false;
+		if (bHasStoredStory && !Story->ApplyRoomProgress(StoryData)) return FailSharedRestore(TEXT("Story progress unavailable or incompatible"));
 	}
-	if (Ship)
-		if (UShipUpgradeComponent* Upgrade = Ship->GetUpgradeComponent())
-			Upgrade->RestoreActiveNodeIds(Shared.ShipUpgradeNodeIds);
+	else if (bHasStoredStory) return FailSharedRestore(TEXT("Story subsystem unavailable"));
+	Upgrade->RestoreActiveNodeIds(Shared.ShipUpgradeNodeIds);
+	TArray<FName> ActualNodes = Upgrade->GetActiveNodeIds();
+	TArray<FName> ExpectedNodes = Shared.ShipUpgradeNodeIds;
+	ActualNodes.Sort(FNameLexicalLess());
+	ExpectedNodes.Sort(FNameLexicalLess());
+	if (ActualNodes != ExpectedNodes) return FailSharedRestore(TEXT("Restored node set differs from saved node set"));
+	if (!IsValid(Ship->GetCurrentPlayerShip()))
+		if (AMultiGameMode* Mode = World->GetAuthGameMode<AMultiGameMode>())
+			if (AShip* PhysicalShip = Cast<AShip>(Mode->GetPlayerRespawnShip())) Ship->RegisterPlayerShip(PhysicalShip, false);
+	Ship->ForceNetUpdate();
 	TSet<FString> Keys;
 	for (TActorIterator<ASharedStorageChest> It(World); It; ++It)
 	{
@@ -667,8 +746,28 @@ bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 			Slot.Count = Entry.Count;
 		}
 		if (Room->IsGameOverRetryTravelPending()) { Slots.Reset(); Slots.SetNum(Stored->SlotsPerTab * 4); }
-		if (!Chest->GetStorageComponent()->ConfigureTabbedStorage(Chest->InitialSlotsPerTab, Slots, Stored->SlotsPerTab)) return false;
+		UStorageComponent* Storage = Chest->GetStorageComponent();
+		if (!Storage || !Storage->ConfigureTabbedStorage(Chest->InitialSlotsPerTab, Slots, Stored->SlotsPerTab))
+			return FailSharedRestore(TEXT("Storage restore failed: ") + Key);
+		const TArray<FInventorySlot> ObservedSlots = Storage->GetPersistentSlots();
+		const int32 ActualCapacity = Storage->GetSlotsPerTab();
+		bool bSlotsMatch = ActualCapacity >= Stored->SlotsPerTab && ObservedSlots.Num() == ActualCapacity * 4;
+		// Storage deliberately permits a larger authored capacity after loading.
+		for (int32 Tab = 0; bSlotsMatch && Tab < 4; ++Tab)
+			for (int32 Index = 0; bSlotsMatch && Index < ActualCapacity; ++Index)
+			{
+				const FInventorySlot& Observed = ObservedSlots[Tab * ActualCapacity + Index];
+				if (Index < Stored->SlotsPerTab)
+				{
+					const FInventorySlot& Expected = Slots[Tab * Stored->SlotsPerTab + Index];
+					bSlotsMatch = Expected.ItemTag == Observed.ItemTag && Expected.Count == Observed.Count;
+				}
+				else bSlotsMatch = Observed.IsEmpty();
+			}
+		if (!bSlotsMatch) return FailSharedRestore(TEXT("Storage contents differ after restore: ") + Key);
 	}
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedRestore Result=Applied Scope=Nodes RoomId=%s Sequence=%llu Expected=%d Actual=%d Tree=%s State=%s"),
+		*Save->RoomId.ToString(), Save->CaptureSequence, ExpectedNodes.Num(), ActualNodes.Num(), *GetPathNameSafe(Upgrade->UpgradeTree), *Ship->GetPathName());
 	return true;
 }
 
@@ -714,14 +813,21 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 		if (const UShipUpgradeComponent* Upgrade = Ship->GetUpgradeComponent())
 		{
 			Shared.ShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
-			SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=ShipUpgrade Actor=%s Nodes=%d"),
-				*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Ship->GetPathName(), Shared.ShipUpgradeNodeIds.Num());
+			Shared.ShipUpgradeTree = FSoftObjectPath(Upgrade->UpgradeTree);
+			UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=Success Scope=Nodes RoomId=%s Sequence=%llu Actor=%s Nodes=%d Tree=%s"),
+				*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Ship->GetPathName(), Shared.ShipUpgradeNodeIds.Num(), *Shared.ShipUpgradeTree.ToString());
 		}
-		else UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCapture Result=Skipped RoomId=%s Sequence=%llu Object=ShipUpgrade Actor=%s Reason=MissingUpgradeComponent"),
-			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Ship->GetPathName());
+		else
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SharedCapture Result=Failed Scope=Nodes Reason=MissingComponent"));
+			return false;
+		}
 	}
-	else UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCapture Result=Skipped RoomId=%s Sequence=%llu Object=ShipUpgrade Reason=SharedStateActorUnavailable"),
-		*Save->RoomId.ToString(), Save->CaptureSequence + 1);
+	else
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SharedCapture Result=Failed Scope=Nodes Reason=StateUnavailable"));
+		return false;
+	}
 	TSet<FString> Keys;
 	for (TActorIterator<ASharedStorageChest> It(World); It; ++It)
 	{

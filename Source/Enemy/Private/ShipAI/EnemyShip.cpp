@@ -1193,7 +1193,10 @@ void AEnemyShip::ApplyEffectiveDormancyState()
 	{
 		bEffectiveDormancyApplied = true;
 		bDormancyShipCollisionEnabled = GetActorEnableCollision();
-		bDormancyShipTickEnabled = IsActorTickEnabled();
+		// Deferred pooled spawns enter suspension before Tick registration/BeginPlay.
+		// The current flag is then false even when this BP normally starts ticking.
+		bDormancyShipTickEnabled = HasActorBegunPlay() ? IsActorTickEnabled()
+			: PrimaryActorTick.bCanEverTick && PrimaryActorTick.bStartWithTickEnabled;
 		bDormancyShipPhysicsEnabled = IsShipRuntimePhysicsEnabled();
 		SetAIControlInput(0.0f, 0.0f);
 		if (HasAuthority())

@@ -1252,13 +1252,13 @@ void AShip::PossessedBy(AController* NewController)
 		UShipUpgradeComponent* DriverUpgrade = SharedUpgradeState
 			? SharedUpgradeState->GetUpgradeComponent()
 			: nullptr;
-		UE_LOG(LogTemp, Warning,
+/* 		UE_LOG(LogTemp, Warning,
 			TEXT("[ShipUpgradeTrace][ShipPossessed] Ship=%s Controller=%s PlayerState=%s SharedUpgrade=%s ActiveNodes=%d"),
 			*GetNameSafe(this),
 			*GetNameSafe(NewController),
 			*GetNameSafe(InPlayerState),
 			*GetNameSafe(DriverUpgrade),
-			DriverUpgrade ? DriverUpgrade->GetActiveNodeIds().Num() : -1);
+			DriverUpgrade ? DriverUpgrade->GetActiveNodeIds().Num() : -1) */;
 
 		if (PlayerController->IsLocalController() && RidingPlayer)
 		{

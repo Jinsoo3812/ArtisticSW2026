@@ -192,8 +192,8 @@ int32 USWRoomAssetSetupCommandlet::Main(const FString& Params)
 	{
 		const USWRoomSaveGame* Saved = FSWRoomSaveStore::LoadCurrentRoom(GetTransientPackage());
 		if (!Saved) { UE_LOG(LogTemp, Error, TEXT("SWRoom inspect: current room unavailable")); return 21; }
-		UE_LOG(LogTemp, Display, TEXT("SWRoom inspect: Sequence=%llu Contract=%d Guests=%d SharedShipUpgradeNodes=%d"),
-			Saved->CaptureSequence, Saved->ContentContractVersion, Saved->Guests.Num(), Saved->SharedProgress.ShipUpgradeNodeIds.Num());
+/* 		UE_LOG(LogTemp, Display, TEXT("SWRoom inspect: Sequence=%llu Contract=%d Guests=%d SharedShipUpgradeNodes=%d"),
+			Saved->CaptureSequence, Saved->ContentContractVersion, Saved->Guests.Num(), Saved->SharedProgress.ShipUpgradeNodeIds.Num()) */;
 		for (int32 Index = 0; Index < Saved->Guests.Num(); ++Index)
 			UE_LOG(LogTemp, Display, TEXT("SWRoom inspect: guest %d Resume=%d Location=%s InventorySlots=%d PersonalUpgradeNodes=%d"),
 				Index, Saved->Guests[Index].Progress.bHasResumeTransform,

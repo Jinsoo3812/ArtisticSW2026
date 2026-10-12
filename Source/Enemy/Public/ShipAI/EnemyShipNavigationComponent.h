@@ -8,6 +8,18 @@
 class AEnemyShip;
 class AShip;
 
+USTRUCT()
+struct FEnemyShipHomeAlignment
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bActive = false;
+	UPROPERTY(SaveGame) bool bRestorePhysics = true;
+	UPROPERTY(SaveGame) FTransform Start;
+	UPROPERTY(SaveGame) FTransform Home;
+	UPROPERTY(SaveGame) float Duration = 1.0f;
+	UPROPERTY(SaveGame) float Elapsed = 0.0f;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnEnemyShipNavigationStateChanged,
 	ENavalCombatState, PreviousState,
@@ -55,6 +67,9 @@ public:
 	bool GetResolvedHomeLocation(FVector& OutHomeLocation) const;
 	bool GetSpawnHomeTransform(FTransform& OutTransform) const;
 	void ResetSpawnHome(const FTransform& Transform);
+	bool IsAligningHome() const { return HomeAlignment.bActive; }
+	UPROPERTY(EditAnywhere, Category="Enemy Ship|Navigation", meta=(ClampMin="0.0", Units="s"))
+	float HomeAlignmentDuration = 1.0f;
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	ENavalCombatState GetCurrentState() const { return CurrentState; }
@@ -89,6 +104,8 @@ protected:
 private:
 	UFUNCTION()
 	void OnRep_CurrentState(ENavalCombatState PreviousState);
+	UFUNCTION() void OnRep_HomeAlignment();
+	void TickHomeAlignment(float DeltaTime);
 
 	struct FRuntimeOverride
 	{
@@ -146,4 +163,8 @@ private:
 	TWeakObjectPtr<AActor> TerrainThreatActor;
 	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;
+	UPROPERTY(ReplicatedUsing=OnRep_HomeAlignment, SaveGame)
+	FEnemyShipHomeAlignment HomeAlignment;
+	float AlignmentClientReceivedTime = 0.0f;
+	bool bAlignmentPhysicsSuspended = false;
 };

@@ -33,6 +33,8 @@ public:
 	/** Broadcast only after all actor references/effects have finalized successfully. Server-local. */
 	FSimpleMulticastDelegate OnRestoreCompleted;
 	FOnSWRoomPrepareRestore OnPrepareRestore;
+	/** Finish lazy registration before the capture audit freezes the actor set. */
+	FSimpleMulticastDelegate OnPrepareCapture;
 	void ReleaseActorForPooling(AActor* Actor);
 	void ClearPooledActorTombstone(const FGuid& Id);
 	void UpdateRegisteredActorId(AActor* Actor, const FGuid& PreviousId, const FGuid& ReservedId);

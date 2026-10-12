@@ -20,6 +20,12 @@ namespace
 constexpr int64 MaxRoomFileBytes = 64ll * 1024 * 1024;
 constexpr int32 MaxActorRecords = 100000;
 constexpr int32 MaxRecordBytes = 1024 * 1024;
+constexpr int32 MaxEnemyShipPoolAdapterBytes = 8 * 1024 * 1024;
+int32 AdapterByteLimit(const FSWRoomActorRecord& Record)
+{
+	return Record.ClassPath.ToString() == TEXT("/Script/Enemy.EnemyShipBundlePool")
+		? MaxEnemyShipPoolAdapterBytes : MaxRecordBytes;
+}
 constexpr int32 MaxGuests = 256;
 constexpr int32 MaxPlayerSlots = 40000;
 constexpr int32 MaxStorageSlots = 40000;
@@ -62,19 +68,24 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 	TSet<FString> UnloadedPackages;
 	auto ValidAdapter = [](const FSWRoomActorRecord& Record)
 	{
-		if (Record.AdapterBytes.IsEmpty()) return Record.AdapterType.IsNone() && Record.AdapterVersion == 0;
+		const bool bPool = AdapterByteLimit(Record) == MaxEnemyShipPoolAdapterBytes;
+		// Losing this domain loses all virtual ships; never commit it as a partial capture.
+		if (Record.AdapterBytes.IsEmpty()) return !bPool && Record.AdapterType.IsNone() && Record.AdapterVersion == 0;
 		if (Record.AdapterType != TEXT("Domains") || Record.AdapterVersion != 1) return false;
 		FSWRoomDomainPayload Payload;
 		if (!FSWRoomStructCodec::Read(Record.AdapterBytes, Payload) || Payload.Parts.IsEmpty()) return false;
 		uint8 PreviousDomain = 0;
+		bool bHasPoolDomain = false;
 		for (const FSWRoomDomainPart& Part : Payload.Parts)
 		{
 			const uint8 Domain = static_cast<uint8>(Part.Domain);
 			if (Domain <= PreviousDomain || Domain > static_cast<uint8>(ESWRoomDomain::EnemyShipPool)
-				|| Part.Version <= 0 || Part.Bytes.IsEmpty() || Part.Bytes.Num() > MaxRecordBytes) return false;
+				|| Part.Version <= 0 || Part.Bytes.IsEmpty()
+				|| Part.Bytes.Num() > (bPool && Part.Domain == ESWRoomDomain::EnemyShipPool ? MaxEnemyShipPoolAdapterBytes : MaxRecordBytes)) return false;
+			bHasPoolDomain |= Part.Domain == ESWRoomDomain::EnemyShipPool;
 			PreviousDomain = Domain;
 		}
-		return true;
+		return !bPool || bHasPoolDomain;
 	};
 	auto ActorFailure = [&ValidMotion, &ValidAdapter, &ActorIds](const FSWRoomActorRecord& Record)
 	{
@@ -90,7 +101,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		if (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0)) Reasons.Add(TEXT("InvalidRuntimeCreator"));
 		if (Record.ContractVersion <= 0) Reasons.Add(TEXT("InvalidContractVersion"));
 		if (Record.SaveGameBytes.Num() > MaxRecordBytes) Reasons.Add(TEXT("ActorPayloadTooLarge"));
-		if (Record.AdapterBytes.Num() > MaxRecordBytes) Reasons.Add(TEXT("AdapterPayloadTooLarge"));
+		if (Record.AdapterBytes.Num() > AdapterByteLimit(Record)) Reasons.Add(TEXT("AdapterPayloadTooLarge"));
 		if (!ValidAdapter(Record)) Reasons.Add(TEXT("InvalidAdapterPayload"));
 		if (ActorIds.Contains(Record.StableId)) Reasons.Add(TEXT("DuplicateActorId"));
 		return FString::Join(Reasons, TEXT(","));
@@ -115,7 +126,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			|| !ValidMotion(Record.MotionState)
 			|| (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0))
 			|| Record.ContractVersion <= 0
-			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > MaxRecordBytes
+			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > AdapterByteLimit(Record)
 			|| !ValidAdapter(Record)
 			|| ActorIds.Contains(Record.StableId))
 		{
@@ -152,7 +163,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			|| ActorIds.Contains(Record.StableId)
 			|| (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0))
 			|| Record.ContractVersion <= 0
-			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > MaxRecordBytes
+			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > AdapterByteLimit(Record)
 			|| !ValidAdapter(Record))
 		{
 			TraceActorFailure(Record, TEXT("Unloaded"), ActorFailure(Record));
@@ -340,6 +351,13 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			return false;
 		}
 		GuestNames.Add(Guest.DisplayName);
+	}
+	if (Room->SharedProgress.ShipUpgradeNodeIds.Num() > 4096) return Fail(TEXT("SharedNodeCount"));
+	TSet<FName> SharedNodeIds;
+	for (const FName NodeId : Room->SharedProgress.ShipUpgradeNodeIds)
+	{
+		if (NodeId.IsNone() || SharedNodeIds.Contains(NodeId)) return Fail(TEXT("InvalidOrDuplicateSharedNode"));
+		SharedNodeIds.Add(NodeId);
 	}
 	TSet<FString> StorageKeys;
 	for (const FSWRoomStorageProgress& Storage : Room->SharedProgress.Storage)

@@ -9,6 +9,9 @@
 class AEnemyShip;
 class UInstancedStaticMeshComponent;
 class ULevel;
+class UActorChannel;
+class FOutBunch;
+struct FReplicationFlags;
 
 USTRUCT()
 struct FEnemyShipBundleProperty
@@ -73,6 +76,70 @@ struct FEnemyShipBundlePoolState
 	UPROPERTY(SaveGame) TArray<FEnemyShipBundlePlacement> Placements;
 };
 
+/** Presentation only. Encounter configuration and room-save definitions stay on the server. */
+USTRUCT()
+struct FEnemyShipBundleVisualObject
+{
+	GENERATED_BODY()
+	UPROPERTY() FString Key;
+	UPROPERTY() TArray<FEnemyShipBundleProperty> Properties;
+};
+
+USTRUCT()
+struct FEnemyShipBundleVisualDefinition
+{
+	GENERATED_BODY()
+	UPROPERTY() FGuid StableId;
+	UPROPERTY() FName AuthoredName;
+	UPROPERTY() FTransform HomeTransform;
+	UPROPERTY() TArray<FEnemyShipBundleMesh> Meshes;
+	UPROPERTY() TArray<FEnemyShipBundleVisualObject> Objects;
+};
+
+USTRUCT()
+struct FEnemyShipBundleVisualState
+{
+	GENERATED_BODY()
+	UPROPERTY() uint32 Assignment = 0;
+	UPROPERTY() bool bDormant = false;
+	UPROPERTY() bool bDestroyed = false;
+	UPROPERTY() bool bUnloaded = false;
+	UPROPERTY() bool bStoryHidden = false;
+	UPROPERTY() TObjectPtr<AEnemyShip> ActiveShip;
+};
+
+/** One subobject per logical ship bounds each replication payload independently. */
+UCLASS()
+class ENEMY_API UEnemyShipBundlePresentation : public UObject
+{
+	GENERATED_BODY()
+public:
+	virtual bool IsSupportedForNetworking() const override { return true; }
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	UPROPERTY(Replicated) FEnemyShipBundleVisualDefinition Definition;
+	UPROPERTY(Replicated) FEnemyShipBundleVisualState State;
+};
+
+struct FEnemyShipPoolAuditInstance
+{
+	TWeakObjectPtr<UInstancedStaticMeshComponent> Component;
+	int32 Index = INDEX_NONE;
+	FTransform ExpectedWorldTransform;
+};
+
+struct FEnemyShipPoolAuditSample
+{
+	TWeakObjectPtr<AEnemyShip> PreviousActor;
+	FTransform PreviousTransform;
+	uint32 Signature = 0;
+	uint32 Assignment = 0;
+	bool bDormant = false;
+	bool bInitialized = false;
+	bool bDeferredSample = false;
+	bool bMotionReported = false;
+	double PhaseStartTime = 0.0;
+};
+
 UCLASS()
 class ENEMY_API AEnemyShipBundlePool : public AActor, public ISWRoomStateAdapter
 {
@@ -82,6 +149,7 @@ public:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual bool ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& Parts, TArray<FSWRoomCaptureIssue>& Issues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& Error) override;
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& Actors, FString& Error) override;
@@ -101,18 +169,29 @@ private:
 	void PrepareRestore(const FSWRoomWorldSnapshot& Snapshot, FString& Error);
 	void RestoreCompleted();
 	void HandleLevelRemoved(ULevel* Level, UWorld* World);
+	void UpdatePresentation();
+	void LogPoolCountsIfChanged();
+	void AuditClientPresentation();
 	UFUNCTION() void OnRep_Placements();
 	UFUNCTION() void HandleShipDestroyed(AActor* Ship);
-	UPROPERTY(ReplicatedUsing=OnRep_Placements) TArray<FEnemyShipBundlePlacement> Placements;
+	UPROPERTY(Transient) TArray<FEnemyShipBundlePlacement> Placements;
+	UPROPERTY(ReplicatedUsing=OnRep_Placements) TArray<TObjectPtr<UEnemyShipBundlePresentation>> PresentationNodes;
 	UPROPERTY(Transient) TArray<TObjectPtr<AEnemyShip>> IdleBundles;
 	UPROPERTY(Transient) TArray<TObjectPtr<UInstancedStaticMeshComponent>> ProxyInstanceComponents;
 	TMap<FGuid, uint32> ClientAssignments;
 	uint32 LastPresentationHash = 0;
 	FTimerHandle EvaluationTimer;
 	FDelegateHandle PrepareRestoreHandle;
+	FDelegateHandle PrepareCaptureHandle;
 	FDelegateHandle RestoreCompletedHandle;
 	FDelegateHandle LevelRemovedHandle;
 	bool bChangingPool = false;
+	bool bLoggedPoolCounts = false;
+	TMap<FGuid, uint8> LastLoggedPlacementStates;
+	TSet<TWeakObjectPtr<AEnemyShip>> LastLoggedIdleBundles;
+	TMap<FGuid, FString> LastWakeErrors;
+	TMap<FGuid, TArray<FEnemyShipPoolAuditInstance>> AuditInstances;
+	TMap<FGuid, FEnemyShipPoolAuditSample> ClientAuditSamples;
 };
 
 UCLASS()

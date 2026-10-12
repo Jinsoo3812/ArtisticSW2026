@@ -48,6 +48,7 @@ private:
 	TWeakObjectPtr<UWorld> PendingWorld;
 	double RestoreDeadline = 0.0;
 	double DiagnosticLastRestoreLogAt = 0.0;
+	FString LastSharedRestoreFailure;
 	bool bReturning = false;
 	enum class ERoomTransitionReason : uint8 { Return, FinalDeparture, GameOverRetry };
 	ERoomTransitionReason TransitionReason = ERoomTransitionReason::Return;

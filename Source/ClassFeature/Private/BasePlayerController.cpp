@@ -150,17 +150,17 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 	if (!SharedState)
 	{
 		SharedState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
-			*GetNameSafe(this), *GetNameSafe(SharedState));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
+// 			*GetNameSafe(this), *GetNameSafe(SharedState));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
-			*GetNameSafe(this),
-			*GetNameSafe(SharedState),
-			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
+// 			*GetNameSafe(this),
+// 			*GetNameSafe(SharedState),
+// 			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
 	}
 
 	// Preserve the designer-authored tree configured on BP_BasePlayerState. The
@@ -181,12 +181,12 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 				SharedUpgrade->PreviewBaseStats,
 				false);
 			SharedState->ForceNetUpdate();
-			UE_LOG(LogTemp, Warning,
-				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
-				*GetNameSafe(SharedState),
-				*GetNameSafe(ConfiguredUpgrade),
-				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
-				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
+// 			UE_LOG(LogTemp, Warning,
+// 				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
+// 				*GetNameSafe(SharedState),
+// 				*GetNameSafe(ConfiguredUpgrade),
+// 				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
+// 				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
 		}
 		if (SharedUpgrade)
 		{
@@ -212,9 +212,9 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 		{
 			SharedState->RegisterPlayerShip(FoundPlayerShip);
 		}
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
-			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
+// 			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
 	}
 
 	/* UE_LOG(LogTemp, Log,
@@ -386,10 +386,10 @@ void ABasePlayerController::ServerRequestActivateSharedShipUpgrade_Implementatio
 	if (SharedUpgrade && Inventory)
 	{
 		const bool bIgnoreCosts = RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest();
-		UE_LOG(LogTemp, Warning,
+/* 		UE_LOG(LogTemp, Warning,
 			TEXT("[ShipUpgradeTrace][SharedRequestOptions] Player=%s IgnoreMaterialCosts=%s"),
 			*GetNameSafe(RequestingPlayer),
-			bIgnoreCosts ? TEXT("true") : TEXT("false"));
+			bIgnoreCosts ? TEXT("true") : TEXT("false")) */;
 		Result = SharedUpgrade->ActivateNodeWithInventoryProvider(NodeId, Inventory, bIgnoreCosts);
 		SharedState->ForceNetUpdate();
 		if (AShip* Ship = SharedState->GetCurrentPlayerShip())
@@ -726,6 +726,7 @@ void ABasePlayerController::RequestRoomSave()
 void ABasePlayerController::RequestRoomSaveAndExit()
 {
 	if (!IsLocalController()) return;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=Requested PendingSave=%d RequestId=%llu"), bRoomSavePending, PendingRoomSaveRequestId);
 	bExitAfterRoomSave = true;
 	if (!bRoomSavePending) RequestRoomSave();
 }
@@ -795,7 +796,12 @@ void ABasePlayerController::ServerRequestRoomSave_Implementation(uint64 RequestI
 
 void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId, bool bSuccess, const FString& Message)
 {
-	if (!bRoomSavePending || RequestId != PendingRoomSaveRequestId) return;
+	if (!bRoomSavePending || RequestId != PendingRoomSaveRequestId)
+	{
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=SaveAndExit Phase=ResultIgnored RequestId=%llu PendingId=%llu PendingSave=%d ExitAfterSave=%d"),
+			RequestId, PendingRoomSaveRequestId, bRoomSavePending, bExitAfterRoomSave);
+		return;
+	}
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=ManualSave Side=Client Result=%s RequestId=%llu Message=%s"), bSuccess ? TEXT("Success") : TEXT("Failed"), RequestId, *Message);
 	GetWorldTimerManager().ClearTimer(RoomSaveTimeoutHandle);
 	bRoomSavePending = false;
@@ -804,9 +810,11 @@ void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId
 	if (!bSuccess) { bExitAfterRoomSave = false; return; }
 	if (bExitAfterRoomSave)
 	{
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=LeaveRoom RequestId=%llu"), RequestId);
 		bExitAfterRoomSave = false;
 		if (USWRoomSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr)
 			Room->LeaveRoom();
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=ProcessExitRequested RequestId=%llu"), RequestId);
 		FPlatformMisc::RequestExit(false);
 	}
 }
