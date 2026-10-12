@@ -156,6 +156,8 @@ public:
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
 		float Tolerance, TArray<FString>& Fields) const override;
 	bool ApplyLogicalOrbitDistance(AEnemyShip* Ship) const;
+	/** Maximum UNUSED BP bundles cached across all classes. Active bundles are
+	 * separate and unlimited; reuse requires the exact BP class and level package. */
 	UPROPERTY(EditAnywhere, Category="Ship|Optimization", meta=(ClampMin="0")) int32 IdleCapacity = 8;
 
 private:

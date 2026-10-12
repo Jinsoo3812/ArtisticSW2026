@@ -6,6 +6,7 @@
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
+#include "Network/SWRoomSaveAudit.h"
 #include "SWRoomStateAdapter.generated.h"
 
 class AActor;
@@ -63,6 +64,7 @@ struct ARTISTICSWCORE_API FSWRoomStructCodec
 	template <typename T>
 	static bool Write(const T& Value, TArray<uint8>& OutBytes)
 	{
+		SWRoomSaveAudit::RecordStruct(T::StaticStruct(), &Value);
 		OutBytes.Reset();
 		FMemoryWriter Writer(OutBytes, true);
 		FObjectAndNameAsStringProxyArchive Archive(Writer, false);
@@ -79,6 +81,8 @@ struct ARTISTICSWCORE_API FSWRoomStructCodec
 		FObjectAndNameAsStringProxyArchive Archive(Reader, true);
 		Archive.ArIsSaveGame = true;
 		T::StaticStruct()->SerializeItem(Archive, &OutValue, nullptr);
-		return !Archive.IsError() && Reader.Tell() == Bytes.Num();
+		const bool bValid = !Archive.IsError() && Reader.Tell() == Bytes.Num();
+		if (bValid) SWRoomSaveAudit::RecordStruct(T::StaticStruct(), &OutValue);
+		return bValid;
 	}
 };

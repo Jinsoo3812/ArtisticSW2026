@@ -5,6 +5,7 @@
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
 #include "Network/SWRoomLoadDiagnostics.h"
+#include "Network/SWRoomSaveAudit.h"
 #include "EngineUtils.h"
 #include "Engine/Level.h"
 #include "Engine/LevelStreaming.h"
@@ -435,6 +436,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			}
 			if (bCandidate)
 			{
+				SWRoomSaveAudit::RecordObject(*Actor->GetPathName(), Actor);
 				const FString CandidateKey = Actor->GetPathName() + TEXT(" | ") + Actor->GetClass()->GetPathName();
 				UnsupportedCandidates.Add(CandidateKey);
 				if (bDetailedLog) AuditRows.Add(CandidateKey + TEXT(" | Component= | Field=Actor | Reason=Persistent gameplay candidate has no room contract | Disposition=Unclassified"));
@@ -536,6 +538,9 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoomSaveKind Kind,
 	uint64 Sequence, FString& OutError, ESWRoomCaptureFailureKind* OutFailureKind)
 {
+	const USWRoomProgressSubsystem* AuditRoom = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const FGuid AuditRoomId = AuditRoom && AuditRoom->GetActiveRoom() ? AuditRoom->GetActiveRoom()->RoomId : FGuid();
+	SWRoomSaveAudit::FScopedContext CaptureAudit(TEXT("WorldCapture"), AuditRoomId, Sequence, TEXT("World"));
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.Capture"));
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=WorldCapture Phase=Begin Sequence=%llu Kind=%s World=%s"),
 		Sequence, *UEnum::GetValueAsString(Kind), *GetNameSafe(GetWorld()));
@@ -565,6 +570,8 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : RegisteredActors)
 	{
 		AActor* Actor = Pair.Value.Get();
+		SWRoomSaveAudit::FScopedContext ActorAudit(TEXT("CaptureActor"), AuditRoomId, Sequence, GetPathNameSafe(Actor));
+		SWRoomSaveAudit::RecordObject(TEXT("LiveActor"), Actor);
 		TRACE_CPUPROFILER_EVENT_SCOPE_TEXT_CONDITIONAL(SWRoomLoadDiagnostics::IsEnabled() && Actor ? *Actor->GetClass()->GetPathName() : TEXT("SnapshotActor"), SWRoomLoadDiagnostics::IsEnabled());
 		if (!Actor || Actor->IsActorBeingDestroyed())
 		{
@@ -716,6 +723,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		for (UActorComponent* Child : Actor->GetComponents())
 		{
 			if (!Child || Child == Component) continue;
+			SWRoomSaveAudit::RecordObject(*Child->GetName(), Child);
 			const bool bIndependentPhysics = Cast<UPrimitiveComponent>(Child)
 				&& Child != Actor->GetRootComponent()
 				&& CastChecked<UPrimitiveComponent>(Child)->IsSimulatingPhysics()
@@ -875,11 +883,16 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	if (!OutSnapshot.CaptureIssues.IsEmpty())
 		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=CaptureIssues Sequence=%llu Count=%d DetailedLog=%d"),
 			Sequence, OutSnapshot.CaptureIssues.Num(), SWRoomLogging::IsDetailedEnabled());
+	SWRoomSaveAudit::RecordStruct(FSWRoomWorldSnapshot::StaticStruct(), &OutSnapshot);
 	return true;
 }
 
 bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FString& OutError, bool bPartitionRestore)
 {
+	const USWRoomProgressSubsystem* AuditRoom = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const FGuid AuditRoomId = AuditRoom && AuditRoom->GetActiveRoom() ? AuditRoom->GetActiveRoom()->RoomId : FGuid();
+	SWRoomSaveAudit::FScopedContext RestoreAudit(TEXT("WorldRestore"), AuditRoomId, Snapshot.CaptureSequence, TEXT("World"));
+	SWRoomSaveAudit::RecordStruct(FSWRoomWorldSnapshot::StaticStruct(), &Snapshot);
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.Restore"));
 	if (!GetWorld() || GetWorld()->GetNetMode() == NM_Client || Snapshot.MapPath != GetMapPath(GetWorld()) || !Audit(OutError))
 	{
@@ -1076,6 +1089,7 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 		}
 		RegisteredActors.Add(Record.StableId, Actor);
 		RestoredActorsById.Add(Record.StableId, Actor);
+		SWRoomSaveAudit::FScopedContext ActorAudit(TEXT("RestoreActor"), AuditRoomId, Snapshot.CaptureSequence, Actor->GetPathName());
 		DeserializeValues(Actor, Record.SaveGameBytes);
 		if (!Record.AdapterBytes.IsEmpty())
 		{
@@ -1318,6 +1332,9 @@ bool USWRoomSnapshotSubsystem::CompareDeclared(const FSWRoomWorldSnapshot& Expec
 bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expected,
 	const FSWRoomWorldSnapshot& Actual, TArray<FString>& OutDifferences) const
 {
+	const USWRoomProgressSubsystem* AuditRoom = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const FGuid AuditRoomId = AuditRoom && AuditRoom->GetActiveRoom() ? AuditRoom->GetActiveRoom()->RoomId : FGuid();
+	SWRoomSaveAudit::FScopedContext CompareAudit(TEXT("CompareRestored"), AuditRoomId, Actual.CaptureSequence, TEXT("World"));
 	OutDifferences.Reset();
 	if (Expected.MapPath != Actual.MapPath) OutDifferences.Add(TEXT("MapPath"));
 	TMap<FGuid, const FSWRoomActorRecord*> ActualActors;
@@ -1336,6 +1353,7 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 	auto CompareActor = [&](const FSWRoomActorRecord& Before, const FSWRoomActorRecord* After)
 	{
 		const FString Prefix = FString::Printf(TEXT("ID=%s Class=%s"), *Before.StableId.ToString(), *Before.ClassPath.ToString());
+		SWRoomSaveAudit::FScopedContext ActorAudit(TEXT("CompareRestoredActor"), AuditRoomId, Actual.CaptureSequence, Prefix);
 		if (!After)
 		{
 			OutDifferences.Add(Prefix + TEXT(" Field=Existence Expected=Present Actual=Missing"));
@@ -1558,7 +1576,12 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 		bool bCovered = false;
 		for (const FSWRoomCaptureIssue& Issue : Expected.CaptureIssues) bCovered |= IsCovered(Issue);
 		for (const FSWRoomCaptureIssue& Issue : RestoreIssues) bCovered |= IsCovered(Issue);
-		if (bCovered) OutDifferences.RemoveAt(Index);
+		if (bCovered)
+		{
+			SWRoomSaveAudit::RecordDifferences(TEXT("DeclaredCaptureIssue"), {Difference});
+			OutDifferences.RemoveAt(Index);
+		}
 	}
+	SWRoomSaveAudit::RecordDifferences(TEXT("WorldRestoreResult"), OutDifferences);
 	return OutDifferences.IsEmpty();
 }

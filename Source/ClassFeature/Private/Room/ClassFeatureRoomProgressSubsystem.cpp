@@ -42,6 +42,7 @@
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Network/SWRoomSaveAudit.h"
 #include "Containers/Ticker.h"
 #include "TimerManager.h"
 
@@ -666,6 +667,8 @@ bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 	const USWRoomSaveGame* Save = Room ? Room->GetActiveRoom() : nullptr;
 	if (!World || !Save) return false;
 	const FSWRoomSharedProgress& Shared = Save->SharedProgress;
+	SWRoomSaveAudit::FScopedContext SharedAudit(TEXT("RestoreShared"), Save->RoomId, Save->CaptureSequence, TEXT("Shared"));
+	SWRoomSaveAudit::RecordStruct(FSWRoomSharedProgress::StaticStruct(), &Shared);
 	auto FailSharedRestore = [this](const FString& Reason)
 	{
 		if (LastSharedRestoreFailure != Reason)
@@ -717,6 +720,9 @@ bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 	}
 	else if (bHasStoredStory) return FailSharedRestore(TEXT("Story subsystem unavailable"));
 	Upgrade->RestoreActiveNodeIds(Shared.ShipUpgradeNodeIds);
+	SWRoomSaveAudit::RecordObject(TEXT("ObservedNodes"), Upgrade);
+	if (UStorySubsystem* Story = GetGameInstance()->GetSubsystem<UStorySubsystem>())
+		SWRoomSaveAudit::RecordObject(TEXT("ObservedStory"), Story->BuildRoomProgress());
 	TArray<FName> ActualNodes = Upgrade->GetActiveNodeIds();
 	TArray<FName> ExpectedNodes = Shared.ShipUpgradeNodeIds;
 	ActualNodes.Sort(FNameLexicalLess());
@@ -750,6 +756,16 @@ bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 		if (!Storage || !Storage->ConfigureTabbedStorage(Chest->InitialSlotsPerTab, Slots, Stored->SlotsPerTab))
 			return FailSharedRestore(TEXT("Storage restore failed: ") + Key);
 		const TArray<FInventorySlot> ObservedSlots = Storage->GetPersistentSlots();
+		FSWRoomStorageProgress ObservedStorage = *Stored;
+		ObservedStorage.SlotsPerTab = Storage->GetSlotsPerTab();
+		ObservedStorage.Slots.Reset();
+		for (const FInventorySlot& Slot : ObservedSlots)
+		{
+			FSWRoomStorageSlot& Entry = ObservedStorage.Slots.AddDefaulted_GetRef();
+			Entry.ItemTag = Slot.ItemTag;
+			Entry.Count = Slot.Count;
+		}
+		SWRoomSaveAudit::RecordStruct(FSWRoomStorageProgress::StaticStruct(), &ObservedStorage);
 		const int32 ActualCapacity = Storage->GetSlotsPerTab();
 		bool bSlotsMatch = ActualCapacity >= Stored->SlotsPerTab && ObservedSlots.Num() == ActualCapacity * 4;
 		// Storage deliberately permits a larger authored capacity after loading.
@@ -889,6 +905,8 @@ void UClassFeatureRoomProgressSubsystem::RestorePlayer(ABasePlayer* Player)
 	if (!Save || !Mode || !Player->GetController()) return;
 	auto ApplyProgress = [Player, Room](const FSWRoomPlayerProgress& Stored)
 	{
+		if (const USWRoomSaveGame* AuditSave = Room->GetActiveRoom())
+			SWRoomLoadDiagnostics::LogPlayer(TEXT("PlayerRestoreExpected"), AuditSave->RoomId, AuditSave->CaptureSequence, Player->GetPathName(), Stored);
 		for (const FSWRoomCaptureIssue& Issue : Stored.CaptureIssues)
 			SW_ROOM_DETAIL_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore Result=Partial Player=%s Domain=%s Field=%s Reason=%s"),
 				*Issue.PlayerKey, *Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
@@ -932,11 +950,22 @@ void UClassFeatureRoomProgressSubsystem::RestorePlayer(ABasePlayer* Player)
 	{
 		FString EffectsError;
 		if (!Player->FinalizeRoomProgressEffects(EffectsError)) { Player->bInitialLifeRestoreSuccessful = false; UE_LOG(LogSWRoom, Error, TEXT("Immediate player effects restore failed: %s"), *EffectsError); }
-		if (SWRoomLoadDiagnostics::IsEnabled())
+		if (SWRoomLoadDiagnostics::IsEnabled() || SWRoomSaveAudit::IsEnabled())
 		{
 			FSWRoomPlayerProgress Observed;
 			Player->CaptureRoomProgress(Observed);
 			SWRoomLoadDiagnostics::LogPlayer(TEXT("PlayerAppliedImmediate"), Save->RoomId, Save->CaptureSequence, Player->GetPathName(), Observed);
+			if (!Room->IsReturnTravelPending() && !Room->IsFinalDepartureTravelPending() && !Room->IsGameOverTravelPending() && !Room->IsNewRoomPending())
+			{
+				FSWRoomPlayerProgress Expected;
+				if (GetStoredControllerProgress(Cast<ABasePlayerController>(Player->GetController()), Expected))
+				{
+					SWRoomSaveAudit::FScopedContext Audit(TEXT("ComparePlayerApplied"), Save->RoomId, Save->CaptureSequence, Player->GetPathName());
+					TArray<FString> Differences;
+					FSWRoomStructCodec::CompareSaveGameStruct(FSWRoomPlayerProgress::StaticStruct(), &Expected, &Observed,
+						FMath::Max(Player->GetWorld()->GetDeltaSeconds(), 1.f / 60.f), Differences);
+				}
+			}
 		}
 	}
 	if (Mode->GetPlayerIndex(Player->GetController()) == 0 && Room->IsNewRoomPending())

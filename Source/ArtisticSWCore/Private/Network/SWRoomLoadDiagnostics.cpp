@@ -11,6 +11,7 @@
 #include "Room/SWRoomSaveGame.h"
 #include "Misc/Crc.h"
 #include "UObject/UnrealType.h"
+#include "Network/SWRoomSaveAudit.h"
 
 namespace SWRoomLoadDiagnostics
 {
@@ -55,11 +56,15 @@ void LogFields(const TCHAR* Phase, const FGuid& RoomId, uint64 Sequence, const F
 
 void LogPlayer(const TCHAR* Phase, const FGuid& RoomId, uint64 Sequence, const FString& PlayerKey, const FSWRoomPlayerProgress& Progress)
 {
+	SWRoomSaveAudit::FScopedContext Audit(Phase, RoomId, Sequence, TEXT("Player:") + PlayerKey);
+	SWRoomSaveAudit::RecordStruct(FSWRoomPlayerProgress::StaticStruct(), &Progress);
 	LogFields(Phase, RoomId, Sequence, TEXT("Player:") + PlayerKey, FSWRoomPlayerProgress::StaticStruct(), &Progress);
 }
 
 void LogSnapshot(const TCHAR* Phase, const FGuid& RoomId, const FSWRoomWorldSnapshot& Snapshot)
 {
+	SWRoomSaveAudit::FScopedContext Audit(Phase, RoomId, Snapshot.CaptureSequence, TEXT("WorldSnapshot"));
+	SWRoomSaveAudit::RecordStruct(FSWRoomWorldSnapshot::StaticStruct(), &Snapshot);
 	if (!IsEnabled()) return;
 	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SnapshotEvidence Version=20261010 Phase=%s RoomId=%s Sequence=%llu Map=%s Actors=%d Unloaded=%d Systems=%d Tombstones=%d Issues=%d"),
 		Phase, *RoomId.ToString(), Snapshot.CaptureSequence, *Snapshot.MapPath.ToString(), Snapshot.Actors.Num(),
@@ -90,6 +95,11 @@ void LogSnapshot(const TCHAR* Phase, const FGuid& RoomId, const FSWRoomWorldSnap
 
 void LogRoom(const TCHAR* Phase, const USWRoomSaveGame* Room)
 {
+	if (Room)
+	{
+		SWRoomSaveAudit::FScopedContext Audit(Phase, Room->RoomId, Room->CaptureSequence, TEXT("Room"));
+		SWRoomSaveAudit::RecordObject(TEXT("Room"), Room);
+	}
 	if (!IsEnabled() || !Room) return;
 	LogSnapshot(Phase, Room->RoomId, Room->WorldSnapshot);
 	LogPlayer(Phase, Room->RoomId, Room->CaptureSequence, Room->HostDisplayName, Room->HostProgress);

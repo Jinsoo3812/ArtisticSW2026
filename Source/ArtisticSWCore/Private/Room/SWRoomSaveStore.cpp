@@ -5,6 +5,7 @@
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
 #include "Network/SWRoomLoadDiagnostics.h"
+#include "Network/SWRoomSaveAudit.h"
 #include "SWRoomName.h"
 #include "HAL/PlatformFileManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -455,6 +456,14 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 		if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return FailRead(TEXT("DeserializeOrValidation"));
 	}
 	if (Outer && Room) Room->Rename(nullptr, Outer);
+	// Menu/header polling can repeatedly read the same file. Journal each revision once.
+	static TMap<FString, uint32> AuditedReadChecksums;
+	const uint32* PreviousChecksum = AuditedReadChecksums.Find(Path);
+	if (!PreviousChecksum || *PreviousChecksum != Checksum)
+	{
+		SWRoomLoadDiagnostics::LogRoom(TEXT("DiskRead"), Room);
+		AuditedReadChecksums.Add(Path, Checksum);
+	}
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 		TEXT("Flow=FileRead Result=Validated RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d Bytes=%d Checksum=%u Actors=%d Unloaded=%d Systems=%d Guests=%d"),
 		*Room->RoomId.ToString(), Room->CaptureSequence, *Path, bHeaderOnly, Bytes.Num(), Checksum,
@@ -492,6 +501,8 @@ bool FSWRoomSaveStore::HasLegacyRoomFile()
 bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString& Path, bool bHeaderOnly)
 {
 	if (Path.IsEmpty()) return false;
+	SWRoomSaveAudit::FScopedContext Audit(TEXT("FileWrite"), Room ? Room->RoomId : FGuid(), Room ? Room->CaptureSequence : 0, Path);
+	SWRoomSaveAudit::RecordObject(TEXT("BeforeWrite"), Room);
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.WriteVerified"));
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Begin RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d"),
 		Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->CaptureSequence : 0, *Path, bHeaderOnly);
@@ -533,19 +544,21 @@ bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString&
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Written Path=%s Bytes=%d Checksum=%u"),
 		*Path, FileBytes.Num(), Checksum);
 	USWRoomSaveGame* Checked = LoadPath(GetTransientPackage(), Path, bHeaderOnly);
-	const bool bVerified = Checked && Checked->RoomId == Room->RoomId && Checked->SaveVersion == Room->SaveVersion
+	const bool bHeadersMatch = Checked && Checked->RoomId == Room->RoomId && Checked->SaveVersion == Room->SaveVersion
 		&& Checked->CaptureSequence == Room->CaptureSequence && Checked->MapPath == Room->MapPath;
+	const bool bVerified = bHeadersMatch && SWRoomSaveAudit::ComparePersistedObjects(Room, Checked);
 	if (bVerified)
 	{
-		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Result=Verified Phase=Readback RoomId=%s Sequence=%llu Path=%s"),
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Result=Verified Phase=Readback Fields=AllSaveGame RoomId=%s Sequence=%llu Path=%s"),
 			*Room->RoomId.ToString(), Room->CaptureSequence, *Path);
 	}
 	else
 	{
 		UE_LOG(LogSWRoomSave, Error,
-			TEXT("Flow=FileWrite Result=Failed Phase=Readback RoomId=%s Sequence=%llu Path=%s Loaded=%d LoadedRoomId=%s LoadedSequence=%llu"),
+			TEXT("Flow=FileWrite Result=Failed Phase=Readback RoomId=%s Sequence=%llu Path=%s Loaded=%d LoadedRoomId=%s LoadedSequence=%llu Reason=%s"),
 			*Room->RoomId.ToString(), Room->CaptureSequence, *Path, Checked != nullptr,
-			Checked ? *Checked->RoomId.ToString() : TEXT("None"), Checked ? Checked->CaptureSequence : 0);
+			Checked ? *Checked->RoomId.ToString() : TEXT("None"), Checked ? Checked->CaptureSequence : 0,
+			bHeadersMatch ? TEXT("PersistedFieldMismatch") : TEXT("UnreadableOrHeaderMismatch"));
 	}
 	return bVerified;
 }
