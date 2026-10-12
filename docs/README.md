@@ -6,6 +6,7 @@
 
 | 내용 | 문서 |
 | --- | --- |
+| Player 끼임 감지·3초 홀드 탈출 설정 | [Player 끼임 복구 가이드](Player_Stuck_Recovery_Editor_Guide.md) |
 | 갑판 적 공통 책임·스폰·풀·복제 | [DeckEnemy 공통 구조](DeckEnemy_Core.md) |
 | 휴면/Sight/슬롯/Room 복원 수동 확인 | [스폰 생명주기 검증](Deck_Enemy_Spawn_Refactoring_Editor_Test_Guide.md) |
 | 원인 수정과 구현된 계약·남은 검증 | [생명주기 구현 상태](../Planning/Enemy%20On%20Ship/Deck_Enemy_Spawn_Lifecycle_Refactoring_Plan_2026-10-07.md) |

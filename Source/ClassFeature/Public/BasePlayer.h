@@ -40,6 +40,8 @@ class UPlayerDialogueComponent;
 class UPlayerAimComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
+class UStuckRecoveryComponent;
+class UStuckRecoveryInputComponent;
 struct FSWPlayerProgressSnapshot;
 
 UENUM(BlueprintType)
@@ -92,6 +94,11 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProv
 	friend class ULocomotionAnimStateComponent;
 
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Recovery")
+	TObjectPtr<UStuckRecoveryComponent> StuckRecoveryComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Recovery")
+	TObjectPtr<UStuckRecoveryInputComponent> StuckRecoveryInputComponent;
+
 	virtual void SetMountedDamageMode(bool bEnabled) override;
 	virtual bool IsMountedForDamage() const override { return bMountedDamageMode; }
 	virtual void PrepareForHealthDeath() override;

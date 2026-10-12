@@ -2,6 +2,8 @@
 
 
 #include "BasePlayer.h"
+#include "Recovery/StuckRecoveryComponent.h"
+#include "Recovery/StuckRecoveryInputComponent.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
 #include "Components/CapsuleComponent.h"
 #include "Combat/PlayerAimComponent.h"
@@ -146,6 +148,8 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
 	AimComponent = CreateDefaultSubobject<UPlayerAimComponent>(TEXT("AimComponent"));
+	StuckRecoveryComponent = CreateDefaultSubobject<UStuckRecoveryComponent>(TEXT("StuckRecoveryComponent"));
+	StuckRecoveryInputComponent = CreateDefaultSubobject<UStuckRecoveryInputComponent>(TEXT("StuckRecoveryInputComponent"));
 	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
@@ -1402,6 +1406,8 @@ void ABasePlayer::PawnClientRestart()
 void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	if (StuckRecoveryInputComponent)
+		StuckRecoveryInputComponent->BindInput(Cast<UEnhancedInputComponent>(PlayerInputComponent));
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -2529,6 +2535,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 		: FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
 
 	if(AnimStateComponent) AnimStateComponent->CachedMoveInput = ClampedMoveInput;
+	if (StuckRecoveryComponent) StuckRecoveryComponent->RecordMovementInput(ClampedMoveInput);
 	if (AnimStateComponent)
 	{
 		if (ClampedMoveInput.IsNearlyZero())
@@ -2611,6 +2618,7 @@ void ABasePlayer::InitializeSwimmingAnimLayers()
 
 void ABasePlayer::StopMoveInput()
 {
+	if (StuckRecoveryComponent) StuckRecoveryComponent->RecordMovementInput(FVector2D::ZeroVector);
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->ClearMoveInput();
@@ -2869,6 +2877,7 @@ void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
 {
 	if (!CanMutateLifeGameplay()) return;
 	const FVector2D ClampedMoveInput = NewMoveInput.GetClampedToMaxSize(1.f);
+	if (StuckRecoveryComponent) StuckRecoveryComponent->RecordMovementInput(ClampedMoveInput);
 	
 	AuthoritativeMoveInput = ClampedMoveInput;
 	bHasAuthoritativeMoveInput = true;
