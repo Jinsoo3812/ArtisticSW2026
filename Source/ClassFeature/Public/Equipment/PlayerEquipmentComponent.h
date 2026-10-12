@@ -193,7 +193,10 @@ protected:
 	void RemoveEquippedItemAbility(ABaseItem* Item);
 	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target);
 	bool CompleteItemAttachment(ABaseItem* Item, EEquipmentAttachmentTarget Target, bool bAttached);
-	void ClearBowArrowAnchor(ABowItem* ExpectedBow = nullptr);
+	/** Clears only the specified bow; nullptr is a no-op and another bow's binding is preserved. */
+	void ClearBowArrowAnchor(ABowItem* ExpectedBow);
+	/** Clears the tracked binding when replacing the attachment or resetting replicated presentation. */
+	void ClearCurrentBowArrowAnchor();
 	bool StoreCurrentEquippedItem(bool bRemoveStats = true);
 	bool CanChangeEquipment() const;
 	double LastEquipmentRequestTime = -1.0;

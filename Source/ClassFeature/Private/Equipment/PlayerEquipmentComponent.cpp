@@ -204,7 +204,7 @@ void UPlayerEquipmentComponent::OnRepOwnerEquippedItem()
 		}
 	}
 
-	ClearBowArrowAnchor();
+	ClearCurrentBowArrowAnchor();
 }
 
 FGameplayTag UPlayerEquipmentComponent::GetEquippedItemTag() const
@@ -815,7 +815,7 @@ bool UPlayerEquipmentComponent::CompleteItemAttachment(
 		: nullptr;
 	if (ABowItem* PreviouslyBoundBow = BoundBowArrowAnchor.Get(); PreviouslyBoundBow != Bow)
 	{
-		ClearBowArrowAnchor();
+		ClearCurrentBowArrowAnchor();
 	}
 
 	if (!Bow)
@@ -839,21 +839,26 @@ bool UPlayerEquipmentComponent::CompleteItemAttachment(
 
 void UPlayerEquipmentComponent::ClearBowArrowAnchor(ABowItem* ExpectedBow)
 {
-	ABowItem* BoundBow = BoundBowArrowAnchor.Get();
-	if (ExpectedBow)
+	if (!ExpectedBow)
 	{
-		ExpectedBow->UnbindArrowAnchor();
-		if (BoundBow == ExpectedBow)
-		{
-			BoundBowArrowAnchor.Reset();
-		}
 		return;
 	}
 
+	ExpectedBow->UnbindArrowAnchor();
+	if (BoundBowArrowAnchor.Get() == ExpectedBow)
+	{
+		BoundBowArrowAnchor.Reset();
+	}
+}
+
+void UPlayerEquipmentComponent::ClearCurrentBowArrowAnchor()
+{
+	ABowItem* BoundBow = BoundBowArrowAnchor.Get();
 	if (BoundBow)
 	{
-		BoundBow->UnbindArrowAnchor();
+		ClearBowArrowAnchor(BoundBow);
 	}
+	// Also discard an expired weak pointer when no live bow remains to unbind.
 	BoundBowArrowAnchor.Reset();
 }
 
@@ -867,6 +872,7 @@ bool UPlayerEquipmentComponent::StoreCurrentEquippedItem(bool bRemoveStats)
 	}
 
 	ABaseItem* PreviousItem = PlayerOwner->EquippedItem;
+	// A replacement bow may already be bound; cleanup belongs only to the previous item.
 	ClearBowArrowAnchor(Cast<ABowItem>(PreviousItem));
 	if (bRemoveStats)
 	{
@@ -951,6 +957,7 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 			CancelPendingEquip();
 			return;
 		}
+		// Keep the old item until the replacement is ready; its cleanup must preserve the new anchor.
 		StoreCurrentEquippedItem(false);
 		PlayerOwner->EquippedItem = ItemToEquip;
 		PlayerOwner->EnterCombatModeFromEquipment();
