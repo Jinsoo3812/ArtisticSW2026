@@ -86,6 +86,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Balance")
 	bool IsBalanceReady() const { return bBalanceReady; }
+	const FDataTableRowHandle& GetEffectiveSpawnStatsRow() const { return SpawnStatsRow.IsNull() ? DefaultStatsRow : SpawnStatsRow; }
 	float GetBalancedAttackInterval(float Fallback) const;
 	bool IsBalanceAttackReady() const;
 	bool HasBalancedMeleeAttackSlot() const;

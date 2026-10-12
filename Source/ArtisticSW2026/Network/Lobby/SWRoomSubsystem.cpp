@@ -295,6 +295,7 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 	FString DiagnosticParams = SWRoomLoadDiagnostics::IsEnabled() ? Params + TEXT(" -SWRoomLoadDiag") : Params;
 	DiagnosticParams += FString::Printf(TEXT(" -SWRoomRoot=\"%s\""), *Root);
 	if (SWRoomLogging::IsDetailedEnabled()) DiagnosticParams += TEXT(" -SWRoomDetailedLog");
+	if (FParse::Param(FCommandLine::Get(), TEXT("SWRoomSaveAudit"))) DiagnosticParams += TEXT(" -SWRoomSaveAudit");
 	if (SWRoomLoadDiagnostics::IsEnabled() && FParse::Param(FCommandLine::Get(), TEXT("SWRoomLoadTrace")))
 		DiagnosticParams += FString::Printf(TEXT(" -trace=cpu,loadtime,file,bookmark,frame -statnamedevents -tracefile=\"%s\""), *FPaths::Combine(LogDir, TEXT("Server.utrace")));
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST

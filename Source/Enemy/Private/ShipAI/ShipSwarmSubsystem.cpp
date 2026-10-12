@@ -223,7 +223,7 @@ void UShipSwarmSubsystem::EvaluateDistanceOptimization()
 				SquadPair.Value.RemoveAtSwap(Index);
 				continue;
 			}
-			if (EnemyShip->IsStoryGateDormant() || !EnemyShip->IsDistanceOptimizationEnabled() || EvaluatedShips.Contains(EnemyShip))
+			if (!EnemyShip->IsDistanceOptimizationEnabled() || EvaluatedShips.Contains(EnemyShip))
 			{
 				continue;
 			}

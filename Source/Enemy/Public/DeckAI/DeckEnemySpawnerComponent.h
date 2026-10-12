@@ -138,6 +138,11 @@ public:
 
 	void InitializeWaypoints();
 	void InitializePool();
+	/** Reconcile crew classes/stats/slots after a common ship receives a placement profile. */
+	void ReconcileBundleProfile();
+	/** Despawn crew and controllers without treating an Idle return as defeat. */
+	void ClearPoolForIdle();
+	bool AuditBundleCrew(bool bRequireCompletePool, FString& Error) const;
 	void CancelDeployment();
 	void ResetForNewEncounter();
 	void RestartSpawnStartDelay();
@@ -306,6 +311,7 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ADeckEnemy>> EnemyPool;
+	FString AllocatedPlanSignature;
 
 	TMap<int32, FDeckPointRuntimeState> PointRuntimeStates;
 	TArray<FDeckEnemyDeploymentSlot> DeploymentQueue;

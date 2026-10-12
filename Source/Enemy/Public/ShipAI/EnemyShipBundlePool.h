@@ -156,17 +156,21 @@ public:
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
 		float Tolerance, TArray<FString>& Fields) const override;
 	bool ApplyLogicalOrbitDistance(AEnemyShip* Ship) const;
-	/** Maximum UNUSED BP bundles cached across all classes. Active bundles are
-	 * separate and unlimited; reuse requires the exact BP class and level package. */
-	UPROPERTY(EditAnywhere, Category="Ship|Optimization", meta=(ClampMin="0")) int32 IdleCapacity = 8;
+	/** Target ACTIVE + UNUSED bundles. Active demand can exceed this target;
+	 * returns discard excess bundles until the total reaches the target again. */
+	UPROPERTY(EditAnywhere, Category="Ship|Optimization", meta=(ClampMin="0")) int32 BundleCapacity = 8;
 
 private:
+	friend class FEnemyShipBundleBudgetTest;
 	void Evaluate();
 	void DiscoverPlacedShips();
 	bool CapturePlacement(AEnemyShip& Ship, FEnemyShipBundlePlacement& Placement);
 	bool BindPlacement(FEnemyShipBundlePlacement& Placement, bool bRestoring, FString& Error);
 	void ReleasePlacement(FEnemyShipBundlePlacement& Placement);
 	void DestroyBundle(AEnemyShip* Ship);
+	AEnemyShip* AllocateBundle(UClass* Class, const FEnemyShipBundlePlacement& Placement, FString& Error);
+	void MaintainBundleCapacity(bool bFillReserve);
+	int32 CountActiveBundles() const;
 	void SetBundleRegistration(AEnemyShip& Ship, bool bIdle, const FEnemyShipBundlePlacement* Placement);
 	void PrepareRestore(const FSWRoomWorldSnapshot& Snapshot, FString& Error);
 	void RestoreCompleted();
@@ -181,6 +185,7 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<AEnemyShip>> IdleBundles;
 	UPROPERTY(Transient) TArray<TObjectPtr<UInstancedStaticMeshComponent>> ProxyInstanceComponents;
 	TMap<FGuid, uint32> ClientAssignments;
+	TMap<FGuid, TWeakObjectPtr<AEnemyShip>> ClientActors;
 	uint32 LastPresentationHash = 0;
 	FTimerHandle EvaluationTimer;
 	FDelegateHandle PrepareRestoreHandle;
@@ -192,6 +197,8 @@ private:
 	TMap<FGuid, uint8> LastLoggedPlacementStates;
 	TSet<TWeakObjectPtr<AEnemyShip>> LastLoggedIdleBundles;
 	TMap<FGuid, FString> LastWakeErrors;
+	// Exact saved Actor class is needed for the generic room contract, including legacy saves.
+	TMap<FGuid, FSoftClassPath> RestoreClasses;
 	TMap<FGuid, TArray<FEnemyShipPoolAuditInstance>> AuditInstances;
 	TMap<FGuid, FEnemyShipPoolAuditSample> ClientAuditSamples;
 };

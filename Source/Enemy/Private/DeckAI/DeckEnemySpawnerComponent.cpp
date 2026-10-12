@@ -95,15 +95,9 @@ FString UDeckEnemySpawnerComponent::GetPlanSignature() const
 
 bool UDeckEnemySpawnerComponent::CanSuspendForDistanceOptimization() const
 {
-	if (bActivationInProgress || SpawnRequestState == EDeckEnemySpawnRequestState::Running
-		|| GetAliveDeployedEnemyCount() > 0) return false;
-	if (SpawnRequestState == EDeckEnemySpawnRequestState::PendingReadiness && GetWorld()
-		&& GetWorld()->GetTimeSeconds() < PendingSightExpiry) return false;
-	for (const auto& Point : PointRuntimeStates) if (Point.Value.ReservedBy.IsValid()) return false;
-	for (const ADeckEnemy* Enemy : EnemyPool)
-		if (IsValid(Enemy) && Enemy->IsPoolActive() && !Enemy->IsPoolDeathHandled()) return false;
-	const auto* Controller = GetHostShip() ? Cast<ANavalAIController>(GetHostShip()->GetController()) : nullptr;
-	return !Controller || !Controller->FindSightedPlayerShip();
+	// The ship's Idle/home/distance policy owns retirement. Crew state must not
+	// keep a remote Idle hull allocated. Only defer an in-flight activation transaction.
+	return !bActivationInProgress;
 }
 
 void UDeckEnemySpawnerComponent::RequestReadinessEvaluation()
@@ -404,6 +398,7 @@ bool UDeckEnemySpawnerComponent::RestoreRoomState(const FSWRoomDeckSpawnerState&
 bool UDeckEnemySpawnerComponent::FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
 {
 	if (!bHasPendingRoomState) return true;
+	AllocatedPlanSignature = GetPlanSignature();
 	auto Find = [&RegisteredActors](const FGuid& Id) -> AActor*
 	{
 		AActor* const* Found = RegisteredActors.Find(Id); return Found ? *Found : nullptr;
@@ -656,6 +651,7 @@ void UDeckEnemySpawnerComponent::InitializePool()
 	{
 		return;
 	}
+	AllocatedPlanSignature = GetPlanSignature();
 
 	for (int32 SlotIndex = 0; SlotIndex < ResolvedPlan.Num(); ++SlotIndex)
 	{
@@ -706,6 +702,76 @@ void UDeckEnemySpawnerComponent::GetPooledEnemies(TArray<ADeckEnemy*>& OutEnemie
 	{
 		if (IsValid(Enemy)) OutEnemies.Add(Enemy);
 	}
+}
+
+bool UDeckEnemySpawnerComponent::AuditBundleCrew(bool bRequireCompletePool, FString& Error) const
+{
+	TArray<FDeckEnemyDeploymentSlot> Plan;
+	const bool bEnabled = IsEnabled();
+	const bool bPlanValid = !bEnabled || BuildDeploymentPlan(Plan, false);
+	int32 ClassMismatches = 0;
+	int32 StatsMismatches = 0;
+	for (int32 Index = 0; Index < EnemyPool.Num(); ++Index)
+	{
+		ADeckEnemy* Enemy = EnemyPool[Index];
+		const bool bClassMatch = IsValid(Enemy) && Plan.IsValidIndex(Index) && Enemy->GetClass() == Plan[Index].EnemyClass;
+		if (!bClassMatch) ++ClassMismatches;
+		const FDataTableRowHandle ActualRow = IsValid(Enemy) ? Enemy->GetEffectiveSpawnStatsRow() : FDataTableRowHandle();
+		const FDataTableRowHandle ExpectedRow = Plan.IsValidIndex(Index) && Plan[Index].EnemyClass
+			? (Plan[Index].StatsRow.IsNull() ? Plan[Index].EnemyClass->GetDefaultObject<ADeckEnemy>()->DefaultStatsRow : Plan[Index].StatsRow)
+			: FDataTableRowHandle();
+		const bool bStatsMatch = IsValid(Enemy) && Plan.IsValidIndex(Index)
+			&& ActualRow.DataTable == ExpectedRow.DataTable && ActualRow.RowName == ExpectedRow.RowName;
+		if (!bStatsMatch) ++StatsMismatches;
+		/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=CrewSlot Actor=%s Slot=%d ExpectedClass=%s ActualClass=%s StatsTable=%s StatsRow=%s ActualStatsTable=%s ActualStatsRow=%s Point=%d ClassMatch=%d StatsMatch=%d"),
+			*GetNameSafe(GetHostShip()), Index, Plan.IsValidIndex(Index) ? *GetPathNameSafe(Plan[Index].EnemyClass.Get()) : TEXT("None"),
+			IsValid(Enemy) ? *Enemy->GetClass()->GetPathName() : TEXT("None"),
+			*GetPathNameSafe(ExpectedRow.DataTable), *ExpectedRow.RowName.ToString(),
+			*GetPathNameSafe(ActualRow.DataTable), *ActualRow.RowName.ToString(),
+			Plan.IsValidIndex(Index) ? Plan[Index].SpawnPointId : INDEX_NONE, bClassMatch, bStatsMatch); */
+	}
+	const bool bComplete = bPlanValid && EnemyPool.Num() == Plan.Num() && ClassMismatches == 0 && StatsMismatches == 0;
+	/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=CrewReady Actor=%s Enabled=%d Planned=%d Actual=%d PlanValid=%d ClassMismatches=%d StatsMismatches=%d Complete=%d RequireComplete=%d"),
+		*GetNameSafe(GetHostShip()), bEnabled, Plan.Num(), EnemyPool.Num(), bPlanValid, ClassMismatches, StatsMismatches, bComplete, bRequireCompletePool); */
+	if (bRequireCompletePool && !bComplete) { Error = TEXT("Enemy ship crew pool does not match the assigned spawn plan"); return false; }
+	return true;
+}
+
+void UDeckEnemySpawnerComponent::ReconcileBundleProfile()
+{
+	AEnemyShip* Host = GetHostShip();
+	if (!Host || !Host->HasAuthority() || EnemyPool.IsEmpty()) return;
+	if (bEnableSpawning && AllocatedPlanSignature == GetPlanSignature()) return;
+	ClearPoolForIdle();
+	/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=CrewProfileChanged Actor=%s RemovedCrew=%d NewSlots=%d Enabled=%d"),
+		*Host->GetName(), PreviousCount, SpawnPlan.Num(), bEnableSpawning); */
+}
+
+void UDeckEnemySpawnerComponent::ClearPoolForIdle()
+{
+	AEnemyShip* Host = GetHostShip();
+	if (!Host || !Host->HasAuthority()) return;
+	CancelDeployment();
+	// const int32 PreviousCount = EnemyPool.Num();
+	for (ADeckEnemy* Enemy : EnemyPool)
+		if (IsValid(Enemy))
+		{
+			Host->UnregisterCrewEnemy(Enemy);
+			ReleaseAllPointsFor(Enemy);
+			Enemy->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+			if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(Enemy);
+			if (AController* Controller = Enemy->GetController())
+			{
+				Controller->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+				if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(Controller);
+				Controller->Destroy();
+			}
+			Enemy->Destroy();
+		}
+	EnemyPool.Reset();
+	PointRuntimeStates.Reset();
+	AllocatedPlanSignature.Reset();
+	ResetForNewEncounter();
 }
 
 void UDeckEnemySpawnerComponent::Shutdown()

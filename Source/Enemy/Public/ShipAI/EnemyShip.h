@@ -81,6 +81,9 @@ public:
 	bool IsBundlePoolIdle() const { return bBundlePoolIdle; }
 	void SetBundlePoolIdle(bool bIdle);
 	void PrepareFreshBundleEncounter(const FTransform& HomeTransform);
+	/** Build derived deck navigation while gameplay remains suspended. Restore never resets crew. */
+	bool PrepareBundleDeck(bool bCreateCrew, FString& Error);
+	void ClearCrewForIdle();
 	void RefreshBundleStoryBindings();
 	FName GetBundleAuthoredName() const { return BundleAuthoredName.IsNone() ? GetFName() : BundleAuthoredName; }
 	void SetBundleAuthoredName(FName Name) { BundleAuthoredName = Name; }
@@ -445,6 +448,7 @@ protected:
 	/** Prevents an unconfigured or not-yet-deployed empty crew roster from being treated as defeated. */
 	bool bHasEverHadLivingCrew = false;
 	bool bEndingPlay = false;
+	bool bClearingCrewForIdle = false;
 	bool bCaptureCannonTagAdded = false;
 	bool bStoryGateCannonTagAdded = false;
 	bool bStorySubsystemMissingLogged = false;

@@ -20,6 +20,8 @@
 #include "ItemSpawn/GlobalLootSpawnManager.h"
 #include "ItemSpawn/LootSpawnPoint.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipNavigationComponent.h"
+#include "ShipAI/ShipSwarmSubsystem.h"
 #include "ShipAI/NavalAIController.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISense_Sight.h"
@@ -42,7 +44,7 @@ namespace ShipCrewChestIntegration
 		AGlobalLootSpawnManager* Manager = nullptr;
 		TArray<AChestSpawnPoint*> Points;
 
-		FFixture()
+		FFixture(bool bStartBundleIdle = false)
 		{
 			Instance = NewObject<UGameInstance>(GEngine);
 			Instance->InitializeStandalone(TEXT("ShipCrewChestIsolatedWorld"));
@@ -112,6 +114,7 @@ namespace ShipCrewChestIntegration
 				Point->SetEnvironment(EChestEnvironment::ShipDeck);
 				Points.Add(Point);
 			}
+			if (bStartBundleIdle) Ship->SetBundlePoolIdle(true);
 			World->InitializeActorsForPlay(FURL());
 			World->BeginPlay();
 			// A minimal fixture has no GameMode to dispatch StartPlay for placed actors.
@@ -187,9 +190,9 @@ IMPLEMENT_COMPLEX_AUTOMATION_TEST(FShipCrewChestIntegrationTest,
 
 void FShipCrewChestIntegrationTest::GetTests(TArray<FString>& Names, TArray<FString>& Commands) const
 {
-	for (const TCHAR* Case : {TEXT("Crew.ChestBeforeActivation"), TEXT("Crew.ChestAfterActivation"),
+	for (const TCHAR* Case : {TEXT("Crew.ChestBeforeActivation"), TEXT("Crew.ChestAfterActivation"), TEXT("Crew.ProfileReassignment"), TEXT("Crew.PooledDeckPreparation"),
 		TEXT("Boss.ChestBeforeSpawn"), TEXT("Boss.ChestAfterSpawn"), TEXT("Boss.FailedSpawn"),
-		TEXT("Boss.AuthoredMid1"), TEXT("Boss.AuthoredMid3"), TEXT("Boss.WithLivingCrew")})
+		TEXT("Boss.AuthoredMid1"), TEXT("Boss.AuthoredMid3"), TEXT("Boss.WithLivingCrew"), TEXT("Boss.IdleReturnCleanup")})
 	{
 		Names.Add(Case);
 		Commands.Add(Case);
@@ -201,8 +204,36 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 	// Known unrelated authored recipe errors emitted once when item data is first loaded.
 	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 0);
 	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 0);
-	TSharedPtr<ShipCrewChestIntegration::FFixture> FixturePtr = MakeShared<ShipCrewChestIntegration::FFixture>();
+	const bool bPooledPreparation = Parameters == TEXT("Crew.PooledDeckPreparation");
+	TSharedPtr<ShipCrewChestIntegration::FFixture> FixturePtr = MakeShared<ShipCrewChestIntegration::FFixture>(bPooledPreparation);
 	ShipCrewChestIntegration::FFixture& Fixture = *FixturePtr;
+	if (bPooledPreparation)
+	{
+		UDeckEnemySpawnerComponent* Spawner = Fixture.Ship->GetDeckEnemySpawnerComponent();
+		TestFalse(TEXT("Idle BeginPlay defers deck sampling"), Fixture.Ship->GetDeckWalkAreaComponent()->IsReady());
+		TestEqual(TEXT("Idle BeginPlay does not allocate crew before the profile"), Spawner->GetPooledEnemyCount(), 0);
+		FString Error;
+		if (!TestTrue(TEXT("Restore preparation builds navigation without creating crew"), Fixture.Ship->PrepareBundleDeck(false, Error))) return false;
+		TestEqual(TEXT("Restore preparation preserves the empty saved crew state"), Spawner->GetPooledEnemyCount(), 0);
+		Fixture.Ship->PrepareFreshBundleEncounter(Fixture.Ship->GetActorTransform());
+		if (!TestTrue(TEXT("Fresh preparation succeeds while idle"), Fixture.Ship->PrepareBundleDeck(true, Error))) return false;
+		TestTrue(TEXT("Fresh deck is ready"), Fixture.Ship->GetDeckWalkAreaComponent()->IsReady());
+		TestEqual(TEXT("Fresh crew plan produces both crew Actors"), Spawner->GetPooledEnemyCount(), 2);
+		TestTrue(TEXT("Preparation leaves the host idle"), Fixture.Ship->IsBundlePoolIdle());
+		TestFalse(TEXT("Temporary Query collision is restored after sampling"), Fixture.Ship->GetActorEnableCollision());
+		TestFalse(TEXT("Preparation does not enable physics"), Fixture.Ship->IsShipRuntimePhysicsEnabled());
+		FSWRoomDeckSpawnerState Before, After;
+		TArray<FSWRoomCaptureIssue> Issues;
+		Spawner->CaptureRoomState(Before, Issues);
+		TestTrue(TEXT("Navigation can be rebuilt for restore without resetting the encounter"), Fixture.Ship->PrepareBundleDeck(false, Error));
+		Spawner->CaptureRoomState(After, Issues);
+		TestTrue(TEXT("Crew identities remain unchanged"), Before.EnemyPoolIds == After.EnemyPoolIds);
+		TestEqual(TEXT("Encounter generation remains unchanged"), Before.EncounterGeneration, After.EncounterGeneration);
+		TestTrue(TEXT("Deployment slot progress remains unchanged"), Before.SlotResults == After.SlotResults);
+		Fixture.Ship->SetBundlePoolIdle(false);
+		TestTrue(TEXT("Collision resumes on actual wake"), Fixture.Ship->GetActorEnableCollision());
+		return true;
+	}
 	if (!TestTrue(TEXT("Isolated deck walk surface is ready"), Fixture.Ship->GetDeckWalkAreaComponent()->IsReady())
 		|| !TestTrue(TEXT("Ship publishes a deployable runtime state"), Fixture.Ship->CanDeployDeckEnemies())) return false;
 	UDeckEnemySpawnerComponent* Spawner = Fixture.Ship->GetDeckEnemySpawnerComponent();
@@ -214,6 +245,30 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Spawned crew recognizes its host ship"), Enemy->GetDeckHostShip(), Fixture.Ship);
 		TestTrue(TEXT("Ship recognizes spawned crew ownership"), Fixture.Ship->IsOwnedCannonSplashProtectedActor(Enemy));
 		TestFalse(TEXT("Pool creation does not count as actual appearance"), Enemy->IsPoolActive());
+	}
+	if (Parameters == TEXT("Crew.ProfileReassignment"))
+	{
+		Fixture.Ship->SetBundlePoolIdle(true);
+		Spawner->ReconcileBundleProfile();
+		TArray<ADeckEnemy*> Unchanged;
+		Spawner->GetPooledEnemies(Unchanged);
+		TestTrue(TEXT("Same profile keeps its existing crew bundle"), Unchanged == Crew);
+		TArray<FDeckEnemySpawnSlot>& Plan = *FindFProperty<FArrayProperty>(Spawner->GetClass(), TEXT("SpawnPlan"))->ContainerPtrToValuePtr<TArray<FDeckEnemySpawnSlot>>(Spawner);
+		Plan.SetNum(1);
+		Plan[0].EnemyClass = ADeckRangedEnemy::StaticClass();
+		Spawner->ReconcileBundleProfile();
+		TestEqual(TEXT("Changed crew profile releases the old pool"), Spawner->GetPooledEnemyCount(), 0);
+		for (ADeckEnemy* Enemy : Crew) TestTrue(TEXT("Old crew Actors are destroyed"), Enemy->IsActorBeingDestroyed());
+		FString PreparationError;
+		if (!TestTrue(TEXT("Changed profile rebuilds the idle deck and crew before wake"), Fixture.Ship->PrepareBundleDeck(true, PreparationError))) return false;
+		TArray<ADeckEnemy*> Rebuilt;
+		Spawner->GetPooledEnemies(Rebuilt);
+		if (TestEqual(TEXT("New profile creates exactly one crew slot"), Rebuilt.Num(), 1))
+			TestEqual(TEXT("New crew has the requested class"), Rebuilt[0]->GetClass(), ADeckRangedEnemy::StaticClass());
+		FindFProperty<FBoolProperty>(Spawner->GetClass(), TEXT("bEnableSpawning"))->SetPropertyValue_InContainer(Spawner, false);
+		Spawner->ReconcileBundleProfile();
+		TestEqual(TEXT("Disabled crew profile clears the previous pool"), Spawner->GetPooledEnemyCount(), 0);
+		return true;
 	}
 	const bool bCrewCase = Parameters.StartsWith(TEXT("Crew."));
 	const bool bLateChest = Parameters.Contains(TEXT("After"));
@@ -337,8 +392,9 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 	FSoftObjectProperty* LootProperty = FindFProperty<FSoftObjectProperty>(Fixture.Manager->GetClass(), TEXT("BossGuaranteedLootData"));
 	LootProperty->SetObjectPropertyValue_InContainer(Fixture.Manager, Loot);
 	// Native test boss intentionally has no authored combat tree; combat AI is outside this fixture.
-	if (!bAuthored) AddExpectedError(TEXT("Boss has no Behavior Tree. BT-only AI will remain stopped."), EAutomationExpectedErrorFlags::Contains, 1);
-	const bool bMixedGuards = Parameters.Contains(TEXT("WithLivingCrew"));
+	const bool bIdleCleanup = Parameters == TEXT("Boss.IdleReturnCleanup");
+	if (!bAuthored) AddExpectedError(TEXT("Boss has no Behavior Tree. BT-only AI will remain stopped."), EAutomationExpectedErrorFlags::Contains, bIdleCleanup ? 2 : 1);
+	const bool bMixedGuards = Parameters.Contains(TEXT("WithLivingCrew")) || bIdleCleanup;
 	if (bMixedGuards)
 	{
 		for (int32 Index = 0; Index < 2; ++Index)
@@ -367,6 +423,45 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 		Fixture.Manager->EnsureBossGuaranteedLoot(Fixture.Points[Index]);
 		for (const FStorageItemEntry& Item : RewardItems)
 			TestEqual(TEXT("Repeated reward application is idempotent"), ShipCrewChestIntegration::CountItem(Chest, Item.ItemTag), Item.Count);
+	}
+	if (bIdleCleanup)
+	{
+		AController* BossController = Boss->GetController();
+		TArray<AController*> CrewControllers;
+		for (ADeckEnemy* Enemy : Crew) if (Enemy->GetController()) CrewControllers.Add(Enemy->GetController());
+		const bool bCollisionBefore = Fixture.Ship->GetActorEnableCollision();
+		const bool bPhysicsBefore = Fixture.Ship->IsShipRuntimePhysicsEnabled();
+		TestTrue(TEXT("Living deployed crew no longer vetoes distance suspension"), Spawner->CanSuspendForDistanceOptimization());
+		Fixture.Ship->GetNavigationComponent()->OnNavigationStateChanged.Broadcast(ENavalCombatState::Return, ENavalCombatState::Idle);
+		TestEqual(TEXT("Idle deletes the ordinary crew pool"), Spawner->GetPooledEnemyCount(), 0);
+		for (ADeckEnemy* Enemy : Crew) TestTrue(TEXT("Ordinary crew Actor is destroyed"), Enemy->IsActorBeingDestroyed());
+		for (AController* Controller : CrewControllers) TestTrue(TEXT("Ordinary crew Controller is destroyed"), Controller->IsActorBeingDestroyed());
+		TestTrue(TEXT("Idle also destroys the boss"), Boss->IsActorBeingDestroyed());
+		if (BossController) TestTrue(TEXT("Idle also destroys the boss Controller"), BossController->IsActorBeingDestroyed());
+		TestNull(TEXT("Boss reference cleared"), Fixture.Ship->GetRegisteredBossEnemy());
+		TestEqual(TEXT("Boss returns to its rule-based waiting state"), Encounter->GetEncounterState(), EBossEncounterState::Waiting);
+		TestFalse(TEXT("Administrative despawn does not count as crew defeat"), Fixture.Ship->IsCrewDefeated());
+		TestFalse(TEXT("Near Idle hull is still an assigned Actor"), Fixture.Ship->IsBundlePoolIdle());
+		TestEqual(TEXT("Idle cleanup keeps hull collision"), Fixture.Ship->GetActorEnableCollision(), bCollisionBefore);
+		TestEqual(TEXT("Idle cleanup keeps hull buoyancy/physics"), Fixture.Ship->IsShipRuntimePhysicsEnabled(), bPhysicsBefore);
+		Fixture.Ship->bEnableDistanceOptimization = true;
+		Fixture.Ship->GetNavigationComponent()->ResetSpawnHome(Fixture.Ship->GetActorTransform());
+		TestTrue(TEXT("Home Idle hull remains eligible for distant suspension"), Fixture.Ship->CanEnterDistanceOptimizationDormancy());
+		TestTrue(TEXT("Existing boss rules can spawn again on renewed sight"), Encounter->NotifyPlayerShipSighted(Fixture.PlayerShip));
+		TestNotNull(TEXT("A replacement boss exists"), Encounter->GetSpawnedBoss());
+		const float Range = Fixture.Ship->GetDistanceOptimizationRange();
+		Fixture.PlayerShip->SetActorLocation(Fixture.Ship->GetActorLocation() + FVector(Range * 0.25f, 0, 0));
+		UShipSwarmSubsystem* Swarm = Fixture.World->GetSubsystem<UShipSwarmSubsystem>();
+		Swarm->EvaluateDistanceOptimization();
+		TestFalse(TEXT("Player nearby keeps an Idle hull awake"), Fixture.Ship->IsDistanceOptimizationDormant());
+		// A closed story gate suppresses visibility/encounters, not distant Actor retirement.
+		Fixture.Ship->SquadID = TEXT("Final");
+		TestTrue(TEXT("Closed Final gate is represented in the fixture"), Fixture.Ship->IsStoryGateDormant());
+		Fixture.PlayerShip->SetActorLocation(Fixture.Ship->GetActorLocation() + FVector(Range * 2.0f + 1000, 0, 0));
+		Swarm->EvaluateDistanceOptimization();
+		TestTrue(TEXT("Player far away suspends the Home Idle hull"), Fixture.Ship->IsDistanceOptimizationDormant());
+		TestNull(TEXT("Distant Idle suspension leaves no boss behind"), Fixture.Ship->GetRegisteredBossEnemy());
+		return true;
 	}
 	Boss->GetHealthComponent()->StartDeath();
 	TestEqual(TEXT("Encounter receives actual boss death"), Encounter->GetEncounterState(), EBossEncounterState::Defeated);

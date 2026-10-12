@@ -510,7 +510,12 @@ void UBossEncounterComponent::ResetForNewEncounter()
 		Host->UnregisterCrewEnemy(SpawnedBoss);
 		SpawnedBoss->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
 		if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(SpawnedBoss);
-		if (AController* Controller = SpawnedBoss->GetController()) Controller->Destroy();
+		if (AController* Controller = SpawnedBoss->GetController())
+		{
+			Controller->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+			if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(Controller);
+			Controller->Destroy();
+		}
 		SpawnedBoss->Destroy();
 	}
 	SpawnedBoss = nullptr;

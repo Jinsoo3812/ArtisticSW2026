@@ -370,7 +370,7 @@ void AEnemyShip::BeginPlay()
 			Weakening->RegisterShip(this);
 		}
 		InitializeDeckWaypoints();
-		if (DeckWalkAreaComponent)
+		if (DeckWalkAreaComponent && !bBundlePoolIdle)
 		{
 			DeckWalkAreaComponent->Rebuild();
 			if (!DeckWalkAreaComponent->IsReady())
@@ -379,7 +379,7 @@ void AEnemyShip::BeginPlay()
 					*GetName());
 			}
 		}
-		if (DeckWalkAreaComponent && DeckWalkAreaComponent->IsReady()) InitializeDeckEnemyPool();
+		if (!bBundlePoolIdle && DeckWalkAreaComponent && DeckWalkAreaComponent->IsReady()) InitializeDeckEnemyPool();
 
 		if (NavigationComponent)
 		{
@@ -629,6 +629,10 @@ void AEnemyShip::HandleNavigationStateChanged(
 	ENavalCombatState NewState)
 {
 	ApplyNavigationCollisionPolicy(NewState);
+	if (HasAuthority() && NewState == ENavalCombatState::Idle && PreviousState != NewState)
+	{
+		ClearCrewForIdle();
+	}
 	if (!HasAuthority() || bDeathHandled || bCrewDefeated || !DeckEnemySpawnerComponent)
 	{
 		return;
@@ -948,11 +952,10 @@ void AEnemyShip::ApplyNavigationCollisionPolicy(ENavalCombatState State)
 
 bool AEnemyShip::CanEnterDistanceOptimizationDormancy() const
 {
-	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant || IsStoryGateDormant()
-		|| bDeathHandled || IsSinking() || bCrewDefeated || !NavigationComponent
+	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant
+		|| bDeathHandled || IsSinking() || !NavigationComponent
 		|| NavigationComponent->GetCurrentState() != ENavalCombatState::Idle
-		|| NavigationComponent->GetTargetShip() != nullptr
-		|| NavigationComponent->HasActiveOverride())
+		|| NavigationComponent->IsAligningHome())
 	{
 		return false;
 	}
@@ -981,6 +984,7 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 	{
 		return;
 	}
+	if (bDormant) ClearCrewForIdle();
 	if (!bDormant && (bDeathHandled || IsSinking()))
 	{
 		return;
@@ -991,8 +995,8 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 		FlushNetDormancy();
 		SetNetDormancy(DORM_Awake);
 	}
-	// Distance suspension preserves encounter/health. Only explicit home-return
-	// completion may reset the ship and its pool for a new encounter.
+	// Home Idle retirement despawns crew without death rewards. Hull health is
+	// reset by home-return/fresh encounter handling, not by this suspension flag.
 
 	bDistanceOptimizationDormant = bDormant;
 	ApplyEffectiveDormancyState();
@@ -1890,7 +1894,7 @@ void AEnemyShip::UnregisterCrewEnemy(ABaseEnemy* CrewEnemy)
 
 void AEnemyShip::EvaluateCrewControlState()
 {
-	if (!HasAuthority())
+	if (!HasAuthority() || bClearingCrewForIdle)
 	{
 		return;
 	}
@@ -2102,6 +2106,62 @@ void AEnemyShip::RefreshBundleStoryBindings()
 	RefreshStoryGateOwnedActors();
 }
 
+void AEnemyShip::ClearCrewForIdle()
+{
+	if (!HasAuthority() || bClearingCrewForIdle || bDeathHandled || IsSinking()) return;
+	const auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>();
+	if (Room && Room->IsRestoringSnapshot()) return;
+	TGuardValue<bool> Clearing(bClearingCrewForIdle, true);
+	if (ANavalAIController* AI = Cast<ANavalAIController>(GetController()))
+	{
+		AI->SetTargetShip(nullptr);
+		if (UAIPerceptionComponent* Perception = AI->GetPerceptionComponent()) Perception->ForgetAll();
+	}
+	if (NavigationComponent) NavigationComponent->SetTargetShip(nullptr);
+	// Administrative despawn must not disable the hull as a captured/defeated ship.
+	if (DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->ClearPoolForIdle();
+	if (BossEncounterComponent) BossEncounterComponent->ResetForNewEncounter();
+	RegisteredBoss = nullptr;
+	const TArray<TObjectPtr<ABaseEnemy>> Remaining = RegisteredCrewEnemies;
+	for (ABaseEnemy* Enemy : Remaining)
+		if (IsValid(Enemy))
+		{
+			UnregisterCrewEnemy(Enemy);
+			Enemy->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+			if (auto* Snapshot = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Snapshot->ReleaseActorForPooling(Enemy);
+			if (AController* CrewController = Enemy->GetController())
+			{
+				CrewController->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+				if (auto* Snapshot = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Snapshot->ReleaseActorForPooling(CrewController);
+				CrewController->Destroy();
+			}
+			Enemy->Destroy();
+		}
+	RegisteredCrewEnemies.Reset();
+	bHasEverHadLivingCrew = false;
+}
+
+bool AEnemyShip::PrepareBundleDeck(bool bCreateCrew, FString& Error)
+{
+	if (!HasAuthority()) { Error = TEXT("Bundle deck preparation requires authority"); return false; }
+	// Query collision is required by the sampler. Idle AI, ticks and simulation stay stopped.
+	const bool bPreviousCollision = GetActorEnableCollision();
+	SetActorEnableCollision(true);
+	ON_SCOPE_EXIT { SetActorEnableCollision(bPreviousCollision); };
+	InitializeDeckWaypoints();
+	if (DeckWalkAreaComponent) DeckWalkAreaComponent->Rebuild();
+	const bool bReady = DeckWalkAreaComponent && DeckWalkAreaComponent->IsReady();
+	/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=DeckPrepared Actor=%s Profile=%s CreateCrew=%d WalkReady=%d Idle=%d Physics=%d"),
+		*GetName(), *GetBundleAuthoredName().ToString(), bCreateCrew, bReady, bBundlePoolIdle, IsShipRuntimePhysicsEnabled()); */
+	if (!bReady) { Error = TEXT("Enemy ship bundle deck walk area is not ready after profile application"); return false; }
+	if (DeckEnemySpawnerComponent)
+	{
+		if (bCreateCrew) InitializeDeckEnemyPool();
+		if (bCreateCrew) return DeckEnemySpawnerComponent->AuditBundleCrew(true, Error);
+	}
+	return true;
+}
+
 void AEnemyShip::PrepareFreshBundleEncounter(const FTransform& HomeTransform)
 {
 	if (!HasAuthority()) return;
@@ -2147,7 +2207,8 @@ void AEnemyShip::PrepareFreshBundleEncounter(const FTransform& HomeTransform)
 	}
 	if (DeckEnemySpawnerComponent)
 	{
-		InitializeDeckEnemyPool();
+		// Pooled assignments prepare the deck only after every component profile is applied.
+		if (!bBundlePoolIdle) InitializeDeckEnemyPool();
 		DeckEnemySpawnerComponent->RestartSpawnStartDelay();
 	}
 	RefreshBundleStoryBindings();
