@@ -290,6 +290,8 @@ public:
 	void ServerQuickMoveInventorySlotInTab(EInventoryTab Tab, int32 Index, FGameplayTag ExpectedTag, int32 ExpectedCount);
 	bool CanAccessStorage(AStorageChest* Chest) const;
 	bool HasOpenStorage() const { return ActiveStorageChest != nullptr; }
+	bool IsStorageOpenFor(const AStorageChest* Chest) const { return ActiveStorageChest == Chest; }
+	void HandleChestPoolAssignment(AStorageChest* Chest, const FGuid& PreviousId, const FGuid& NextId);
 	/** Consume F while a chest or facility window is open, regardless of overlap. */
 	bool CloseActiveInteractionWindow();
 	bool IsStorageSlotRevealed(AStorageChest* StorageChest, int32 SlotIndex) const;
@@ -351,6 +353,7 @@ protected:
 	float LegendarySearchTime = 3.0f;
 
 	TMap<AStorageChest*, FStorageRevealState> StorageRevealStates;
+	TMap<FGuid, FStorageRevealState> PooledStorageRevealStates;
 	FTimerHandle StorageSearchTimerHandle;
 
 	void BindHUDToCurrentPlayer();

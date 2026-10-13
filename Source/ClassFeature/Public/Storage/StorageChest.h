@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Storage/StorageComponent.h"
 #include "Room/SWRoomStateAdapter.h"
+#include "Storage/StorageChestPoolTypes.h"
 #include "StorageChest.generated.h"
 
 USTRUCT()
@@ -93,6 +94,11 @@ public:
 	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
 	AShip* GetOwningShip() const { return OwningShip; }
 	void SetStoryGateDormant(bool bDormant);
+	float GetDistanceOptimizationRange() const { return DistanceOptimizationRange; }
+	bool IsPoolIdle() const { return PoolAssignment.bManaged && !PoolAssignment.StableId.IsValid(); }
+	const FStorageChestPoolAssignment& GetPoolAssignment() const { return PoolAssignment; }
+	void SetPoolAssignment(const FGuid& Id, const FTransform& Transform);
+	bool CanReturnToPool() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
 	void ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems);
@@ -136,6 +142,9 @@ public:
 	void HandleEmptyDestroyTimeout();
 
 protected:
+	UPROPERTY(ReplicatedUsing=OnRep_PoolAssignment) FStorageChestPoolAssignment PoolAssignment;
+	FGuid PreviousPoolAssignmentId;
+	UFUNCTION() void OnRep_PoolAssignment();
 	/**
 	 * Compatibility child for existing Blueprint assets that were authored when
 	 * SceneRoot was the native root. ChestMesh remains the physics/replication root.

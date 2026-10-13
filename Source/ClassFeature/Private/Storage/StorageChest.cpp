@@ -188,6 +188,7 @@ bool AStorageChest::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredAc
 void AStorageChest::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (IsPoolIdle()) return;
 
 	if (HasAuthority() || !bEnablePhysicsAndBuoyancy || !bHasClientMovementTarget)
 	{
@@ -266,6 +267,7 @@ void AStorageChest::BeginPlay()
 
 	ApplyLockPresentation();
 	ApplyStoryGatePresentation();
+	OnRep_PoolAssignment();
 }
 
 void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -292,6 +294,65 @@ void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	DOREPLIFETIME(AStorageChest, bEnablePhysicsAndBuoyancy);
 	DOREPLIFETIME(AStorageChest, bDistanceOptimizationDormant);
 	DOREPLIFETIME(AStorageChest, bStoryGateDormant);
+	DOREPLIFETIME(AStorageChest, PoolAssignment);
+}
+
+void AStorageChest::SetPoolAssignment(const FGuid& Id, const FTransform& Transform)
+{
+	if (!HasAuthority()) return;
+	PoolAssignment.bManaged = true;
+	PoolAssignment.StableId = Id;
+	PoolAssignment.Transform = Transform;
+	PoolAssignment.StorageName = StorageName;
+	PoolAssignment.ActionText = ActionText;
+	PoolAssignment.LockedActionText = LockedActionText;
+	OnRep_PoolAssignment();
+	ForceNetUpdate();
+}
+
+void AStorageChest::OnRep_PoolAssignment()
+{
+	if (!PoolAssignment.bManaged) return;
+	StorageName = PoolAssignment.StorageName;
+	ActionText = PoolAssignment.ActionText;
+	LockedActionText = PoolAssignment.LockedActionText;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		if (auto* Controller = Cast<ABasePlayerController>(It->Get()))
+			Controller->HandleChestPoolAssignment(this, PreviousPoolAssignmentId, PoolAssignment.StableId);
+	PreviousPoolAssignmentId = PoolAssignment.StableId;
+	bHasClientMovementTarget = false;
+	SetActorHiddenInGame(IsPoolIdle());
+	SetActorEnableCollision(!IsPoolIdle());
+	if (IsPoolIdle())
+	{
+		GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+		GetWorldTimerManager().ClearTimer(DistanceOptimizationTimerHandle);
+		if (ChestMesh) ChestMesh->SetSimulatePhysics(false);
+		if (SWBuoyancyComponent) SWBuoyancyComponent->Deactivate();
+		SetActorTickEnabled(false);
+	}
+	else
+	{
+		SetActorTransform(PoolAssignment.Transform, false, nullptr, ETeleportType::TeleportPhysics);
+		ApplyPhysicsMode();
+		ApplyLockPresentation();
+	}
+}
+
+bool AStorageChest::CanReturnToPool() const
+{
+	if (IsPoolIdle() || bHasPendingRoomState || bStoryGateDormant
+		|| GetWorldTimerManager().IsTimerActive(EmptyDestroyTimerHandle)) return false;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		if (const auto* Controller = Cast<ABasePlayerController>(It->Get()); Controller && Controller->IsStorageOpenFor(this)) return false;
+	// Never freeze a falling chest before it has reached the water surface.
+	if (bEnablePhysicsAndBuoyancy)
+	{
+		if (!ChestMesh || !SWBuoyancyComponent || !SWBuoyancyComponent->GetLastRuntimeDiagnostic().bPontoonInWater
+			|| ChestMesh->GetPhysicsLinearVelocity().SizeSquared() > FMath::Square(100.f)
+			|| ChestMesh->GetPhysicsAngularVelocityInDegrees().SizeSquared() > FMath::Square(30.f)) return false;
+	}
+	return true;
 }
 
 void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
@@ -829,6 +890,7 @@ void AStorageChest::OnRep_Locked()
 
 void AStorageChest::OnRep_ReplicatedMovement()
 {
+	if (IsPoolIdle()) return;
 	if (bEnablePhysicsAndBuoyancy)
 	{
 		ClientMovementTargetLocation = GetReplicatedMovement().Location;
@@ -1093,6 +1155,13 @@ void AStorageChest::ApplyPhysicsMode()
 {
 	if (!ChestMesh)
 	{
+		return;
+	}
+	if (IsPoolIdle())
+	{
+		ChestMesh->SetSimulatePhysics(false);
+		SetActorTickEnabled(false);
+		if (SWBuoyancyComponent) { SWBuoyancyComponent->Deactivate(); SWBuoyancyComponent->SetComponentTickEnabled(false); }
 		return;
 	}
 

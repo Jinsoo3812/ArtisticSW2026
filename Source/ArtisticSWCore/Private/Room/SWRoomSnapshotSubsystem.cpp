@@ -34,6 +34,7 @@ namespace
 bool IsExcluded(const AActor* Actor)
 {
 	return !Actor || Actor->ActorHasTag(TEXT("SWEnemyShipPoolIdle"))
+		|| Actor->ActorHasTag(TEXT("SWStorageChestPoolIdle")) || Actor->ActorHasTag(TEXT("SWStorageChestPoolReleased"))
 		|| Actor->ActorHasTag(TEXT("SWEnemyShipPoolReleased")) || Actor->IsA<AController>() || Actor->IsA<APlayerState>()
 		|| Actor->IsA<AGameModeBase>() || Actor->IsA<AGameStateBase>() || Actor->IsA<AInfo>()
 		|| (Cast<APawn>(Actor) && Cast<APawn>(Actor)->IsPlayerControlled()
@@ -497,7 +498,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 					|| FieldName == TEXT("ActiveBombardmentClass") || FieldName == TEXT("ReplicatedState")
 					|| FieldName == TEXT("ServerPhysicsTimeOrigin") || FieldName == TEXT("ServerPhysicsStepSeconds")
 					|| FieldName == TEXT("CurrentAIPropulsionScale") || FieldName == TEXT("CurrentAITurnScale"));
-			const bool bDerived = bEngineField || (OwnerType == TEXT("EnemyShip")
+			const bool bDerived = bEngineField || (OwnerType == TEXT("StorageChest") && FieldName == TEXT("PoolAssignment")) || (OwnerType == TEXT("EnemyShip")
 				&& (FieldName == TEXT("bDistanceOptimizationDormant") || FieldName == TEXT("RuntimeState")));
 			const bool bPersisted = bSerialized || bShipPersisted || bEnemyShipPersisted || bDeckPoolPersisted;
 			const TCHAR* Disposition = bPersisted ? TEXT("Persisted") : bTransient ? TEXT("Transient")

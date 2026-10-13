@@ -852,6 +852,23 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 	ClientOpenStorage(StorageChest);
 }
 
+void ABasePlayerController::HandleChestPoolAssignment(AStorageChest* Chest, const FGuid& PreviousId, const FGuid& NextId)
+{
+	if (PreviousId == NextId) return;
+	if (PreviousId.IsValid())
+		if (const FStorageRevealState* State = StorageRevealStates.Find(Chest)) PooledStorageRevealStates.Add(PreviousId, *State);
+	// The first registration adopts any search progress made before discovery.
+	if (!PreviousId.IsValid() && NextId.IsValid() && StorageRevealStates.Contains(Chest)) return;
+	if (ActiveStorageChest == Chest)
+	{
+		if (HasAuthority()) CloseStorageFromServer(Chest);
+		else CloseStorage(false);
+	}
+	StorageRevealStates.Remove(Chest);
+	if (NextId.IsValid())
+		if (const FStorageRevealState* State = PooledStorageRevealStates.Find(NextId)) StorageRevealStates.Add(Chest, *State);
+}
+
 void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
 {
 	if (IsStorageInteractionLoggingEnabled())
@@ -1594,7 +1611,7 @@ void ABasePlayerController::TickShipMotionDiagnostics()
 bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
 {
 	if (!CanMutateGameplay()) return false;
-	if (!IsValid(Chest) || Chest->IsLocked()) return false;
+	if (!IsValid(Chest) || Chest->IsLocked() || Chest->IsPoolIdle()) return false;
 	const ASharedStorageChest* Shared = Cast<ASharedStorageChest>(Chest);
 	return !Shared || Shared->CanPlayerAccess(GetPawn());
 }

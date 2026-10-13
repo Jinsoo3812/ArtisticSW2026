@@ -7,6 +7,7 @@
 #include "LootSpawnTypes.h"
 #include "Storage/StorageComponent.h"
 #include "Room/SWRoomStateAdapter.h"
+#include "Storage/StorageChestPoolTypes.h"
 #include "LootSpawnPoint.generated.h"
 
 USTRUCT()
@@ -15,6 +16,7 @@ struct FSWRoomLootPointState
 	GENERATED_BODY()
 	UPROPERTY(SaveGame) bool bActivated = false;
 	UPROPERTY(SaveGame) FGuid SpawnedActorId;
+	UPROPERTY(SaveGame) FStorageChestPoolPlacement PooledChest;
 };
 
 class ABaseItem;
@@ -204,6 +206,14 @@ class CLASSFEATURE_API AChestSpawnPoint : public ALootSpawnPointBase
 	GENERATED_BODY()
 
 public:
+	virtual void ResetSpawnPoint(bool bDestroySpawnedActor) override;
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
+	FStorageChestPoolPlacement& GetPooledChest() { return PooledChest; }
+	const FStorageChestPoolPlacement& GetPooledChest() const { return PooledChest; }
+	void SetPooledChestActor(AStorageChest* Chest);
+	bool HasAuthoredGuards() const { return !GuardCharacters.IsEmpty() || !GuardSpawners.IsEmpty() || BossGuard.IsValid() || bBossEncounterReserved || bIsBossChest; }
 	/** Copies the selected Chest and Loot authoring values from an owning actor. */
 	UFUNCTION(BlueprintCallable, Category = "Chest|Authoring")
 	void ApplyAuthoringSettings(
@@ -290,6 +300,7 @@ public:
 	TArray<TObjectPtr<AStoryConditionalSpawner>> GuardSpawners;
 
 protected:
+	UPROPERTY(Transient) FStorageChestPoolPlacement PooledChest;
 	virtual void BeginPlay() override;
 
 	UPROPERTY(Transient)

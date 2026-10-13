@@ -11,6 +11,7 @@
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
 #include "Engine/DataTable.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageChestPool.h"
 #include "ItemSpawn/BossChestGuaranteedLootData.h"
 #include "BaseCharacter.h"
 #include "Room/SWRoomSnapshotComponent.h"
@@ -450,6 +451,8 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		UE_LOG(LogTemp, Error, TEXT("Chest progression requires Balance, ItemAssetRegistry and CraftingRecipeDataTable."));
 		return false;
 	}
+	if (auto* Subsystem = GetWorld()->GetSubsystem<UStorageChestPoolSubsystem>())
+		if (auto* Pool = Subsystem->GetPool(); Pool && !Pool->MaterializeForLootRebalance()) return false;
 	const USettings_Item* ItemSettings = GetDefault<USettings_Item>();
 	const UFixedChestDropData* FixedDrops = ItemSettings
 		? ItemSettings->FixedChestDropData.LoadSynchronous() : nullptr;
