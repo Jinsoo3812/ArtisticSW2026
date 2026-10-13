@@ -26,6 +26,21 @@ bool FEnemyShipBundleBudgetTest::RunTest(const FString& Parameters)
 		GEngine->DestroyWorldContext(World);
 		return false;
 	}
+	TestEqual(TEXT("Default total bundle target is twelve"), Pool->BundleCapacity, 12);
+	FEnemyShipBundlePlacement QueuedPlacement;
+	QueuedPlacement.StableId = FGuid::NewGuid();
+	QueuedPlacement.bDormant = true;
+	QueuedPlacement.HomeTransform.SetLocation(FVector(100.0, 200.0, 0.0));
+	Pool->Placements.Add(QueuedPlacement);
+	Pool->EnqueueTransition(QueuedPlacement, EEnemyShipPoolWork::Wake);
+	Pool->EnqueueTransition(QueuedPlacement, EEnemyShipPoolWork::Wake);
+	TestEqual(TEXT("Duplicate wake is queued once"), Pool->TransitionRequests.Num(), 1);
+	QueuedPlacement.HomeTransform.SetLocation(FVector(900.0, 900.0, 0.0));
+	TestEqual(TEXT("Queued definition does not alias caller mutation"), Pool->TransitionRequests[0].Definition.HomeTransform.GetLocation(), FVector(100.0, 200.0, 0.0));
+	Pool->CancelTransitions(TEXT("TestCapture"));
+	TestEqual(TEXT("Capture discards pending transitions"), Pool->TransitionRequests.Num(), 0);
+	TestNull(TEXT("Capture leaves no partial Actor"), Pool->TransitionShip.Get());
+	Pool->Placements.Reset();
 	Pool->BundleCapacity = 8;
 	for (int32 Index = 0; Index < 8; ++Index)
 	{

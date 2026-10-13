@@ -67,6 +67,10 @@ struct FEnemyShipBundlePlacement
 	UPROPERTY(SaveGame) bool bUnloaded = false;
 	UPROPERTY(SaveGame) bool bStoryHidden = false;
 	UPROPERTY() TObjectPtr<AEnemyShip> ActiveShip;
+	UPROPERTY() uint32 ActivationGeneration = 0;
+	UPROPERTY() FTransform ActivationTransform;
+	UPROPERTY() FVector ActivationLinearVelocity = FVector::ZeroVector;
+	UPROPERTY() FVector ActivationAngularVelocity = FVector::ZeroVector;
 };
 
 USTRUCT()
@@ -106,6 +110,10 @@ struct FEnemyShipBundleVisualState
 	UPROPERTY() bool bUnloaded = false;
 	UPROPERTY() bool bStoryHidden = false;
 	UPROPERTY() TObjectPtr<AEnemyShip> ActiveShip;
+	UPROPERTY() uint32 ActivationGeneration = 0;
+	UPROPERTY() FTransform ActivationTransform;
+	UPROPERTY() FVector ActivationLinearVelocity = FVector::ZeroVector;
+	UPROPERTY() FVector ActivationAngularVelocity = FVector::ZeroVector;
 };
 
 /** One subobject per logical ship bounds each replication payload independently. */
@@ -140,6 +148,23 @@ struct FEnemyShipPoolAuditSample
 	double PhaseStartTime = 0.0;
 };
 
+enum class EEnemyShipPoolWork : uint8 { Wake, Sleep, Reserve, Trim };
+
+/** Runtime-only cursor. The definition is frozen for the duration of an assignment. */
+struct FEnemyShipPoolTransition
+{
+	EEnemyShipPoolWork Kind = EEnemyShipPoolWork::Wake;
+	FEnemyShipBundlePlacement Definition;
+	TMap<FString, TWeakObjectPtr<UObject>> Objects;
+	TArray<FString> ObjectKeys;
+	TArray<int32> References;
+	TArray<FProperty*> DefaultProperties;
+	int32 Stage = 0, Object = 0, Property = 0, DefaultProperty = 0, Mesh = 0;
+	bool bObjectStarted = false;
+	double RequestedAt = 0.0, StartedAt = 0.0, WorkSeconds = 0.0, MaxStepSeconds = 0.0;
+	int32 Frames = 0, Steps = 0, SlowStage = 0;
+};
+
 UCLASS()
 class ENEMY_API AEnemyShipBundlePool : public AActor, public ISWRoomStateAdapter
 {
@@ -147,6 +172,7 @@ class ENEMY_API AEnemyShipBundlePool : public AActor, public ISWRoomStateAdapter
 public:
 	AEnemyShipBundlePool();
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual bool ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
@@ -158,11 +184,25 @@ public:
 	bool ApplyLogicalOrbitDistance(AEnemyShip* Ship) const;
 	/** Target ACTIVE + UNUSED bundles. Active demand can exceed this target;
 	 * returns discard excess bundles until the total reaches the target again. */
-	UPROPERTY(EditAnywhere, Category="Ship|Optimization", meta=(ClampMin="0")) int32 BundleCapacity = 8;
+	UPROPERTY(EditAnywhere, Category="Ship|Optimization", meta=(ClampMin="0")) int32 BundleCapacity = 12;
 
 private:
 	friend class FEnemyShipBundleBudgetTest;
 	void Evaluate();
+	void EnqueueTransition(const FEnemyShipBundlePlacement& Placement, EEnemyShipPoolWork Kind);
+	void ProcessTransitionQueue(double Deadline);
+	bool StepTransition(FEnemyShipPoolTransition& Job, FString& Error);
+	void FinishTransition(const TCHAR* Result, const FString& Reason = FString());
+	void CancelTransitions(const TCHAR* Reason);
+	void QueueCapacityMaintenance();
+	void ProcessPresentation(double Deadline);
+	void UpdatePlacementInstances(const FEnemyShipBundlePlacement& Placement, bool bShowISM);
+	UPROPERTY(Transient) TObjectPtr<AEnemyShip> TransitionShip;
+	TArray<FEnemyShipPoolTransition> TransitionRequests;
+	TUniquePtr<FEnemyShipPoolTransition> Transition;
+	bool bPresentationPending = false;
+	TMap<FGuid, uint32> PlacementPresentationHashes;
+
 	void DiscoverPlacedShips();
 	bool CapturePlacement(AEnemyShip& Ship, FEnemyShipBundlePlacement& Placement);
 	bool BindPlacement(FEnemyShipBundlePlacement& Placement, bool bRestoring, FString& Error);
@@ -186,6 +226,8 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<UInstancedStaticMeshComponent>> ProxyInstanceComponents;
 	TMap<FGuid, uint32> ClientAssignments;
 	TMap<FGuid, TWeakObjectPtr<AEnemyShip>> ClientActors;
+	TMap<FGuid, TSet<FString>> ClientVisualKeys;
+	TMap<FGuid, FString> ClientActivationWaitReasons;
 	uint32 LastPresentationHash = 0;
 	FTimerHandle EvaluationTimer;
 	FDelegateHandle PrepareRestoreHandle;

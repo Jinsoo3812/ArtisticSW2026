@@ -80,10 +80,21 @@ public:
 	AEnemyShip();
 	bool IsBundlePoolIdle() const { return bBundlePoolIdle; }
 	void SetBundlePoolIdle(bool bIdle);
+	void BeginBundleActivation();
+	virtual void PostNetReceive() override;
+	virtual void OnRep_ReplicatedMovement() override;
+	uint32 GetBundleActivationGeneration() const { return BundleActivationGeneration; }
+	bool IsBundlePresentationReady() const;
+	void RefreshBundlePresentation() { OnRep_BundlePoolIdle(); }
+	bool PrepareBundlePosition(uint32 Generation, const FTransform& Transform);
+	bool IsBundlePositionPrepared() const { return BundleActivationGeneration != 0 && ClientBundlePreparedGeneration == BundleActivationGeneration; }
+	void ActivatePreparedBundle(uint32 Generation, const FVector& LinearVelocity, const FVector& AngularVelocity);
 	void PrepareFreshBundleEncounter(const FTransform& HomeTransform);
 	/** Build derived deck navigation while gameplay remains suspended. Restore never resets crew. */
 	bool PrepareBundleDeck(bool bCreateCrew, FString& Error);
+	double GetInitialBeginPlayMs() const { return InitialBeginPlayMs; }
 	void ClearCrewForIdle();
+	bool StepClearCrewForIdle();
 	void RefreshBundleStoryBindings();
 	FName GetBundleAuthoredName() const { return BundleAuthoredName.IsNone() ? GetFName() : BundleAuthoredName; }
 	void SetBundleAuthoredName(FName Name) { BundleAuthoredName = Name; }
@@ -117,6 +128,7 @@ public:
 	TObjectPtr<USWCabinWaterCullComponent> CabinWaterCullComponent;
 
 protected:
+	double InitialBeginPlayMs = 0.0;
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
@@ -412,6 +424,10 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_BundlePoolIdle)
 	bool bBundlePoolIdle = false;
 	UPROPERTY(Replicated) FName BundleAuthoredName;
+	UPROPERTY(ReplicatedUsing=OnRep_BundleActivationGeneration) uint32 BundleActivationGeneration = 0;
+	uint32 ClientBundleActivationGeneration = 0;
+	uint32 ClientBundlePreparedGeneration = 0;
+	UFUNCTION() void OnRep_BundleActivationGeneration();
 	UFUNCTION() void OnRep_BundlePoolIdle();
 	struct FBundleSuspendedActor
 	{

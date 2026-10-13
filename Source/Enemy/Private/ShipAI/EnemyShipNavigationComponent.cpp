@@ -151,9 +151,10 @@ void UEnemyShipNavigationComponent::TickComponent(
 			HomeAlignment.Elapsed = 0.0f;
 			OnRep_HomeAlignment();
 			Ship->ForceNetUpdate();
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolAlignment] Event=Begin Ship=%s Duration=%.2f DistanceCM=%.2f"),
 				*Ship->GetBundleAuthoredName().ToString(), HomeAlignment.Duration,
-				FVector::Distance(Home.GetLocation(), HomeAlignment.Start.GetLocation()));
+				FVector::Distance(Home.GetLocation(), HomeAlignment.Start.GetLocation())); */ {}
 			return;
 		}
 	}
@@ -235,7 +236,8 @@ void UEnemyShipNavigationComponent::TickHomeAlignment(float DeltaTime)
 		OnRep_HomeAlignment();
 		OnNavigationStateChanged.Broadcast(ENavalCombatState::Return, CurrentState);
 		Ship->ForceNetUpdate();
-		UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolAlignment] Event=Complete Ship=%s"), *Ship->GetBundleAuthoredName().ToString());
+		/* Diagnostics muted after pooling/crew verification.
+		UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolAlignment] Event=Complete Ship=%s"), *Ship->GetBundleAuthoredName().ToString()); */ {}
 	}
 }
 

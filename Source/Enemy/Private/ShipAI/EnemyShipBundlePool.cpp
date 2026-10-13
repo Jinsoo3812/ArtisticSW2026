@@ -1,4 +1,9 @@
 #include "ShipAI/EnemyShipBundlePool.h"
+#include "ShipAI/EnemyShipDiagnostics.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckWaypointComponent.h"
+#include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipArchetypeData.h"
@@ -10,6 +15,7 @@
 #include "Components/ChildActorComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Camera/CameraComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Engine/Level.h"
@@ -77,6 +83,26 @@ bool IsSupported(const AEnemyShip& Ship)
 {
 	for (const UClass* Class = Ship.GetClass(); Class; Class = Class->GetSuperClass())
 		if (Class->GetPathName() == TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip_C")) return true;
+	return false;
+}
+
+/** All supported bundles share their authored geometry. Assignment imports gameplay only. */
+bool IsFixedBundleConfiguration(const UObject& Target, const FProperty& Property)
+{
+	if (Target.IsA<UPrimitiveComponent>() || Target.IsA<UDeckWalkAreaComponent>() || Target.IsA<UDeckWaypointComponent>()) return true;
+	if (Target.IsA<USceneComponent>())
+	{
+		const FName Name = Property.GetFName();
+		if (Name == TEXT("RelativeLocation") || Name == TEXT("RelativeRotation") || Name == TEXT("RelativeScale3D")
+			|| Name == TEXT("AttachParent") || Name == TEXT("AttachSocketName") || Name == TEXT("Mobility")
+			|| Name == TEXT("bAbsoluteLocation") || Name == TEXT("bAbsoluteRotation") || Name == TEXT("bAbsoluteScale")
+			|| Name == TEXT("bVisible") || Name == TEXT("bHiddenInGame")) return true;
+	}
+	const FProperty* ValueProperty = &Property;
+	if (const FArrayProperty* Array = CastField<FArrayProperty>(ValueProperty)) ValueProperty = Array->Inner;
+	if (const FObjectPropertyBase* Object = CastField<FObjectPropertyBase>(ValueProperty))
+		return Object->PropertyClass && (Object->PropertyClass->IsChildOf(USceneComponent::StaticClass())
+			|| Object->PropertyClass->IsChildOf(UDeckWalkAreaComponent::StaticClass()));
 	return false;
 }
 
@@ -167,21 +193,24 @@ void AuditProfile(AEnemyShip& Ship, const FEnemyShipBundlePlacement& Placement, 
 				++Mismatches;
 				FString ActualText;
 				Property->ExportTextItem_Direct(ActualText, Actual, nullptr, *Found, PPF_Delimited);
+				/* Diagnostics muted after pooling/crew verification.
 				UE_LOG(LogTemp, Warning, TEXT("[EnemyShipPool] Event=ProfileMismatch Scope=%s Id=%s Actor=%s Object=%s Field=%s Expected=%s Actual=%s"),
 					bGameplayConfig ? TEXT("EncounterConfig") : TEXT("ImportedProfile"), *Placement.StableId.ToString(), *Ship.GetName(),
-					*Saved.Key, *Value.Name.ToString(), *Text.Left(512), *ActualText.Left(512));
+					*Saved.Key, *Value.Name.ToString(), *Text.Left(512), *ActualText.Left(512)); */ {}
 			}
 			else if (bGameplayConfig && Saved.Key == TEXT("Actor"))
+				/* Diagnostics muted after pooling/crew verification.
 				UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=ProfileValue Id=%s Actor=%s Field=%s Match=1 Value=%s"),
-					*Placement.StableId.ToString(), *Ship.GetName(), *Value.Name.ToString(), *Text.Left(512));
+					*Placement.StableId.ToString(), *Ship.GetName(), *Value.Name.ToString(), *Text.Left(512)); */ {}
 			Property->DestroyValue(Expected);
 			FMemory::Free(Expected);
 		}
 	}
+	/* Diagnostics muted after pooling/crew verification.
 	UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=ProfileCheck Scope=%s Id=%s Profile=%s Actor=%s Assignment=%u Checked=%d Mismatches=%d AuthoredArchetype=%s EffectiveArchetype=%s Squad=%s"),
 		bGameplayConfig ? TEXT("EncounterConfig") : TEXT("ImportedProfile"), *Placement.StableId.ToString(), *Placement.ClassPath.ToString(),
 		*Ship.GetName(), Placement.Assignment, Checked, Mismatches, *GetPathNameSafe(Ship.AuthoredEncounterArchetype.Get()),
-		*GetPathNameSafe(Ship.EnemyShipArchetype.Get()), *Ship.SquadID.ToString());
+		*GetPathNameSafe(Ship.EnemyShipArchetype.Get()), *Ship.SquadID.ToString()); */ {}
 	if (bGameplayConfig)
 	{
 		UEnemyShipArchetypeData* ExpectedAuthored = Cast<UEnemyShipArchetypeData>(Placement.Archetype.ResolveObject());
@@ -189,10 +218,11 @@ void AuditProfile(AEnemyShip& Ship, const FEnemyShipBundlePlacement& Placement, 
 		const bool bFallback = Ship.NormalFallbackArchetype && Ship.GetBossEncounterComponent()
 			&& !Ship.GetBossEncounterComponent()->IsCampaignGateOpen();
 		if (bFallback) ExpectedEffective = Ship.NormalFallbackArchetype;
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=ArchetypeCheck Id=%s Actor=%s AuthoredMatch=%d EffectiveMatch=%d Fallback=%d ExpectedAuthored=%s ExpectedEffective=%s ActualEffective=%s"),
 			*Placement.StableId.ToString(), *Ship.GetName(), ExpectedAuthored == Ship.AuthoredEncounterArchetype,
 			ExpectedEffective == Ship.EnemyShipArchetype, bFallback, *GetPathNameSafe(ExpectedAuthored),
-			*GetPathNameSafe(ExpectedEffective), *GetPathNameSafe(Ship.EnemyShipArchetype.Get()));
+			*GetPathNameSafe(ExpectedEffective), *GetPathNameSafe(Ship.EnemyShipArchetype.Get())); */ {}
 	}
 }
 
@@ -249,7 +279,8 @@ void RefillChests(AEnemyShip& Ship)
 
 AEnemyShipBundlePool::AEnemyShipBundlePool()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bAllowTickOnDedicatedServer = true;
 	bReplicates = true;
 	// Project defaults enable the registered list; this Actor uses the bounded legacy override.
 	bReplicateUsingRegisteredSubObjectList = false;
@@ -280,6 +311,7 @@ void AEnemyShipBundlePool::BeginPlay()
 			PrepareRestoreHandle = Room->OnPrepareRestore.AddUObject(this, &AEnemyShipBundlePool::PrepareRestore);
 			PrepareCaptureHandle = Room->OnPrepareCapture.AddWeakLambda(this, [this]()
 			{
+				CancelTransitions(TEXT("Capture"));
 				if (Placements.IsEmpty()) DiscoverPlacedShips();
 			});
 			RestoreCompletedHandle = Room->OnRestoreCompleted.AddUObject(this, &AEnemyShipBundlePool::RestoreCompleted);
@@ -290,6 +322,7 @@ void AEnemyShipBundlePool::BeginPlay()
 
 void AEnemyShipBundlePool::EndPlay(const EEndPlayReason::Type Reason)
 {
+	CancelTransitions(TEXT("EndPlay"));
 	GetWorldTimerManager().ClearTimer(EvaluationTimer);
 	FWorldDelegates::LevelRemovedFromWorld.Remove(LevelRemovedHandle);
 	if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>())
@@ -345,17 +378,6 @@ void AEnemyShipBundlePool::UpdatePresentation()
 			Node->Definition.AuthoredName = Placement.AuthoredName;
 			Node->Definition.HomeTransform = Placement.HomeTransform;
 			Node->Definition.Meshes = Placement.Meshes;
-			for (const FEnemyShipBundleObject& Saved : Placement.Objects)
-			{
-				FEnemyShipBundleVisualObject Visual;
-				Visual.Key = Saved.Key;
-				for (const FEnemyShipBundleProperty& Value : Saved.Properties)
-					if (Value.Name == TEXT("StaticMesh") || Value.Name == TEXT("OverrideMaterials")
-						|| Value.Name == TEXT("RelativeLocation") || Value.Name == TEXT("RelativeRotation")
-						|| Value.Name == TEXT("RelativeScale3D") || Value.Name == TEXT("bVisible"))
-						Visual.Properties.Add(Value);
-				if (!Visual.Properties.IsEmpty()) Node->Definition.Objects.Add(MoveTemp(Visual));
-			}
 			PresentationNodes.Add(Node);
 		}
 		Node->State.Assignment = Placement.Assignment;
@@ -364,6 +386,16 @@ void AEnemyShipBundlePool::UpdatePresentation()
 		Node->State.bUnloaded = Placement.bUnloaded;
 		Node->State.bStoryHidden = Placement.bStoryHidden;
 		Node->State.ActiveShip = Placement.ActiveShip;
+		Node->State.ActivationGeneration = IsValid(Placement.ActiveShip) ? Placement.ActiveShip->GetBundleActivationGeneration() : 0;
+		if (IsValid(Placement.ActiveShip))
+		{
+			Node->State.ActivationTransform = Placement.ActiveShip->GetActorTransform();
+			if (UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Placement.ActiveShip->GetRootComponent()))
+			{
+				Node->State.ActivationLinearVelocity = Root->GetPhysicsLinearVelocity();
+				Node->State.ActivationAngularVelocity = Root->GetPhysicsAngularVelocityInDegrees();
+			}
+		}
 	}
 	for (int32 Index = PresentationNodes.Num() - 1; Index >= 0; --Index)
 		if (!PresentationNodes[Index] || !Placements.ContainsByPredicate([&](const FEnemyShipBundlePlacement& Placement)
@@ -412,7 +444,7 @@ bool AEnemyShipBundlePool::CapturePlacement(AEnemyShip& Ship, FEnemyShipBundlePl
 		for (TFieldIterator<FProperty> It(Object->GetClass()); It; ++It)
 		{
 			FProperty* Property = *It;
-			if (!Property->HasAnyPropertyFlags(CPF_Edit)
+			if (EnemyShipBundlePool::IsFixedBundleConfiguration(*Object, *Property) || !Property->HasAnyPropertyFlags(CPF_Edit)
 				|| Property->HasAnyPropertyFlags(CPF_EditConst | CPF_Transient | CPF_EditorOnly | CPF_InstancedReference)
 				|| Property->GetFName() == TEXT("GuardCharacters") || Property->GetFName() == TEXT("GuardSpawners")) continue;
 			FEnemyShipBundleProperty& Value = Saved.Properties.AddDefaulted_GetRef();
@@ -526,6 +558,7 @@ AEnemyShip* AEnemyShipBundlePool::AllocateBundle(UClass* Class, const FEnemyShip
 		for (const FEnemyShipBundleProperty& Value : Definition->Properties)
 			if (FProperty* Property = Class->FindPropertyByName(Value.Name))
 			{
+				if (EnemyShipBundlePool::IsFixedBundleConfiguration(*Ship, *Property)) continue;
 				FString Text = Value.Value;
 				EnemyShipBundlePool::RemapReference(Text, *Definition, *Ship);
 				if (Text.IsEmpty()) Property->ClearValue(Property->ContainerPtrToValuePtr<void>(Ship));
@@ -538,7 +571,15 @@ AEnemyShip* AEnemyShipBundlePool::AllocateBundle(UClass* Class, const FEnemyShip
 			}
 	Ship->Tags.AddUnique(EnemyShipBundlePool::IdleTag);
 	Ship->SetBundlePoolIdle(true);
+	const double FinishStart = FPlatformTime::Seconds();
 	Ship->FinishSpawning(Placement.HomeTransform);
+	if (EnemyShipDiagnostics::InitEnabled())
+	{
+		const double TotalMs = (FPlatformTime::Seconds() - FinishStart) * 1000.;
+		/* Diagnostics muted after pooling/crew verification.
+		UE_LOG(LogEnemyShipInit, Display, TEXT("Event=FinishSpawning Actor=%s Path=Immediate TotalMs=%.3f BeginPlayMs=%.3f ConstructionAndOtherMs=%.3f"),
+			*Ship->GetName(), TotalMs, Ship->GetInitialBeginPlayMs(), FMath::Max(0.0, TotalMs - Ship->GetInitialBeginPlayMs())); */ {}
+	}
 	Ship->SetBundlePoolIdle(true);
 	SetBundleRegistration(*Ship, true, nullptr);
 	if (auto* Swarm = GetWorld()->GetSubsystem<UShipSwarmSubsystem>()) Swarm->UnregisterShip(Ship);
@@ -578,7 +619,8 @@ void AEnemyShipBundlePool::MaintainBundleCapacity(bool bFillReserve)
 		AEnemyShip* Ship = AllocateBundle(Class, *Definition, Error);
 		if (!Ship)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[EnemyShipPool] Event=ReserveFailed Reason=%s"), *Error);
+			/* Diagnostics muted after pooling/crew verification.
+			UE_LOG(LogTemp, Error, TEXT("[EnemyShipPool] Event=ReserveFailed Reason=%s"), *Error); */ {}
 			break;
 		}
 		IdleBundles.Add(Ship);
@@ -658,7 +700,7 @@ bool AEnemyShipBundlePool::BindPlacement(FEnemyShipBundlePlacement& Placement, b
 		for (TFieldIterator<FProperty> It(Target->GetClass()); It; ++It)
 		{
 			FProperty* Property = *It;
-			if (!Property->HasAnyPropertyFlags(CPF_Edit)
+			if (EnemyShipBundlePool::IsFixedBundleConfiguration(*Target, *Property) || !Property->HasAnyPropertyFlags(CPF_Edit)
 				|| Property->HasAnyPropertyFlags(CPF_EditConst | CPF_Transient | CPF_EditorOnly | CPF_InstancedReference)
 				|| Property->GetFName() == TEXT("GuardCharacters") || Property->GetFName() == TEXT("GuardSpawners")
 				|| Saved.Properties.ContainsByPredicate([&](const FEnemyShipBundleProperty& P) { return P.Name == Property->GetFName(); })) continue;
@@ -675,6 +717,7 @@ bool AEnemyShipBundlePool::BindPlacement(FEnemyShipBundlePlacement& Placement, b
 		{
 			FProperty* Property = Target->GetClass()->FindPropertyByName(Value.Name);
 			if (!Property) { Error = TEXT("Enemy ship bundle property missing: ") + Value.Name.ToString(); return false; }
+			if (EnemyShipBundlePool::IsFixedBundleConfiguration(*Target, *Property)) continue;
 			FString Text = Value.Value;
 			for (const FEnemyShipBundleObject* Reference : References)
 				if (UObject* const* Mapped = Objects.Find(Reference->Key))
@@ -697,11 +740,9 @@ bool AEnemyShipBundlePool::BindPlacement(FEnemyShipBundlePlacement& Placement, b
 	Ship->AuthoredEncounterArchetype = Cast<UEnemyShipArchetypeData>(Placement.Archetype.TryLoad());
 	Ship->RefreshBundleStoryBindings();
 	Ship->GetNavigationComponent()->ResetSpawnHome(Placement.HomeTransform);
-	Ship->SetActorTransform(Placement.HomeTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	Ship->SetActorEnableCollision(false);
-	for (const auto& Pair : Objects)
-		if (UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Pair.Value)) Mesh->ReregisterComponent();
 	Ship->SetShipRuntimePhysicsEnabled(false);
+	Ship->SetActorTransform(Placement.HomeTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	Placement.ActiveShip = Ship;
 	Placement.bDormant = false;
 	Placement.bUnloaded = false;
@@ -720,7 +761,11 @@ bool AEnemyShipBundlePool::BindPlacement(FEnemyShipBundlePlacement& Placement, b
 	Ship->OnDestroyed.AddUniqueDynamic(this, &AEnemyShipBundlePool::HandleShipDestroyed);
 	if (auto* Swarm = GetWorld()->GetSubsystem<UShipSwarmSubsystem>()) Swarm->RegisterShip(Ship);
 	if (auto* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>()) Weakening->RegisterShip(Ship);
-	if (!bRestoring) Ship->SetBundlePoolIdle(false);
+	if (!bRestoring)
+	{
+		Ship->BeginBundleActivation();
+		Ship->SetBundlePoolIdle(false);
+	}
 	// if (!bRestoring) EnemyShipBundlePool::AuditProfile(*Ship, Placement, true);
 	bBound = true;
 	MaintainBundleCapacity(false);
@@ -795,6 +840,352 @@ void AEnemyShipBundlePool::HandleShipDestroyed(AActor* Ship)
 	ForceNetUpdate();
 }
 
+
+static TAutoConsoleVariable<float> CVarEnemyShipPoolBudgetMs(
+	TEXT("sw.EnemyShipPool.QueueBudgetMs"), 1.0f, TEXT("Combined server/client pooling work budget per game frame in milliseconds."));
+
+
+void AEnemyShipBundlePool::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	const auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>();
+	if (bChangingPool || (Room && Room->IsRestoringSnapshot())) return;
+	const double Deadline = FPlatformTime::Seconds() + FMath::Clamp(CVarEnemyShipPoolBudgetMs.GetValueOnGameThread(), 0.1f, 8.0f) * 0.001;
+	if (HasAuthority()) ProcessTransitionQueue(Deadline);
+	if (bPresentationPending && FPlatformTime::Seconds() < Deadline) ProcessPresentation(Deadline);
+}
+
+void AEnemyShipBundlePool::EnqueueTransition(const FEnemyShipBundlePlacement& Placement, EEnemyShipPoolWork Kind)
+{
+	if (Transition && Transition->Definition.StableId == Placement.StableId) return;
+	if (TransitionRequests.ContainsByPredicate([&](const FEnemyShipPoolTransition& Request) { return Request.Definition.StableId == Placement.StableId; })) return;
+	FEnemyShipPoolTransition& Request = TransitionRequests.AddDefaulted_GetRef();
+	Request.Definition = Placement;
+	Request.Kind = Kind;
+	Request.RequestedAt = FPlatformTime::Seconds();
+}
+
+void AEnemyShipBundlePool::QueueCapacityMaintenance()
+{
+	// Reserve work is serialized with assignments; do not manufacture an entire reserve in one frame.
+	if (Transition || !TransitionRequests.IsEmpty()) return;
+	const int32 Target = FMath::Max(0, BundleCapacity - CountActiveBundles());
+	if (IdleBundles.Num() > Target && !Placements.IsEmpty()) EnqueueTransition(Placements[0], EEnemyShipPoolWork::Trim);
+	else if (IdleBundles.Num() < Target)
+		if (const auto* Definition = Placements.FindByPredicate([](const FEnemyShipBundlePlacement& P) { return !P.bUnloaded && !P.bDestroyed; }))
+			EnqueueTransition(*Definition, EEnemyShipPoolWork::Reserve);
+}
+
+void AEnemyShipBundlePool::FinishTransition(const TCHAR* Result, const FString& Reason)
+{
+	if (!Transition) return;
+	if (FCString::Strcmp(Result, TEXT("Failed")) == 0)
+		/* Diagnostics muted after pooling/crew verification.
+		UE_LOG(LogEnemyShipInit, Error, TEXT("Event=PoolPreparationFailed Ship=%s Stage=%d Reason=%s"),
+			*Transition->Definition.AuthoredName.ToString(), Transition->Stage, *Reason); */ {}
+	Transition.Reset();
+	TransitionShip = nullptr;
+}
+
+void AEnemyShipBundlePool::CancelTransitions(const TCHAR* Reason)
+{
+	TransitionRequests.Reset();
+	if (!Transition) return;
+	if (IsValid(TransitionShip) && FCString::Strcmp(Reason, TEXT("EndPlay")) != 0)
+	{
+		if (Transition->Kind == EEnemyShipPoolWork::Sleep)
+		{
+			// Commit the remaining administrative cleanup before snapshot capture; never save a half-returned bundle.
+			if (auto* Placement = Placements.FindByPredicate([&](const FEnemyShipBundlePlacement& P) { return P.StableId == Transition->Definition.StableId; }))
+				ReleasePlacement(*Placement);
+		}
+		else
+		{
+			if (auto* Walk = TransitionShip->GetDeckWalkAreaComponent()) Walk->CancelQueuedRebuild();
+			DestroyBundle(TransitionShip);
+		}
+	}
+	FinishTransition(TEXT("Cancelled"), Reason);
+}
+
+void AEnemyShipBundlePool::ProcessTransitionQueue(double Deadline)
+{
+	if (!Transition && !TransitionRequests.IsEmpty())
+	{
+		Transition = MakeUnique<FEnemyShipPoolTransition>(MoveTemp(TransitionRequests[0]));
+		TransitionRequests.RemoveAt(0, 1, EAllowShrinking::No);
+	}
+	if (!Transition) return;
+		if (Transition->Kind == EEnemyShipPoolWork::Wake)
+		{
+			bool bInRange = false;
+			for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+				if (!It->IsEnemyShipForEffects() && It->ActorHasTag(TEXT("Player")) && !It->ActorHasTag(TEXT("Enemy"))
+					&& FVector::DistSquared2D(It->GetActorLocation(), Transition->Definition.HomeTransform.GetLocation()) <= FMath::Square(FMath::Max(0.f, Transition->Definition.ActivationRange))) { bInRange = true; break; }
+			if (!bInRange)
+			{
+				if (IsValid(TransitionShip)) DestroyBundle(TransitionShip);
+				FinishTransition(TEXT("Cancelled"), TEXT("OutOfRange")); return;
+			}
+		}
+	while (Transition && FPlatformTime::Seconds() < Deadline)
+	{
+		auto* Placement = Placements.FindByPredicate([&](const FEnemyShipBundlePlacement& P) { return P.StableId == Transition->Definition.StableId; });
+		const bool bWake = Transition->Kind == EEnemyShipPoolWork::Wake;
+		if (!Placement || Placement->bDestroyed || Placement->bUnloaded || (bWake && !Placement->bDormant))
+		{
+			if (IsValid(TransitionShip) && bWake) DestroyBundle(TransitionShip);
+			FinishTransition(TEXT("Cancelled"), TEXT("PlacementChanged"));
+			break;
+		}
+
+		FString Error;
+		const bool bDone = StepTransition(*Transition, Error);
+		if (!Error.IsEmpty())
+		{
+			if (bWake) LastWakeErrors.Add(Transition->Definition.StableId, Error);
+			if (IsValid(TransitionShip)) DestroyBundle(TransitionShip);
+			FinishTransition(TEXT("Failed"), Error); break;
+		}
+		if (bDone) { FinishTransition(TEXT("Complete")); break; }
+	}
+}
+
+bool AEnemyShipBundlePool::StepTransition(FEnemyShipPoolTransition& Job, FString& Error)
+{
+	auto& Definition = Job.Definition;
+	auto* Placement = Placements.FindByPredicate([&](const FEnemyShipBundlePlacement& P) { return P.StableId == Definition.StableId; });
+	if (!Placement) { Error = TEXT("PlacementMissing"); return true; }
+	if (Job.Kind == EEnemyShipPoolWork::Trim)
+	{
+		if (IdleBundles.IsEmpty()) return true;
+		AEnemyShip* Excess = IdleBundles.Pop(EAllowShrinking::No);
+		DestroyBundle(Excess); return true;
+	}
+	if (Job.Kind == EEnemyShipPoolWork::Sleep)
+	{
+		if (Job.Stage == 0)
+		{
+			TransitionShip = Placement->ActiveShip;
+			if (!IsValid(TransitionShip) || !TransitionShip->IsDistanceOptimizationDormant()) return true;
+			TransitionShip->SetBundlePoolIdle(true); ++Job.Stage; return false;
+		}
+		AEnemyShip* Ship = TransitionShip;
+		if (!IsValid(Ship)) return true;
+		switch (Job.Stage)
+		{
+		case 1: if (Ship->StepClearCrewForIdle()) ++Job.Stage; return false;
+		case 2: Ship->PrepareFreshBundleEncounter(Definition.HomeTransform); ++Job.Stage; return false;
+		case 3:
+			Placement->OrbitArchetype = FSoftObjectPath(Ship->EnemyShipArchetype.Get());
+			SetBundleRegistration(*Ship, true, nullptr);
+			if (auto* Swarm = GetWorld()->GetSubsystem<UShipSwarmSubsystem>()) Swarm->UnregisterShip(Ship);
+			if (auto* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>()) Weakening->UnregisterShip(Ship);
+			++Job.Stage; return false;
+		default:
+			Placement->ActiveShip = nullptr; Placement->bDormant = true;
+			if (FSoftClassPath(Ship->GetClass()) == EnemyShipBundlePool::CommonClass) IdleBundles.AddUnique(Ship);
+			else DestroyBundle(Ship);
+			ForceNetUpdate(); OnRep_Placements(); return true;
+		}
+	}
+	AEnemyShip* Ship = TransitionShip;
+	if (Job.Stage > 0 && !IsValid(Ship)) { Error = TEXT("ActorLost"); return true; }
+	switch (Job.Stage)
+	{
+	case 0:
+	{
+		UClass* Class = EnemyShipBundlePool::CommonClass.TryLoadClass<AEnemyShip>();
+		if (!Class) { Error = TEXT("AllocationClassMissing"); return true; }
+		if (Job.Kind == EEnemyShipPoolWork::Wake)
+			for (int32 Index = IdleBundles.Num() - 1; Index >= 0; --Index)
+				if (IsValid(IdleBundles[Index]) && IdleBundles[Index]->GetClass() == Class && IdleBundles[Index]->GetLevel()->GetOutermost()->GetName() == Definition.LevelPackage.ToString())
+				{ TransitionShip = IdleBundles[Index]; IdleBundles.RemoveAtSwap(Index); Job.Stage = 3; return false; }
+		FActorSpawnParameters Parameters;
+		Parameters.Owner = this; Parameters.bDeferConstruction = true;
+		Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		for (ULevel* Level : GetWorld()->GetLevels())
+			if (Level->GetOutermost()->GetName() == Definition.LevelPackage.ToString()) { Parameters.OverrideLevel = Level; break; }
+		if (!Parameters.OverrideLevel) { Error = TEXT("LevelMissing"); return true; }
+		const double AllocationStart = FPlatformTime::Seconds();
+		TransitionShip = GetWorld()->SpawnActor<AEnemyShip>(Class, Definition.HomeTransform, Parameters);
+		if (EnemyShipDiagnostics::InitEnabled())
+			/* Diagnostics muted after pooling/crew verification.
+			UE_LOG(LogEnemyShipInit, Display, TEXT("Event=AllocateShell Actor=%s Class=%s Kind=%d DurationMs=%.3f Active=%d Idle=%d Capacity=%d"),
+				*GetNameSafe(TransitionShip), *GetNameSafe(Class), static_cast<int32>(Job.Kind), (FPlatformTime::Seconds() - AllocationStart) * 1000., CountActiveBundles(), IdleBundles.Num(), BundleCapacity); */ {}
+		if (!TransitionShip) { Error = TEXT("AllocationFailed"); return true; }
+		TransitionShip->SetBundlePoolIdle(true);
+		Job.Stage = 1; return false;
+	}
+	case 1:
+	{
+		const auto* ActorDefinition = Definition.Objects.FindByPredicate([](const FEnemyShipBundleObject& Saved) { return Saved.Key == TEXT("Actor"); });
+		if (!ActorDefinition || Job.Property >= ActorDefinition->Properties.Num()) { Job.Property = 0; ++Job.Stage; return false; }
+		const auto& Value = ActorDefinition->Properties[Job.Property++];
+		if (FProperty* Property = Ship->GetClass()->FindPropertyByName(Value.Name); Property && !EnemyShipBundlePool::IsFixedBundleConfiguration(*Ship, *Property))
+		{
+			FString Text = Value.Value; EnemyShipBundlePool::RemapReference(Text, *ActorDefinition, *Ship);
+			if (Text.IsEmpty()) Property->ClearValue(Property->ContainerPtrToValuePtr<void>(Ship));
+			else if (!Property->ImportText_Direct(*Text, Property->ContainerPtrToValuePtr<void>(Ship), Ship, PPF_Delimited)) Error = TEXT("AllocationProperty:") + Value.Name.ToString();
+		}
+		Ship->SetActorHiddenInGame(true); Ship->SetActorEnableCollision(false); Ship->SetActorTickEnabled(false);
+		return false;
+	}
+	case 2:
+		Ship->Tags.AddUnique(EnemyShipBundlePool::IdleTag);
+		Ship->SetBundlePoolIdle(true);
+		{
+			const double Start = FPlatformTime::Seconds();
+			Ship->FinishSpawning(Definition.HomeTransform);
+			if (EnemyShipDiagnostics::InitEnabled())
+			{
+				const double TotalMs = (FPlatformTime::Seconds() - Start) * 1000.;
+				/* Diagnostics muted after pooling/crew verification.
+				UE_LOG(LogEnemyShipInit, Display, TEXT("Event=FinishSpawning Actor=%s Kind=%d TotalMs=%.3f BeginPlayMs=%.3f ConstructionAndOtherMs=%.3f"),
+					*Ship->GetName(), static_cast<int32>(Job.Kind), TotalMs, Ship->GetInitialBeginPlayMs(), FMath::Max(0.0, TotalMs - Ship->GetInitialBeginPlayMs())); */ {}
+			}
+		}
+		Ship->SetBundlePoolIdle(true);
+		SetBundleRegistration(*Ship, true, nullptr);
+		if (auto* Swarm = GetWorld()->GetSubsystem<UShipSwarmSubsystem>()) Swarm->UnregisterShip(Ship);
+		if (auto* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>()) Weakening->UnregisterShip(Ship);
+		if (Job.Kind == EEnemyShipPoolWork::Reserve) { IdleBundles.AddUnique(Ship); return true; }
+		++Job.Stage; return false;
+	case 3:
+	{
+		Ship->SetBundlePoolIdle(true);
+		const auto Objects = EnemyShipBundlePool::GetObjects(*Ship, true);
+		for (const auto& Pair : Objects) { Job.Objects.Add(Pair.Key, Pair.Value); Job.ObjectKeys.Add(Pair.Key); }
+		for (int32 Index = 0; Index < Definition.Objects.Num(); ++Index) Job.References.Add(Index);
+		Job.References.Sort([&](int32 A, int32 B) { return Definition.Objects[A].SourcePath.Len() > Definition.Objects[B].SourcePath.Len(); });
+		Ship->RefreshBundlePresentation();
+		++Job.Stage; return false;
+	}
+	case 4:
+	{
+		if (Job.Object >= Definition.Objects.Num()) { ++Job.Stage; return false; }
+		const auto& Saved = Definition.Objects[Job.Object];
+		UObject* Target = Job.Objects.FindRef(Saved.Key).Get();
+		if (!Target)
+		{
+			if (!Saved.Key.StartsWith(TEXT("SpawnedChest")))
+				if (UClass* Class = Saved.ClassPath.TryLoadClass<UActorComponent>(); !Class || !Class->IsChildOf(UGameplayTasksComponent::StaticClass())) Error = TEXT("ComponentMissing:") + Saved.Key;
+			++Job.Object; return false;
+		}
+		if (Target->IsA<UPrimitiveComponent>() || Target->IsA<UDeckWalkAreaComponent>() || Target->IsA<UDeckWaypointComponent>())
+		{
+			++Job.Object; Job.bObjectStarted = false; return false;
+		}
+		if (!Job.bObjectStarted)
+		{
+			Job.DefaultProperties.Reset();
+			for (TFieldIterator<FProperty> It(Target->GetClass()); It; ++It)
+				if (!EnemyShipBundlePool::IsFixedBundleConfiguration(*Target, **It) && It->HasAnyPropertyFlags(CPF_Edit) && !It->HasAnyPropertyFlags(CPF_EditConst | CPF_Transient | CPF_EditorOnly | CPF_InstancedReference)
+					&& It->GetFName() != TEXT("GuardCharacters") && It->GetFName() != TEXT("GuardSpawners")
+					&& !Saved.Properties.ContainsByPredicate([&](const FEnemyShipBundleProperty& Value) { return Value.Name == It->GetFName(); })) Job.DefaultProperties.Add(*It);
+			Job.bObjectStarted = true; Job.DefaultProperty = 0; Job.Property = 0; return false;
+		}
+		if (Job.DefaultProperty < Job.DefaultProperties.Num())
+		{
+			FProperty* Property = Job.DefaultProperties[Job.DefaultProperty++];
+			UObject* Template = Target->GetArchetype(); FString Text;
+			Property->ExportTextItem_Direct(Text, Property->ContainerPtrToValuePtr<void>(Template), nullptr, Template, PPF_Delimited);
+			for (const auto& Pair : Job.Objects)
+				if (UObject* Object = Pair.Value.Get()) Text.ReplaceInline(*Object->GetArchetype()->GetPathName(), *Object->GetPathName(), ESearchCase::CaseSensitive);
+			// Raw editable imports must not expose a child Actor between queue slices.
+			ON_SCOPE_EXIT
+			{
+				if (AActor* Actor = Cast<AActor>(Target)) { Actor->SetActorHiddenInGame(true); Actor->SetActorEnableCollision(false); Actor->SetActorTickEnabled(false); }
+				if (UActorComponent* Component = Cast<UActorComponent>(Target)) Component->SetComponentTickEnabled(false);
+				Ship->SetShipRuntimePhysicsEnabled(false);
+			};
+			if (Text.IsEmpty()) Property->ClearValue(Property->ContainerPtrToValuePtr<void>(Target));
+			else if (!Property->ImportText_Direct(*Text, Property->ContainerPtrToValuePtr<void>(Target), Target, PPF_Delimited)) Error = TEXT("DefaultReset:") + Property->GetName();
+			return false;
+		}
+		if (Job.Property < Saved.Properties.Num())
+		{
+			const auto& Value = Saved.Properties[Job.Property++];
+			FProperty* Property = Target->GetClass()->FindPropertyByName(Value.Name);
+			if (!Property) { Error = TEXT("PropertyMissing:") + Value.Name.ToString(); return false; }
+			if (EnemyShipBundlePool::IsFixedBundleConfiguration(*Target, *Property)) return false;
+			FString Text = Value.Value;
+			for (int32 Index : Job.References)
+				if (UObject* Mapped = Job.Objects.FindRef(Definition.Objects[Index].Key).Get()) EnemyShipBundlePool::RemapReference(Text, Definition.Objects[Index], *Mapped);
+			// Raw editable imports must not expose a child Actor between queue slices.
+			ON_SCOPE_EXIT
+			{
+				if (AActor* Actor = Cast<AActor>(Target)) { Actor->SetActorHiddenInGame(true); Actor->SetActorEnableCollision(false); Actor->SetActorTickEnabled(false); }
+				if (UActorComponent* Component = Cast<UActorComponent>(Target)) Component->SetComponentTickEnabled(false);
+				Ship->SetShipRuntimePhysicsEnabled(false);
+			};
+			if (Text.IsEmpty()) Property->ClearValue(Property->ContainerPtrToValuePtr<void>(Target));
+			else if (!Property->ImportText_Direct(*Text, Property->ContainerPtrToValuePtr<void>(Target), Target, PPF_Delimited)) Error = TEXT("PropertyImport:") + Value.Name.ToString();
+			return false;
+		}
+		++Job.Object; Job.bObjectStarted = false; return false;
+	}
+	case 5:
+		Ship->Tags = Definition.Tags; Ship->SetBundleAuthoredName(Definition.AuthoredName);
+		Ship->AuthoredEncounterArchetype = Cast<UEnemyShipArchetypeData>(Definition.Archetype.TryLoad());
+		Ship->RefreshBundleStoryBindings(); Ship->GetNavigationComponent()->ResetSpawnHome(Definition.HomeTransform);
+		Ship->SetActorEnableCollision(false); Job.Stage = 7; return false;
+	case 7:
+		Ship->SetShipRuntimePhysicsEnabled(false);
+		Ship->SetActorTransform(Definition.HomeTransform, false, nullptr, ETeleportType::TeleportPhysics);
+		++Job.Stage; return false;
+	case 8:
+		if (auto* Crew = Ship->GetDeckEnemySpawnerComponent()) Crew->ReconcileBundleProfile();
+		++Definition.Assignment; ++Job.Stage; return false;
+	case 9: Ship->PrepareFreshBundleEncounter(Definition.HomeTransform); Job.Mesh = 0; ++Job.Stage; return false;
+	case 10:
+	{
+		// Each chest can construct a replicated actor; limit each step to one spawn point.
+		TInlineComponentArray<UChildActorComponent*> ChildComponents(Ship);
+		if (Job.Mesh >= ChildComponents.Num()) { ++Job.Stage; return false; }
+		UChildActorComponent* Child = ChildComponents[Job.Mesh++];
+		if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Child->GetChildActor()))
+			if (Point->GetSpawnMode() == EChestSpawnMode::Guarded && !IsValid(Point->GetSpawnedActor()))
+			{
+				const int32 Seed = static_cast<int32>(HashCombine(GetTypeHash(EnemyShipBundlePool::ReadId(*Ship)), GetTypeHash(GetWorld()->GetTimeSeconds())));
+				if (Point->SpawnConfiguredChest(nullptr, Seed))
+					for (TActorIterator<AGlobalLootSpawnManager> It(GetWorld()); It; ++It) { It->RefillPooledGuardedChest(Point, Seed); break; }
+				Ship->RefreshBundlePresentation();
+			}
+		return false;
+	}
+	case 11: SetBundleRegistration(*Ship, false, &Definition); Job.Stage = 12; return false;
+	case 12:
+		// Geometry and the local-space graph were prepared once when this Actor was constructed.
+		if (!Ship->GetDeckWalkAreaComponent() || !Ship->GetDeckWalkAreaComponent()->IsReady())
+		{ Error = TEXT("InitialDeckNotReady"); return false; }
+		Ship->GetDeckWalkAreaComponent()->ResetRuntimeClaims();
+		Job.Stage = 14; return false;
+	case 14:
+		if (auto* Crew = Ship->GetDeckEnemySpawnerComponent()) Crew->BeginQueuedPoolInitialization();
+		++Job.Stage; return false;
+	case 15:
+		if (auto* Crew = Ship->GetDeckEnemySpawnerComponent())
+		{
+			const bool bComplete = Crew->StepQueuedPoolInitialization();
+			Ship->RefreshBundlePresentation();
+			if (!bComplete) return false;
+			if (!Crew->AuditBundleCrew(true, Error)) return false;
+		}
+		++Job.Stage; return false;
+	case 16: SetBundleRegistration(*Ship, false, &Definition); ++Job.Stage; return false;
+	default:
+		Placement->Assignment = Definition.Assignment;
+		Placement->ActiveShip = Ship; Placement->bDormant = false; Placement->bUnloaded = false;
+		Ship->OnDestroyed.AddUniqueDynamic(this, &AEnemyShipBundlePool::HandleShipDestroyed);
+		if (auto* Swarm = GetWorld()->GetSubsystem<UShipSwarmSubsystem>()) Swarm->RegisterShip(Ship);
+		if (auto* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>()) Weakening->RegisterShip(Ship);
+		Ship->BeginBundleActivation(); Ship->SetBundlePoolIdle(false);
+		LastWakeErrors.Remove(Placement->StableId);
+		ForceNetUpdate(); OnRep_Placements(); return true;
+	}
+}
+
 void AEnemyShipBundlePool::Evaluate()
 {
 	if (!HasAuthority()) { OnRep_Placements(); /* AuditClientPresentation(); */ return; }
@@ -829,14 +1220,7 @@ void AEnemyShipBundlePool::Evaluate()
 				// A deterministic definition error must not spawn/destroy a bundle every 0.5 seconds.
 				// Retry on the next approach, after the player has left the activation range.
 				if (LastWakeErrors.Contains(Placement.StableId)) continue;
-				FString Error;
-				if (!BindPlacement(Placement, false, Error))
-				{
-					if (LastWakeErrors.FindRef(Placement.StableId) != Error)
-						UE_LOG(LogTemp, Error, TEXT("[EnemyShipPool] Event=WakeFailed Ship=%s Reason=%s"), *Placement.AuthoredName.ToString(), *Error);
-					LastWakeErrors.Add(Placement.StableId, Error);
-				}
-				else LastWakeErrors.Remove(Placement.StableId);
+				EnqueueTransition(Placement, EEnemyShipPoolWork::Wake);
 			}
 			else LastWakeErrors.Remove(Placement.StableId);
 		}
@@ -847,10 +1231,10 @@ void AEnemyShipBundlePool::Evaluate()
 			bool bOutstanding = false;
 			for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 				if (It->GetOwner() == Placement.ActiveShip && !Bundle.Contains(*It)) { bOutstanding = true; break; }
-			if (!bOutstanding) ReleasePlacement(Placement);
+			if (!bOutstanding) EnqueueTransition(Placement, EEnemyShipPoolWork::Sleep);
 		}
 	}
-	MaintainBundleCapacity(true);
+	QueueCapacityMaintenance();
 	OnRep_Placements();
 	// LogPoolCountsIfChanged();
 }
@@ -885,9 +1269,10 @@ void AEnemyShipBundlePool::LogPoolCountsIfChanged()
 	}
 	for (const auto& Ship : Idle) bChanged |= !LastLoggedIdleBundles.Contains(Ship);
 	if (bLoggedPoolCounts && !bChanged) return;
+	/* Diagnostics muted after pooling/crew verification.
 	UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=%s Total=%d IdlePool=%d Capacity=%d Bundles=%d Active=%d Dormant=%d ISMShips=%d Destroyed=%d Unloaded=%d"),
 		bLoggedPoolCounts ? TEXT("Changed") : TEXT("Initial"), Placements.Num(), Idle.Num(), BundleCapacity, CountActiveBundles() + Idle.Num(),
-		Active, Dormant, VisibleISM, Destroyed, Unloaded);
+		Active, Dormant, VisibleISM, Destroyed, Unloaded); */ {}
 	bLoggedPoolCounts = true;
 	LastLoggedPlacementStates = MoveTemp(States);
 	LastLoggedIdleBundles = MoveTemp(Idle);
@@ -977,6 +1362,7 @@ void AEnemyShipBundlePool::AuditClientPresentation()
 		const bool bSettled = !Previous.bDeferredSample && Now - Previous.PhaseStartTime >= 2.0;
 		if (bPhaseChanged || (Placement.bDormant && Signature != Previous.Signature) || bSettled || (bUnexpectedMotion && !Previous.bMotionReported))
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolAudit] Side=Client Event=%s Id=%s Ship=%s Assignment=%u Dormant=%d Actor=%s ActorMatches=%d PreviousReassigned=%d Hidden=%d Idle=%d RuntimePhysics=%d ActorTick=%d Collision=%d VisiblePrimitives=%d ChildVisible=%d SimBodies=%d AwakeBodies=%d BuoyancyActive=%d BuoyancyTick=%d ISMInstances=%d ISMTransformErrors=%d DuplicateVisible=%d MoveCM=%.2f RotateDeg=%.3f Position=%s VisibleExample=%s PhysicsExample=%s"),
 				bPhaseChanged ? TEXT("Transition") : bSettled ? TEXT("Settled2s") : bUnexpectedMotion && !Previous.bMotionReported ? TEXT("DormantMotion") : TEXT("StateChanged"),
 				*Placement.StableId.ToString(), *Placement.AuthoredName.ToString(), Placement.Assignment, Placement.bDormant, *GetNameSafe(Ship),
@@ -985,7 +1371,7 @@ void AEnemyShipBundlePool::AuditClientPresentation()
 				IsValid(Ship) ? Ship->IsActorTickEnabled() : -1, IsValid(Ship) ? Ship->GetActorEnableCollision() : -1,
 				VisibleMeshes, ChildVisible, SimBodies, AwakeBodies, BuoyancyActive, BuoyancyTick, ISMCount, ISMTransformErrors,
 				ISMCount > 0 && VisibleMeshes > 0, MoveCM, RotateDeg, IsValid(Ship) ? *Ship->GetActorLocation().ToString() : TEXT("None"),
-				*VisibleExample, *PhysicsExample);
+				*VisibleExample, *PhysicsExample); */ {}
 		}
 		Previous.bInitialized = true;
 		Previous.Signature = Signature;
@@ -1000,138 +1386,177 @@ void AEnemyShipBundlePool::AuditClientPresentation()
 
 void AEnemyShipBundlePool::OnRep_Placements()
 {
+	bPresentationPending = true;
+}
+
+void AEnemyShipBundlePool::ProcessPresentation(double Deadline)
+{
 	if (HasAuthority()) UpdatePresentation();
 	else
 	{
 		// Subobject data and Actor references may resolve after the pointer-array notification.
 		// The existing evaluation timer retries presentation until both are available.
-		Placements.Reset();
+		Placements.RemoveAll([&](const FEnemyShipBundlePlacement& P) { return !PresentationNodes.ContainsByPredicate([&](const UEnemyShipBundlePresentation* Node) { return Node && Node->Definition.StableId == P.StableId; }); });
+		TArray<FGuid> RemovedIds;
+		for (const auto& Pair : PlacementPresentationHashes)
+			if (!Placements.ContainsByPredicate([&](const FEnemyShipBundlePlacement& P) { return P.StableId == Pair.Key; })) RemovedIds.Add(Pair.Key);
+		for (const FGuid& Id : RemovedIds)
+		{
+			FEnemyShipBundlePlacement Removed; Removed.StableId = Id;
+			UpdatePlacementInstances(Removed, false);
+			PlacementPresentationHashes.Remove(Id); ClientVisualKeys.Remove(Id); ClientActors.Remove(Id); ClientAssignments.Remove(Id);
+			ClientActivationWaitReasons.Remove(Id);
+		}
 		for (const UEnemyShipBundlePresentation* Node : PresentationNodes)
 		{
 			if (!Node || !Node->Definition.StableId.IsValid()) continue;
-			FEnemyShipBundlePlacement& Placement = Placements.AddDefaulted_GetRef();
-			Placement.StableId = Node->Definition.StableId;
-			Placement.AuthoredName = Node->Definition.AuthoredName;
-			Placement.HomeTransform = Node->Definition.HomeTransform;
-			Placement.Meshes = Node->Definition.Meshes;
-			Placement.Assignment = Node->State.Assignment;
-			Placement.bDormant = Node->State.bDormant;
-			Placement.bDestroyed = Node->State.bDestroyed;
-			Placement.bUnloaded = Node->State.bUnloaded;
-			Placement.bStoryHidden = Node->State.bStoryHidden;
-			Placement.ActiveShip = Node->State.ActiveShip;
-			for (const FEnemyShipBundleVisualObject& Visual : Node->Definition.Objects)
+			auto* Existing = Placements.FindByPredicate([&](const FEnemyShipBundlePlacement& P) { return P.StableId == Node->Definition.StableId; });
+			if (!Existing)
 			{
-				FEnemyShipBundleObject& Saved = Placement.Objects.AddDefaulted_GetRef();
-				Saved.Key = Visual.Key;
-				Saved.Properties = Visual.Properties;
+				Existing = &Placements.AddDefaulted_GetRef();
+				Existing->StableId = Node->Definition.StableId;
+				Existing->AuthoredName = Node->Definition.AuthoredName;
+				Existing->HomeTransform = Node->Definition.HomeTransform;
+				Existing->Meshes = Node->Definition.Meshes;
+				for (const auto& Visual : Node->Definition.Objects)
+				{
+					auto& Saved = Existing->Objects.AddDefaulted_GetRef();
+					Saved.Key = Visual.Key; Saved.Properties = Visual.Properties;
+				}
 			}
+			auto& Placement = *Existing;
+			Placement.Assignment = Node->State.Assignment;
+			Placement.bDormant = Node->State.bDormant; Placement.bDestroyed = Node->State.bDestroyed;
+			Placement.bUnloaded = Node->State.bUnloaded; Placement.bStoryHidden = Node->State.bStoryHidden;
+			Placement.ActiveShip = Node->State.ActiveShip;
+			Placement.ActivationGeneration = Node->State.ActivationGeneration;
+			Placement.ActivationTransform = Node->State.ActivationTransform;
+			Placement.ActivationLinearVelocity = Node->State.ActivationLinearVelocity;
+			Placement.ActivationAngularVelocity = Node->State.ActivationAngularVelocity;
 		}
 	}
-	if (GetNetMode() == NM_DedicatedServer) return;
-	uint32 PresentationHash = GetTypeHash(Placements.Num());
+	if (GetNetMode() == NM_DedicatedServer) { bPresentationPending = false; return; }
+	bPresentationPending = false;
 	for (const auto& Placement : Placements)
 	{
+		if (FPlatformTime::Seconds() >= Deadline) { bPresentationPending = true; return; }
+		bool bActivate = false;
+		uint32 PresentationHash = GetTypeHash(Placement.StableId);
+		if (!HasAuthority() && !Placement.bDormant && !Placement.bDestroyed && !Placement.bUnloaded)
+		{
+			FString Reason;
+			if (!IsValid(Placement.ActiveShip)) Reason = TEXT("ActorReference");
+			else
+			{
+				if (!Placement.ActiveShip->IsBundlePresentationReady()) Placement.ActiveShip->RefreshBundlePresentation();
+				if (Placement.ActiveShip->IsBundlePoolIdle()) Reason = TEXT("ActorIdle");
+				else if (Placement.ActivationGeneration == 0 || Placement.ActivationGeneration != Placement.ActiveShip->GetBundleActivationGeneration()) Reason = TEXT("GenerationMismatch");
+				else if (!Placement.ActivationTransform.IsValid() || Placement.ActivationLinearVelocity.ContainsNaN() || Placement.ActivationAngularVelocity.ContainsNaN()) Reason = TEXT("InvalidPose");
+			}
+			if (!Reason.IsEmpty() && ClientActivationWaitReasons.FindRef(Placement.StableId) != Reason)
+			{
+				ClientActivationWaitReasons.Add(Placement.StableId, Reason);
+
+			}
+		}
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.StableId));
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.ActiveShip.Get()));
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.Assignment));
+		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.ActivationGeneration));
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.bDormant));
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.bDestroyed));
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.bUnloaded));
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.bStoryHidden));
 		PresentationHash = HashCombine(PresentationHash,
 			GetTypeHash(IsValid(Placement.ActiveShip) && Placement.ActiveShip->IsBundlePoolIdle()));
-		if (!HasAuthority() && IsValid(Placement.ActiveShip)
-			&& (ClientAssignments.FindRef(Placement.StableId) != Placement.Assignment
-				|| ClientActors.FindRef(Placement.StableId).Get() != Placement.ActiveShip.Get()))
+		if (!HasAuthority() && IsValid(Placement.ActiveShip) && !Placement.bDormant && !Placement.bDestroyed && !Placement.bUnloaded
+			&& !Placement.ActiveShip->IsBundlePoolIdle() && Placement.ActivationGeneration != 0
+			&& Placement.ActivationGeneration == Placement.ActiveShip->GetBundleActivationGeneration()
+			&& !Placement.ActiveShip->IsBundlePresentationReady())
 		{
-			const auto Objects = EnemyShipBundlePool::GetObjects(*Placement.ActiveShip);
-			for (const FEnemyShipBundleObject& Saved : Placement.Objects)
-				if (UObject* const* Target = Objects.Find(Saved.Key))
-					for (const FEnemyShipBundleProperty& Value : Saved.Properties)
-						if (Value.Name == TEXT("StaticMesh") || Value.Name == TEXT("OverrideMaterials")
-							|| Value.Name == TEXT("RelativeLocation") || Value.Name == TEXT("RelativeRotation")
-							|| Value.Name == TEXT("RelativeScale3D") || Value.Name == TEXT("bVisible"))
-							if (FProperty* Property = (*Target)->GetClass()->FindPropertyByName(Value.Name))
-								Property->ImportText_Direct(*Value.Value, Property->ContainerPtrToValuePtr<void>(*Target), *Target, PPF_None);
-			ClientAssignments.Add(Placement.StableId, Placement.Assignment);
-			ClientActors.Add(Placement.StableId, Placement.ActiveShip.Get());
-			TInlineComponentArray<USceneComponent*> Scenes(Placement.ActiveShip.Get());
-			for (USceneComponent* Scene : Scenes) Scene->UpdateComponentToWorld();
-			for (const auto& Pair : Objects)
-				if (UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Pair.Value)) Mesh->MarkRenderStateDirty();
+			if (Placement.ActiveShip->PrepareBundlePosition(Placement.ActivationGeneration, Placement.ActivationTransform))
+			{
+				bActivate = true;
+				ClientAssignments.Add(Placement.StableId, Placement.Assignment);
+				ClientActors.Add(Placement.StableId, Placement.ActiveShip.Get());
+				ClientActivationWaitReasons.Remove(Placement.StableId);
+			}
+		}
+
+		PresentationHash = HashCombine(PresentationHash,
+			GetTypeHash(IsValid(Placement.ActiveShip)
+				&& (HasAuthority() || Placement.ActivationGeneration == Placement.ActiveShip->GetBundleActivationGeneration())
+				&& (Placement.ActiveShip->IsBundlePresentationReady() || Placement.ActiveShip->IsBundlePositionPrepared())));
+		const bool bShowISM = !(Placement.bDestroyed || Placement.bUnloaded || Placement.bStoryHidden || (!Placement.bDormant && IsValid(Placement.ActiveShip)
+			&& !Placement.ActiveShip->IsBundlePoolIdle()
+			&& (HasAuthority() || Placement.ActivationGeneration == Placement.ActiveShip->GetBundleActivationGeneration())
+			&& (Placement.ActiveShip->IsBundlePresentationReady() || Placement.ActiveShip->IsBundlePositionPrepared())));
+		if (!PlacementPresentationHashes.Contains(Placement.StableId) || PlacementPresentationHashes.FindRef(Placement.StableId) != PresentationHash)
+		{
+			UpdatePlacementInstances(Placement, bShowISM);
+			PlacementPresentationHashes.Add(Placement.StableId, PresentationHash);
+
+		}
+		if (bActivate)
+		{
+			Placement.ActiveShip->ActivatePreparedBundle(Placement.ActivationGeneration, Placement.ActivationLinearVelocity, Placement.ActivationAngularVelocity);
+
 		}
 	}
-	if (LastPresentationHash == PresentationHash) return;
-	LastPresentationHash = PresentationHash;
-	AuditInstances.Reset();
-	for (UInstancedStaticMeshComponent* Component : ProxyInstanceComponents) if (Component) Component->ClearInstances();
-	TMap<FString, UInstancedStaticMeshComponent*> Batches;
-	for (UInstancedStaticMeshComponent* Component : ProxyInstanceComponents)
-		if (Component)
-		{
-			FString Key = Component->GetStaticMesh()->GetPathName() + (Component->CastShadow ? TEXT("|1") : TEXT("|0"));
-			for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index) Key += TEXT("|") + GetPathNameSafe(Component->GetMaterial(Index));
-			Batches.Add(Key, Component);
-		}
-	for (const FEnemyShipBundlePlacement& Placement : Placements)
+}
+
+void AEnemyShipBundlePool::UpdatePlacementInstances(const FEnemyShipBundlePlacement& Placement, bool bShowISM)
+{
+	if (auto* Existing = AuditInstances.Find(Placement.StableId))
 	{
-		if (Placement.bDestroyed || Placement.bUnloaded || Placement.bStoryHidden || (!Placement.bDormant && IsValid(Placement.ActiveShip)
-			&& !Placement.ActiveShip->IsBundlePoolIdle())) continue;
-		for (const FEnemyShipBundleMesh& Visual : Placement.Meshes)
+		// Update tracked indices for both engine removal policies, including the global swap CVar.
+		while (!Existing->IsEmpty())
 		{
-			UStaticMesh* Mesh = Cast<UStaticMesh>(Visual.Mesh.TryLoad());
-			if (!Mesh) continue;
-			FString Key = Mesh->GetPathName() + (Visual.bCastShadow ? TEXT("|1") : TEXT("|0"));
-			TArray<UMaterialInterface*> Materials;
-			for (const FSoftObjectPath& Path : Visual.Materials)
+			const auto Removed = Existing->Pop(EAllowShrinking::No);
+			if (auto* Batch = Removed.Component.Get())
 			{
-				UMaterialInterface* Material = Cast<UMaterialInterface>(EnemyShipBundlePool::ISMMaterialPath(Path).TryLoad());
-				Materials.Add(Material);
-				Key += TEXT("|") + GetPathNameSafe(Material);
+				const int32 Last = Batch->GetInstanceCount() - 1;
+				const bool bSwap = Batch->SupportsRemoveSwap();
+				if (Batch->RemoveInstance(Removed.Index))
+					for (auto& Pair : AuditInstances)
+						for (auto& Instance : Pair.Value)
+							if (Instance.Component.Get() == Batch)
+							{
+								if (bSwap) { if (Instance.Index == Last) Instance.Index = Removed.Index; }
+								else if (Instance.Index > Removed.Index) --Instance.Index;
+							}
 			}
-			UInstancedStaticMeshComponent*& Batch = Batches.FindOrAdd(Key);
-			if (!Batch)
-			{
-				/* int32 MissingMaterials = 0, MissingISMUsage = 0;
-				for (int32 Index = 0; Index < Materials.Num(); ++Index)
-				{
-					UMaterialInterface* Material = Materials[Index];
-					MissingMaterials += Material == nullptr ? 1 : 0;
-					UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
-					MissingISMUsage += Base && !Base->GetUsageByFlag(MATUSAGE_InstancedStaticMeshes) ? 1 : 0;
-				}
-				UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolMaterial] Event=BatchCreated Mesh=%s MeshSlots=%d CapturedSlots=%d MissingMaterials=%d MissingISMUsage=%d FirstMaterial=%s"),
-					*Mesh->GetPathName(), Mesh->GetStaticMaterials().Num(), Materials.Num(), MissingMaterials, MissingISMUsage,
-					Materials.IsEmpty() ? TEXT("None") : *GetPathNameSafe(Materials[0])); */
-				Batch = NewObject<UInstancedStaticMeshComponent>(this);
-				Batch->SetupAttachment(RootComponent);
-				Batch->SetMobility(EComponentMobility::Movable);
-				Batch->SetStaticMesh(Mesh);
-				Batch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Batch->SetCanEverAffectNavigation(false);
-				Batch->SetCastShadow(Visual.bCastShadow);
-				for (int32 Index = 0; Index < Materials.Num(); ++Index) Batch->SetMaterial(Index, Materials[Index]);
-				Batch->RegisterComponent();
-				ProxyInstanceComponents.Add(Batch);
-			}
-			FEnemyShipPoolAuditInstance& Instance = AuditInstances.FindOrAdd(Placement.StableId).AddDefaulted_GetRef();
-			Instance.Component = Batch;
-			Instance.ExpectedWorldTransform = Visual.RelativeTransform * Placement.HomeTransform;
-			Instance.Index = Batch->AddInstance(Instance.ExpectedWorldTransform, true);
 		}
 	}
-	/* if (!HasAuthority() && !PresentationNodes.IsEmpty() && Placements.Num() == PresentationNodes.Num())
+	AuditInstances.Remove(Placement.StableId);
+	if (!bShowISM) return;
+	for (const auto& Visual : Placement.Meshes)
 	{
-		int32 Instances = 0, Active = 0, ISMShips = 0;
-		for (const UInstancedStaticMeshComponent* Component : ProxyInstanceComponents)
-			if (Component) Instances += Component->GetInstanceCount();
-		for (const auto& Placement : Placements)
-			if (IsValid(Placement.ActiveShip) && !Placement.ActiveShip->IsBundlePoolIdle()) ++Active;
-			else if (!Placement.bDestroyed && !Placement.bUnloaded && !Placement.bStoryHidden && !Placement.Meshes.IsEmpty()) ++ISMShips;
-		UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolClient] Event=Presentation Total=%d Active=%d ISMShips=%d MeshInstances=%d"),
-			Placements.Num(), Active, ISMShips, Instances);
-	} */
+		UStaticMesh* Mesh = Cast<UStaticMesh>(Visual.Mesh.TryLoad());
+		if (!Mesh) continue;
+		TArray<UMaterialInterface*> Materials;
+		for (const auto& Path : Visual.Materials) Materials.Add(Cast<UMaterialInterface>(EnemyShipBundlePool::ISMMaterialPath(Path).TryLoad()));
+		UInstancedStaticMeshComponent* Batch = nullptr;
+		for (UInstancedStaticMeshComponent* Candidate : ProxyInstanceComponents)
+		{
+			if (!Candidate || Candidate->GetStaticMesh() != Mesh || Candidate->CastShadow != Visual.bCastShadow || Candidate->GetNumMaterials() != Materials.Num()) continue;
+			bool bMatch = true;
+			for (int32 Index = 0; Index < Materials.Num(); ++Index) if (Candidate->GetMaterial(Index) != Materials[Index]) { bMatch = false; break; }
+			if (bMatch) { Batch = Candidate; break; }
+		}
+		if (!Batch)
+		{
+			Batch = NewObject<UInstancedStaticMeshComponent>(this);
+			Batch->SetupAttachment(RootComponent); Batch->SetMobility(EComponentMobility::Movable);
+			Batch->SetStaticMesh(Mesh); Batch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Batch->SetCanEverAffectNavigation(false); Batch->SetCastShadow(Visual.bCastShadow); Batch->SetRemoveSwap();
+			for (int32 Index = 0; Index < Materials.Num(); ++Index) Batch->SetMaterial(Index, Materials[Index]);
+			Batch->RegisterComponent(); ProxyInstanceComponents.Add(Batch);
+		}
+		auto& Instance = AuditInstances.FindOrAdd(Placement.StableId).AddDefaulted_GetRef();
+		Instance.Component = Batch; Instance.ExpectedWorldTransform = Visual.RelativeTransform * Placement.HomeTransform;
+		Instance.Index = Batch->AddInstance(Instance.ExpectedWorldTransform, true);
+	}
 }
 
 void AEnemyShipBundlePool::CaptureRoomDomains(TArray<FSWRoomDomainPart>& Parts, TArray<FSWRoomCaptureIssue>& Issues) const
@@ -1157,8 +1582,9 @@ void AEnemyShipBundlePool::CaptureRoomDomains(TArray<FSWRoomDomainPart>& Parts, 
 	}
 	if (!bWritten)
 	{
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogTemp, Error, TEXT("[EnemyShipPool] Event=SaveEncodingFailed RawBytes=%d EncodedBytes=%d Limit=%d"),
-			Raw.Num(), Part.Bytes.Num(), EnemyShipBundlePool::MaxCompressedSaveBytes);
+			Raw.Num(), Part.Bytes.Num(), EnemyShipBundlePool::MaxCompressedSaveBytes); */ {}
 		Part.Bytes.Reset();
 		FSWRoomCaptureIssue& Issue = Issues.AddDefaulted_GetRef();
 		Issue.StableId = EnemyShipBundlePool::ManagerId;
@@ -1202,6 +1628,7 @@ bool AEnemyShipBundlePool::CompareRoomDomain(const FSWRoomDomainPart& Expected, 
 
 void AEnemyShipBundlePool::PrepareRestore(const FSWRoomWorldSnapshot& Snapshot, FString& Error)
 {
+	CancelTransitions(TEXT("Restore"));
 	DiscoverPlacedShips();
 	RestoreClasses.Reset();
 	for (const FSWRoomActorRecord& Record : Snapshot.Actors) RestoreClasses.Add(Record.StableId, Record.ClassPath);
@@ -1278,6 +1705,7 @@ void AEnemyShipBundlePool::RestoreCompleted()
 	for (auto& Placement : Placements)
 		if (IsValid(Placement.ActiveShip))
 		{
+			Placement.ActiveShip->BeginBundleActivation();
 			if (Placement.ActiveShip->IsBundlePoolIdle()) Placement.ActiveShip->SetBundlePoolIdle(false);
 			// EnemyShipBundlePool::AuditProfile(*Placement.ActiveShip, Placement, true);
 			/* if (auto* Crew = Placement.ActiveShip->GetDeckEnemySpawnerComponent())
@@ -1318,6 +1746,7 @@ bool AEnemyShipBundlePool::ApplyLogicalOrbitDistance(AEnemyShip* Ship) const
 void AEnemyShipBundlePool::HandleLevelRemoved(ULevel* Level, UWorld* World)
 {
 	if (!HasAuthority() || World != GetWorld() || !Level) return;
+	CancelTransitions(TEXT("LevelRemoved"));
 	const FString Package = Level->GetOutermost()->GetName();
 	for (auto& Placement : Placements)
 		if (Placement.LevelPackage.ToString() == Package)

@@ -5,6 +5,7 @@
 #include "Network/SWNetworkLog.h"
 #include "Network/SWRoomLoadDiagnostics.h"
 #include "Misc/CommandLine.h"
+#include "Misc/NetworkVersion.h"
 #include "Misc/Parse.h"
 #include "SWRoomName.h"
 #include "Room/SWRoomSaveGame.h"
@@ -17,6 +18,7 @@
 #include "HttpModule.h"
 #include "Interfaces/IHttpResponse.h"
 #include "HAL/PlatformFileManager.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
 #include "Kismet/GameplayStatics.h"
@@ -27,6 +29,16 @@ namespace
 constexpr uint16 RoomPort = 7777;
 constexpr float ServerStartTimeoutSeconds = 90.0f;
 const TCHAR* LobbyMap = TEXT("/Game/Level/ConnectionLobby");
+TAutoConsoleVariable<int32> CVarRoomServerBackend(TEXT("sw.Room.ServerBackend"), 0,
+	TEXT("Local room server: 0=UnrealEditor, 1=packaged dedicated server. Applies to the next hosting request."));
+FString GRoomServerExeOverride;
+FAutoConsoleVariableRef CVarRoomServerExe(TEXT("sw.Room.ServerExe"), GRoomServerExeOverride,
+	TEXT("Packaged server internal executable path. Empty uses SWRoomServerExe or SWLocalPackagedServer settings."));
+
+FString GetPackagedServerProjectDirectory(const FString& Executable)
+{
+	return FPaths::GetPath(FPaths::GetPath(FPaths::GetPath(Executable)));
+}
 
 bool NormalizeLocalFilePath(FString& Path)
 {
@@ -78,6 +90,71 @@ bool ResolveLocalEditorServer(FString& OutExecutable, FString& OutProject, FStri
 	return false;
 #endif
 }
+
+bool ResolveLocalServer(FString& OutExecutable, FString& OutProject, bool& bOutPackaged, FString& OutError)
+{
+	OutExecutable.Reset();
+	OutProject.Reset();
+	OutError.Reset();
+	bOutPackaged = false;
+	const int32 Backend = CVarRoomServerBackend.GetValueOnGameThread();
+	if (Backend == 0) return ResolveLocalEditorServer(OutExecutable, OutProject, OutError);
+	if (Backend != 1)
+	{
+		OutError = TEXT("서버 실행 방식은 0(에디터) 또는 1(패키징 서버)을 선택하세요.");
+		return false;
+	}
+#if PLATFORM_WINDOWS
+	bOutPackaged = true;
+	if (!GRoomServerExeOverride.IsEmpty())
+	{
+		OutExecutable = GRoomServerExeOverride.TrimStartAndEnd();
+		if (OutExecutable.Len() >= 2 && OutExecutable.StartsWith(TEXT("\"")) && OutExecutable.EndsWith(TEXT("\"")))
+			OutExecutable = OutExecutable.Mid(1, OutExecutable.Len() - 2);
+	}
+	else
+	{
+		const bool bExplicit = FParse::Value(FCommandLine::Get(), TEXT("SWRoomServerExe="), OutExecutable)
+			|| FString(FCommandLine::Get()).Contains(TEXT("-SWRoomServerExe="), ESearchCase::IgnoreCase);
+		if (!bExplicit && GConfig)
+			GConfig->GetString(TEXT("SWLocalPackagedServer"), TEXT("ServerExecutable"), OutExecutable, GGameIni);
+	}
+	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	if (!NormalizeLocalFilePath(OutExecutable)
+		|| !FPaths::GetCleanFilename(OutExecutable).Equals(TEXT("ArtisticSW2026Server.exe"), ESearchCase::IgnoreCase)
+		|| !FPaths::GetCleanFilename(FPaths::GetPath(OutExecutable)).Equals(TEXT("Win64"), ESearchCase::IgnoreCase)
+		|| !FPaths::GetCleanFilename(FPaths::GetPath(FPaths::GetPath(OutExecutable))).Equals(TEXT("Binaries"), ESearchCase::IgnoreCase)
+		|| !Files.FileExists(*OutExecutable)
+		|| !Files.DirectoryExists(*FPaths::Combine(GetPackagedServerProjectDirectory(OutExecutable), TEXT("Content"), TEXT("Paks"))))
+	{
+		OutError = TEXT("패키징 서버의 내부 Binaries/Win64/ArtisticSW2026Server.exe와 Content/Paks 폴더를 확인하세요.");
+		return false;
+	}
+	return true;
+#else
+	OutError = TEXT("로컬 패키징 서버 실행은 Windows에서만 지원됩니다.");
+	return false;
+#endif
+}
+
+void RefreshServerLaunchSettings()
+{
+	static int32 PreviousBackend = 0;
+	static FString PreviousExecutable;
+	const int32 Backend = CVarRoomServerBackend.GetValueOnGameThread();
+	if (Backend == PreviousBackend && GRoomServerExeOverride == PreviousExecutable) return;
+	PreviousBackend = Backend;
+	PreviousExecutable = GRoomServerExeOverride;
+	if (!GEngine) return;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		if (UGameInstance* Instance = Context.OwningGameInstance.Get())
+			if (USWRoomSubsystem* Room = Instance->GetSubsystem<USWRoomSubsystem>())
+				Room->OnRoomChanged.Broadcast(Room->GetRoomState(), Room->GetRoomMessage());
+	}
+}
+
+FAutoConsoleVariableSink RoomServerSettingsSink(FConsoleCommandDelegate::CreateStatic(&RefreshServerLaunchSettings));
 }
 
 bool USWRoomSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -124,7 +201,8 @@ UWorld* USWRoomSubsystem::GetTickableGameObjectWorld() const
 bool USWRoomSubsystem::CanHost() const
 {
 	FString Executable, Project, Root, Error;
-	return ResolveLocalEditorServer(Executable, Project, Error) && FSWRoomRuntimePaths::TryResolveRoot(Root, Error);
+	bool bPackaged = false;
+	return ResolveLocalServer(Executable, Project, bPackaged, Error) && FSWRoomRuntimePaths::TryResolveRoot(Root, Error);
 }
 
 bool USWRoomSubsystem::HasSavedRoom() const
@@ -171,11 +249,15 @@ bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& Optional
 		bContinue ? TEXT("Continue") : TEXT("New"));
 	bReturningToLobby = false;
 	FString Executable, Project, Root, Error;
-	if (!ResolveLocalEditorServer(Executable, Project, Error) || !FSWRoomRuntimePaths::TryResolveRoot(Root, Error))
+	bool bPackaged = false;
+	if (!ResolveLocalServer(Executable, Project, bPackaged, Error) || !FSWRoomRuntimePaths::TryResolveRoot(Root, Error))
 	{
 		Fail(FText::FromString(Error));
 		return false;
 	}
+	PendingServerExecutable = Executable;
+	PendingServerProject = Project;
+	bPendingPackagedServer = bPackaged;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	if (!Files.CreateDirectoryTree(*FSWRoomRuntimePaths::GetSaveDirectory())
 		|| !Files.CreateDirectoryTree(*FSWRoomRuntimePaths::GetHostDirectory()))
@@ -271,8 +353,17 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 {
 	SWRoomLoadDiagnostics::Mark(TEXT("Host.PublicIPResolved"));
 #if PLATFORM_WINDOWS
-	FString Executable, Project, Root, Error;
-	if (!ResolveLocalEditorServer(Executable, Project, Error) || !FSWRoomRuntimePaths::TryResolveRoot(Root, Error))
+	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	if (PendingServerExecutable.IsEmpty() || !Files.FileExists(*PendingServerExecutable)
+		|| (bPendingPackagedServer
+			? !Files.DirectoryExists(*FPaths::Combine(GetPackagedServerProjectDirectory(PendingServerExecutable), TEXT("Content"), TEXT("Paks")))
+			: !Files.FileExists(*PendingServerProject)))
+	{
+		Fail(FText::FromString(TEXT("선택한 서버 실행 파일 또는 콘텐츠를 확인할 수 없습니다.")));
+		return;
+	}
+	FString Root, Error;
+	if (!FSWRoomRuntimePaths::TryResolveRoot(Root, Error))
 	{
 		Fail(FText::FromString(Error));
 		return;
@@ -280,7 +371,6 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 	PublicAddress = Address;
 	RoomRunId = FGuid::NewGuid();
 	const FString Run = RoomRunId.ToString(EGuidFormats::DigitsWithHyphens);
-	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	const FString LogDir = FPaths::Combine(Root, TEXT("Logs"), TEXT("SWRoom"), Run);
 	const FString MarkerDir = FSWRoomRuntimePaths::GetHostDirectory();
 	if (!Files.CreateDirectoryTree(*LogDir) || !Files.CreateDirectoryTree(*MarkerDir)) { Fail(FText::FromString(TEXT("서버 로그 폴더를 만들 수 없습니다."))); return; }
@@ -291,8 +381,12 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 	bool bInvalidMap = !FPackageName::IsValidLongPackageName(MapName) || MapName.Contains(TEXT("\""));
 	for (TCHAR Character : MapName) bInvalidMap |= FChar::IsWhitespace(Character);
 	if (bInvalidMap) { Fail(FText::FromString(TEXT("방 맵 경로가 올바르지 않습니다."))); return; }
-	const FString Params = FString::Printf(TEXT("\"%s\" %s -server -unattended -NoSound -NullRHI -port=7777 -log -abslog=\"%s\" -SWRoomRunId=%s -SWRoomOwnerPid=%u -SWRoomMode=%s -SWRoomId=%s -SWRoomHostKey=%s"), *Project, *MapName, *FPaths::Combine(LogDir, TEXT("Server.log")), *Run, FPlatformProcess::GetCurrentProcessId(), bContinuingRoom ? TEXT("Continue") : TEXT("New"), *SavedRoomId.ToString(EGuidFormats::DigitsWithHyphens), *HostKey.ToString(EGuidFormats::DigitsWithHyphens));
+	const FString LaunchPrefix = bPendingPackagedServer ? MapName
+		: FString::Printf(TEXT("\"%s\" %s -server"), *PendingServerProject, *MapName);
+	const FString Params = FString::Printf(TEXT("%s -unattended -NoSound -NullRHI -port=7777 -log -abslog=\"%s\" -SWRoomRunId=%s -SWRoomOwnerPid=%u -SWRoomMode=%s -SWRoomId=%s -SWRoomHostKey=%s"), *LaunchPrefix, *FPaths::Combine(LogDir, TEXT("Server.log")), *Run, FPlatformProcess::GetCurrentProcessId(), bContinuingRoom ? TEXT("Continue") : TEXT("New"), *SavedRoomId.ToString(EGuidFormats::DigitsWithHyphens), *HostKey.ToString(EGuidFormats::DigitsWithHyphens));
 	FString DiagnosticParams = SWRoomLoadDiagnostics::IsEnabled() ? Params + TEXT(" -SWRoomLoadDiag") : Params;
+	if (bPendingPackagedServer)
+		DiagnosticParams += FString::Printf(TEXT(" -networkversionoverride=%u"), FNetworkVersion::GetNetworkCompatibleChangelist());
 	DiagnosticParams += FString::Printf(TEXT(" -SWRoomRoot=\"%s\""), *Root);
 	if (SWRoomLogging::IsDetailedEnabled()) DiagnosticParams += TEXT(" -SWRoomDetailedLog");
 	if (FParse::Param(FCommandLine::Get(), TEXT("SWRoomSaveAudit"))) DiagnosticParams += TEXT(" -SWRoomSaveAudit");
@@ -322,14 +416,17 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 	}
 #endif
 	SWRoomLoadDiagnostics::Mark(TEXT("Host.CreateProc"));
-	ServerHandle = FPlatformProcess::CreateProc(*Executable, *DiagnosticParams, true, true, true, &ServerPid, 0, nullptr, nullptr);
+	const FString WorkingDirectory = bPendingPackagedServer ? FPaths::GetPath(PendingServerExecutable) : FString();
+	ServerHandle = FPlatformProcess::CreateProc(*PendingServerExecutable, *DiagnosticParams, true, true, true, &ServerPid, 0,
+		bPendingPackagedServer ? *WorkingDirectory : nullptr, nullptr);
 	if (!ServerHandle.IsValid()) { Fail(FText::FromString(TEXT("서버를 시작할 수 없습니다."))); return; }
 	bOwnsServer = true;
 	ServerStartElapsed = 0;
 	SetState(ESWRoomState::StartingServer, FText::FromString(TEXT("서버 준비 중...")));
-	UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerStart Result=Started Pid=%u Port=%d Root=%s"), *Run, OperationId, ServerPid, RoomPort, *Root);
+	UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerStart Result=Started Backend=%s Executable=%s Pid=%u Port=%d Root=%s"), *Run, OperationId,
+		bPendingPackagedServer ? TEXT("Packaged") : TEXT("Editor"), *PendingServerExecutable, ServerPid, RoomPort, *Root);
 #else
-	Fail(FText::FromString(TEXT("로컬 에디터 서버 실행은 Windows에서만 지원됩니다.")));
+	Fail(FText::FromString(TEXT("로컬 서버 실행은 Windows에서만 지원됩니다.")));
 #endif
 }
 
@@ -423,6 +520,9 @@ bool USWRoomSubsystem::JoinRoom(const FString& Name, const FString& Code)
 
 void USWRoomSubsystem::StopServer()
 {
+	PendingServerExecutable.Reset();
+	PendingServerProject.Reset();
+	bPendingPackagedServer = false;
 	if (!bOwnsServer) return;
 	UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerStop Result=Requested Pid=%u"), *RoomRunId.ToString(), OperationId, ServerPid);
 	FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*MarkerPath());

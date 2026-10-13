@@ -225,7 +225,12 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 		FSWRoomDeckSpawnerState Before, After;
 		TArray<FSWRoomCaptureIssue> Issues;
 		Spawner->CaptureRoomState(Before, Issues);
-		TestTrue(TEXT("Navigation can be rebuilt for restore without resetting the encounter"), Fixture.Ship->PrepareBundleDeck(false, Error));
+		const int32 PreparedRevision = Fixture.Ship->GetDeckWalkAreaComponent()->GetRevision();
+		TestTrue(TEXT("Ready navigation is reused without resetting the encounter"), Fixture.Ship->PrepareBundleDeck(false, Error));
+		TestEqual(TEXT("Preparation preserves the existing graph revision"), Fixture.Ship->GetDeckWalkAreaComponent()->GetRevision(), PreparedRevision);
+		Fixture.Ship->SetActorTransform(FTransform(FRotator(0.0, 45.0, 0.0), FVector(12000.0, -4000.0, 0.0)), false, nullptr, ETeleportType::TeleportPhysics);
+		TestTrue(TEXT("Relocated bundle reuses its local-space graph"), Fixture.Ship->PrepareBundleDeck(false, Error));
+		TestEqual(TEXT("Relocation does not rebuild navigation"), Fixture.Ship->GetDeckWalkAreaComponent()->GetRevision(), PreparedRevision);
 		Spawner->CaptureRoomState(After, Issues);
 		TestTrue(TEXT("Crew identities remain unchanged"), Before.EnemyPoolIds == After.EnemyPoolIds);
 		TestEqual(TEXT("Encounter generation remains unchanged"), Before.EncounterGeneration, After.EncounterGeneration);
@@ -260,7 +265,7 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Changed crew profile releases the old pool"), Spawner->GetPooledEnemyCount(), 0);
 		for (ADeckEnemy* Enemy : Crew) TestTrue(TEXT("Old crew Actors are destroyed"), Enemy->IsActorBeingDestroyed());
 		FString PreparationError;
-		if (!TestTrue(TEXT("Changed profile rebuilds the idle deck and crew before wake"), Fixture.Ship->PrepareBundleDeck(true, PreparationError))) return false;
+		if (!TestTrue(TEXT("Changed crew profile reuses the idle deck and prepares crew before wake"), Fixture.Ship->PrepareBundleDeck(true, PreparationError))) return false;
 		TArray<ADeckEnemy*> Rebuilt;
 		Spawner->GetPooledEnemies(Rebuilt);
 		if (TestEqual(TEXT("New profile creates exactly one crew slot"), Rebuilt.Num(), 1))

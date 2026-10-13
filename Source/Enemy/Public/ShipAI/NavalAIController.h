@@ -17,6 +17,7 @@ class ENEMY_API ANavalAIController : public AAIController
 	GENERATED_BODY()
 
 public:
+	float GetConfiguredSightRadius() const;
 	ANavalAIController();
 	virtual void Tick(float DeltaSeconds) override;
 

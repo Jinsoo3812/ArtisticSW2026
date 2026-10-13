@@ -12,6 +12,7 @@
 #include "BaseAttributeSet.h"
 #include "SWRoomAbilitySystemComponent.h"
 #include "TimerManager.h"
+#include "Components/SceneComponent.h"
 
 void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
 {
@@ -24,6 +25,21 @@ void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRo
 		return;
 	}
 	FSWRoomShipState State;
+	if (HelmSeatPoint && HelmExitPoint)
+	{
+		auto CapturePoint = [](const USceneComponent* Point, FSWRoomHelmPointState& Saved)
+		{
+			Saved.RelativeTransform = Point->GetRelativeTransform();
+			Saved.ParentComponent = Point->GetAttachParent() ? Point->GetAttachParent()->GetFName() : NAME_None;
+			Saved.Socket = Point->GetAttachSocketName();
+			Saved.bAbsoluteLocation = Point->IsUsingAbsoluteLocation();
+			Saved.bAbsoluteRotation = Point->IsUsingAbsoluteRotation();
+			Saved.bAbsoluteScale = Point->IsUsingAbsoluteScale();
+		};
+		State.bHasHelmPoints = true;
+		CapturePoint(HelmSeatPoint, State.HelmSeat);
+		CapturePoint(HelmExitPoint, State.HelmExit);
+	}
 	State.Health = AttributeSet->GetHealth();
 	State.MaximumHealth = AttributeSet->GetMaxHealth();
 	State.bSinking = bIsSinking;
@@ -53,7 +69,7 @@ void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRo
 	}
 	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
 	Part.Domain = ESWRoomDomain::Ship;
-	Part.Version = 1;
+	Part.Version = 2;
 	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
 	{
 		OutParts.Pop();
@@ -66,7 +82,7 @@ void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRo
 
 bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 {
-	if (Part.Domain != ESWRoomDomain::Ship || Part.Version != 1)
+	if (Part.Domain != ESWRoomDomain::Ship || (Part.Version != 1 && Part.Version != 2))
 	{
 		OutError = TEXT("Unsupported ship domain or version");
 		return false;
@@ -84,6 +100,12 @@ bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 	if (!AbilitySystemComponent || !AttributeSet)
 	{
 		OutError = TEXT("Ship attributes unavailable");
+		return false;
+	}
+	if (Part.Version == 1) State.bHasHelmPoints = false;
+	if (State.bHasHelmPoints && (!State.HelmSeat.RelativeTransform.IsValid() || !State.HelmExit.RelativeTransform.IsValid()))
+	{
+		OutError = TEXT("Invalid saved helm point transform");
 		return false;
 	}
 	if (AbilitySystemComponent->GetSet<UBaseAttributeSet>())
@@ -123,6 +145,29 @@ bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 
 bool AShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
 {
+	if (bHasPendingRoomState && PendingRoomState.bHasHelmPoints)
+	{
+		auto RestorePoint = [&](USceneComponent* Point, const FSWRoomHelmPointState& Saved)
+		{
+			if (!Point) return false;
+			USceneComponent* Parent = nullptr;
+			TInlineComponentArray<USceneComponent*> Scenes(this);
+			for (USceneComponent* Scene : Scenes)
+				if (Scene->GetFName() == Saved.ParentComponent) { Parent = Scene; break; }
+			if (!Parent || Parent == Point || Parent->IsAttachedTo(Point)) return false;
+			if (!Point->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform, Saved.Socket)) return false;
+			Point->SetAbsolute(Saved.bAbsoluteLocation, Saved.bAbsoluteRotation, Saved.bAbsoluteScale);
+			Point->SetRelativeTransform(Saved.RelativeTransform, false, nullptr, ETeleportType::TeleportPhysics);
+			return true;
+		};
+		if (!RestorePoint(HelmSeatPoint, PendingRoomState.HelmSeat) || !RestorePoint(HelmExitPoint, PendingRoomState.HelmExit))
+		{
+			OutError = TEXT("Saved helm point attachment is unavailable");
+			return false;
+		}
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=HelmRestore Result=Applied Ship=%s Seat=%s Exit=%s"),
+			*GetName(), *HelmSeatPoint->GetRelativeLocation().ToString(), *HelmExitPoint->GetRelativeLocation().ToString());
+	}
 	if (!bHasPendingRoomState) return true;
 	bHasPendingRoomState = false;
 	if (USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(AbilitySystemComponent))
@@ -1128,7 +1173,27 @@ void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 	BuoyancyRoot->WakeAllRigidBodies();
 }
 
-void AShip::ResetNetworkPhysicsForReuse()
+bool AShip::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+	float TimeToleranceSeconds, TArray<FString>& OutFields) const
+{
+	if (Expected.Version != 1)
+		return FSWRoomStructCodec::Compare<FSWRoomShipState>(Expected, Actual, TimeToleranceSeconds, OutFields);
+	FSWRoomShipState Before, After;
+	if (!FSWRoomStructCodec::Read(Expected.Bytes, Before) || !FSWRoomStructCodec::Read(Actual.Bytes, After))
+	{
+		OutFields.Add(TEXT("Field=Payload Expected=Readable Actual=Invalid"));
+		return false;
+	}
+	Before.bHasHelmPoints = After.bHasHelmPoints = false;
+	Before.HelmSeat = After.HelmSeat = FSWRoomHelmPointState();
+	Before.HelmExit = After.HelmExit = FSWRoomHelmPointState();
+	FSWRoomDomainPart NormalizedExpected = Expected, NormalizedActual = Actual;
+	NormalizedExpected.Version = NormalizedActual.Version = 2;
+	if (!FSWRoomStructCodec::Write(Before, NormalizedExpected.Bytes) || !FSWRoomStructCodec::Write(After, NormalizedActual.Bytes)) return false;
+	return FSWRoomStructCodec::Compare<FSWRoomShipState>(NormalizedExpected, NormalizedActual, TimeToleranceSeconds, OutFields);
+}
+
+void AShip::ResetFreshEncounterControlState()
 {
 	CurrentMoveInput = CurrentTurnInput = 0.0f;
 	bIsAnchorDropped = false;
@@ -1138,21 +1203,6 @@ void AShip::ResetNetworkPhysicsForReuse()
 	GetWorldTimerManager().ClearTimer(SinkingDestroyTimerHandle);
 	for (UShipRepairPointComponent* Point : {RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get()})
 		if (Point) Point->DeactivateLeak();
-	if (NetworkPhysicsComponent && ShipPhysicsAsync)
-	{
-		NetworkPhysicsComponent->RemoveDataHistory();
-		if (FPhysScene* Scene = GetWorld()->GetPhysicsScene())
-			if (Chaos::FPhysicsSolver* Solver = Scene->GetSolver())
-			{
-				Solver->UnregisterAndFreeSimCallbackObject_External(ShipPhysicsAsync);
-				ShipPhysicsAsync = Solver->CreateAndRegisterSimCallbackObject_External<FShipPhysicsAsync>();
-				if (ShipPhysicsAsync)
-				{
-					ShipPhysicsAsync->SetPhysicsObject(bShipRuntimePhysicsEnabled ? BuoyancyRoot->GetPhysicsObjectByName(NAME_None) : nullptr);
-					NetworkPhysicsComponent->CreateDataHistory(ShipPhysicsAsync);
-				}
-			}
-	}
 	ForceNetUpdate();
 }
 
