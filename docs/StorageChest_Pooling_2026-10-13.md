@@ -44,3 +44,16 @@
 - 전체 `ArtisticSW.Chest` 첫 실행은 12개 중 8개 Success였다. 새 Pool 테스트는 disposable world에서 BeginPlay dispatch가 누락된 fixture를 수정한 뒤 위 최종 실행에서 통과했다. 남은 3개 실패는 `FixedDrops.AuthoredChances`의 실제 DA 확률과 기대값 불일치, `EmptyChestAutoDespawn`의 기존 recipe fixture 오류 로그, `MapPlacedLogic`의 테스트맵 Random Kind 설정/기대 소환 수 불일치다. 전체 테스트 통과로 보고하지 않는다. 전체 로그 `Saved/Logs/StorageChestPool_Automation_20261013.log`.
 - 넓은 필터에 포함된 authoring 테스트가 저장한 `DA_ChestTest_High`, `DA_ChestTest_Low` 변경과 새 `BP_StorageChest`는 초기 상태로 되돌렸다. 최종 집중 테스트는 authoring 테스트를 실행하지 않았으며 이 작업의 Content 에셋 변경은 없다.
 - [ ] 실레벨 2-client 표시/스트리밍 확인: 위 수동 시나리오 필요.
+
+### 2026-10-14 후속 요청: BP 클래스별 독립 풀
+
+최신 정책은 위 최초 구현의 전체 합계 5개 정책을 대체한다. 사용자가 요청한 작은/큰 상자는 **실제 생성된 BP 클래스별 활동+대기 기본 목표 5개씩**이다. 관리 Actor는 하나이고 내부 `FStorageChestClassPool`을 ClassPath마다 독립적으로 둔다. `PoolCapacityPerClass=5`이며 두 BP가 등록된 경우 기본 합계는 10개다. 각 클래스의 근거리 수요가 5를 넘으면 해당 클래스만 확장한다.
+
+분류 기준은 Environment가 아니다. `SpawnConfiguredChest`가 ChestClassOverride → Definition.ChestClass → native fallback 순으로 확정한 실제 Actor의 GetClass()를 최초 CaptureChest에서 ClassPath로 기록하고 Discover에서 해당 클래스 풀을 등록한다. 따라서 ISM 전환을 기다리지 않고 최초 등록 때부터 분리되며, 반납/깨우기/복원 시에도 기존 저장된 ClassPath를 그대로 이용한다. 기존 저장 포맷은 새 분류 필드 없이 호환된다. Environment는 기존 물리/부력 및 guarded/deck 제외 판정에 사용한다. 같은 클래스와 같은 Level의 Actor만 재사용한다.
+
+활동 수 집계, 유휴 보충, 초과분 삭제가 모두 클래스별로 독립적이다. 작은 상자 5개를 활동시키거나 초과 수요를 처리해도 큰 상자 풀의 reserve 5개를 삭제하지 않는다. 다른 클래스로 반납하지 않는다. 레벨이 해제되면 그 Level 소속 Actor는 제거될 수 있으므로 스트리밍 이후에는 새 Actor가 필요할 수 있다.
+
+- [x] BP 클래스별 bucket 및 기본 목표 5개, 최초 등록/반납/재사용/복원 연결.
+- [x] Lifecycle 테스트의 기존 총량 검사를 클래스별 검사로 갱신.
+- [x] IndependentClassBudgets 테스트 추가: 두 클래스 각각 5개 확보, 한 클래스 수요 6개가 다른 클래스의 reserve를 줄이지 않음, 초과 반납 후 클래스별 5개 정리, Environment가 bucket key를 바꾸지 않음, 복원 준비 시 양쪽 reserve 해제.
+- [x] 후속 빌드/자동 테스트 결과: UE 5.7 Editor Development build 성공. 위 두 Pool 테스트 및 기존 Progression.DefinitionRecipeTargetManager, DataDrivenSpawnGroups, GuardedUnlockAndShipFailure 총 5개 모두 Success. 보고서 `Saved/Automation/ChestPoolPerClass/index.json`, 로그 `Saved/Logs/StorageChestPool_PerClass_20261014.log`. 실레벨 2-client/큰·작은 BP 표시의 수동 확인 범위는 그대로 남는다.

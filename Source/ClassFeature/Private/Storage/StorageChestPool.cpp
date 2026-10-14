@@ -245,7 +245,7 @@ bool AStorageChestPool::RestoreChestConfiguration(AStorageChest& Chest, const FS
 void AStorageChestPool::Discover()
 {
 	Points.RemoveAll([](const auto& Point) { return !Point.IsValid(); });
-	IdleChests.RemoveAll([](const auto& Chest) { return !IsValid(Chest); });
+	for (auto& Pool : ClassPools) Pool.IdleChests.RemoveAll([](const auto& Chest) { return !IsValid(Chest); });
 	for (TActorIterator<AChestSpawnPoint> It(GetWorld()); It; ++It)
 	{
 		AChestSpawnPoint* Point = *It;
@@ -260,7 +260,11 @@ void AStorageChestPool::Discover()
 			Chest->SetDistanceOptimizationEnabled(false);
 			Chest->SetPoolAssignment(Placement.StableId, Placement.Transform);
 		}
-		if (Placement.StableId.IsValid()) Points.AddUnique(Point);
+		if (Placement.StableId.IsValid())
+		{
+			GetClassPool(Placement.ClassPath);
+			Points.AddUnique(Point);
+		}
 	}
 }
 
@@ -299,7 +303,7 @@ void AStorageChestPool::Evaluate()
 {
 	if (!HasAuthority() || bPreparingRestore || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()) return;
 	Discover();
-	int32 ActiveCount = 0;
+	TMap<FSoftClassPath, int32> ActiveCounts;
 	for (const auto& Weak : Points)
 	{
 		AChestSpawnPoint* Point = Weak.Get();
@@ -309,7 +313,7 @@ void AStorageChestPool::Evaluate()
 		if (!Placement.StableId.IsValid()) continue;
 		if (!IsEligible(*Point, Chest)) { ForgetPoint(Point); break; }
 		if (!Placement.bDormant && !IsValid(Chest)) { Point->GetPooledChest() = FStorageChestPoolPlacement(); continue; }
-		if (IsValid(Chest)) ++ActiveCount;
+		if (IsValid(Chest)) ++ActiveCounts.FindOrAdd(Placement.ClassPath);
 		const FVector Location = IsValid(Chest) ? Chest->GetActorLocation() : Placement.Transform.GetLocation();
 		const bool bNear = IsNear(Location, Placement.ActivationRange + (Placement.bDormant ? 0.f : 10000.f));
 		if (Placement.bDormant && bNear)
@@ -323,7 +327,22 @@ void AStorageChestPool::Evaluate()
 		}
 		else SettledSince.Remove(Placement.StableId);
 	}
-	const int32 IdleTarget = FMath::Max(0, PoolCapacity - ActiveCount);
+	for (auto& Pool : ClassPools) MaintainCapacity(Pool, ActiveCounts.FindRef(Pool.ClassPath));
+	Publish();
+}
+
+FStorageChestClassPool& AStorageChestPool::GetClassPool(const FSoftClassPath& ClassPath)
+{
+	if (auto* Pool = ClassPools.FindByPredicate([&](const auto& Value) { return Value.ClassPath == ClassPath; })) return *Pool;
+	auto& Pool = ClassPools.AddDefaulted_GetRef();
+	Pool.ClassPath = ClassPath;
+	return Pool;
+}
+
+void AStorageChestPool::MaintainCapacity(FStorageChestClassPool& Pool, int32 ActiveCount)
+{
+	auto& IdleChests = Pool.IdleChests;
+	const int32 IdleTarget = FMath::Max(0, PoolCapacityPerClass - ActiveCount);
 	while (IdleChests.Num() > IdleTarget)
 	{
 		AStorageChest* Chest = IdleChests.Pop();
@@ -336,7 +355,7 @@ void AStorageChestPool::Evaluate()
 		AChestSpawnPoint* ReservePoint = nullptr;
 		int32 FewestReserves = MAX_int32;
 		for (const auto& Weak : Points)
-			if (AChestSpawnPoint* Point = Weak.Get(); Point && Point->GetPooledChest().StableId.IsValid())
+			if (AChestSpawnPoint* Point = Weak.Get(); Point && Point->GetPooledChest().StableId.IsValid() && Point->GetPooledChest().ClassPath == Pool.ClassPath)
 			{
 				int32 Count = 0;
 				for (AStorageChest* Chest : IdleChests)
@@ -346,7 +365,6 @@ void AStorageChestPool::Evaluate()
 		if (ReservePoint)
 			if (AStorageChest* Chest = Allocate(*ReservePoint, ReservePoint->GetPooledChest())) IdleChests.Add(Chest);
 	}
-	Publish();
 }
 
 AStorageChest* AStorageChestPool::Allocate(AChestSpawnPoint& Point, const FStorageChestPoolPlacement& Placement)
@@ -389,13 +407,14 @@ bool AStorageChestPool::Sleep(AChestSpawnPoint& Point, FString& Error)
 	Point.GetPooledChest().bDormant = true;
 	Point.SetPooledChestActor(nullptr);
 	Park(*Chest);
-	IdleChests.AddUnique(Chest);
+	GetClassPool(Point.GetPooledChest().ClassPath).IdleChests.AddUnique(Chest);
 	return true;
 }
 
 bool AStorageChestPool::Wake(AChestSpawnPoint& Point, FString& Error)
 {
 	auto& Placement = Point.GetPooledChest();
+	auto& IdleChests = GetClassPool(Placement.ClassPath).IdleChests;
 	AStorageChest* Chest = nullptr;
 	for (int32 Index = 0; Index < IdleChests.Num(); ++Index)
 		if (IdleChests[Index]->GetClass()->GetPathName() == Placement.ClassPath.ToString() && IdleChests[Index]->GetLevel() == Point.GetLevel())
@@ -571,8 +590,13 @@ void AStorageChestPool::PrepareRestore(const FSWRoomWorldSnapshot& Snapshot, FSt
 	SettledSince.Reset();
 	Points.Reset();
 	Presentations.Reset();
-	for (AStorageChest* Chest : IdleChests) if (IsValid(Chest)) { StorageChestPool::Release(*Chest); Chest->Destroy(); }
-	IdleChests.Reset();
+	for (auto& Pool : ClassPools)
+	{
+		auto& IdleChests = Pool.IdleChests;
+		for (AStorageChest* Chest : IdleChests) if (IsValid(Chest)) { StorageChestPool::Release(*Chest); Chest->Destroy(); }
+		IdleChests.Reset();
+	}
+	ClassPools.Reset();
 }
 
 void AStorageChestPool::RestoreCompleted()

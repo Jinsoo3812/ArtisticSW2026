@@ -13,6 +13,14 @@ class UActorChannel;
 class FOutBunch;
 struct FReplicationFlags;
 
+USTRUCT()
+struct FStorageChestClassPool
+{
+	GENERATED_BODY()
+	UPROPERTY() FSoftClassPath ClassPath;
+	UPROPERTY() TArray<TObjectPtr<AStorageChest>> IdleChests;
+};
+
 UCLASS()
 class CLASSFEATURE_API UStorageChestPoolPresentation : public UObject
 {
@@ -40,7 +48,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual bool ReplicateSubobjects(UActorChannel* Channel, FOutBunch* Bunch, FReplicationFlags* RepFlags) override;
 	/** Same capacity policy as EnemyShip: active demand may exceed the baseline. */
-	UPROPERTY(EditAnywhere, Category="Storage Chest|Optimization", meta=(ClampMin="0")) int32 PoolCapacity = 5;
+	UPROPERTY(EditAnywhere, Category="Storage Chest|Optimization", meta=(ClampMin="0")) int32 PoolCapacityPerClass = 5;
 	void ForgetPoint(AChestSpawnPoint* Point);
 	static bool CaptureChest(AStorageChest& Chest, FStorageChestPoolPlacement& Placement, FString& Error);
 	static bool RestoreChestConfiguration(AStorageChest& Chest, const FStorageChestPoolPlacement& Placement, FString& Error);
@@ -49,6 +57,9 @@ public:
 	bool MaterializeForLootRebalance();
 private:
 	friend class FStorageChestPoolLifecycleTest;
+	friend class FStorageChestPoolClassBudgetTest;
+	FStorageChestClassPool& GetClassPool(const FSoftClassPath& ClassPath);
+	void MaintainCapacity(FStorageChestClassPool& Pool, int32 ActiveCount);
 	void Discover();
 	bool Wake(AChestSpawnPoint& Point, FString& Error);
 	bool Sleep(AChestSpawnPoint& Point, FString& Error);
@@ -59,7 +70,7 @@ private:
 	bool IsNear(const FVector& Location, float Range) const;
 	void PrepareRestore(const FSWRoomWorldSnapshot& Snapshot, FString& Error);
 	void RestoreCompleted();
-	UPROPERTY(Transient) TArray<TObjectPtr<AStorageChest>> IdleChests;
+	UPROPERTY(Transient) TArray<FStorageChestClassPool> ClassPools;
 	UPROPERTY(Replicated) TArray<TObjectPtr<UStorageChestPoolPresentation>> Presentations;
 	UPROPERTY(Transient) TArray<TObjectPtr<UInstancedStaticMeshComponent>> ProxyInstanceComponents;
 	TArray<TWeakObjectPtr<AChestSpawnPoint>> Points;
