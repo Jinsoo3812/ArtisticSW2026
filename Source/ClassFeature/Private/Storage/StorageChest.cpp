@@ -82,6 +82,7 @@ void AStorageChest::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArr
 	State.bGuardFailed = bGuardFailed;
 	State.bRequiresGuardClear = bRequiresGuardClear;
 	State.bBossEncounterReserved = bBossEncounterReserved;
+	State.bIsBossChest = bIsBossChest;
 	State.bEnablePhysicsAndBuoyancy = bEnablePhysicsAndBuoyancy;
 	State.LootSeed = LootSeed;
 	State.ChestDefinitionPath = ChestDefinition ? FSoftObjectPath(ChestDefinition) : FSoftObjectPath();
@@ -160,6 +161,7 @@ bool AStorageChest::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& Ou
 	bGuardFailed = State.bGuardFailed;
 	bRequiresGuardClear = State.bRequiresGuardClear;
 	bBossEncounterReserved = State.bBossEncounterReserved;
+	bIsBossChest = State.bIsBossChest;
 	SetLocked(State.bLocked);
 	SetPhysicsAndBuoyancyEnabled(State.bEnablePhysicsAndBuoyancy);
 	PendingRoomState = State;
@@ -186,6 +188,7 @@ bool AStorageChest::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredAc
 void AStorageChest::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (IsPoolIdle()) return;
 
 	if (HasAuthority() || !bEnablePhysicsAndBuoyancy || !bHasClientMovementTarget)
 	{
@@ -264,6 +267,7 @@ void AStorageChest::BeginPlay()
 
 	ApplyLockPresentation();
 	ApplyStoryGatePresentation();
+	OnRep_PoolAssignment();
 }
 
 void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -286,9 +290,69 @@ void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 
 	DOREPLIFETIME(AStorageChest, bLocked);
 	DOREPLIFETIME(AStorageChest, bGuardFailed);
+	DOREPLIFETIME(AStorageChest, bIsBossChest);
 	DOREPLIFETIME(AStorageChest, bEnablePhysicsAndBuoyancy);
 	DOREPLIFETIME(AStorageChest, bDistanceOptimizationDormant);
 	DOREPLIFETIME(AStorageChest, bStoryGateDormant);
+	DOREPLIFETIME(AStorageChest, PoolAssignment);
+}
+
+void AStorageChest::SetPoolAssignment(const FGuid& Id, const FTransform& Transform)
+{
+	if (!HasAuthority()) return;
+	PoolAssignment.bManaged = true;
+	PoolAssignment.StableId = Id;
+	PoolAssignment.Transform = Transform;
+	PoolAssignment.StorageName = StorageName;
+	PoolAssignment.ActionText = ActionText;
+	PoolAssignment.LockedActionText = LockedActionText;
+	OnRep_PoolAssignment();
+	ForceNetUpdate();
+}
+
+void AStorageChest::OnRep_PoolAssignment()
+{
+	if (!PoolAssignment.bManaged) return;
+	StorageName = PoolAssignment.StorageName;
+	ActionText = PoolAssignment.ActionText;
+	LockedActionText = PoolAssignment.LockedActionText;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		if (auto* Controller = Cast<ABasePlayerController>(It->Get()))
+			Controller->HandleChestPoolAssignment(this, PreviousPoolAssignmentId, PoolAssignment.StableId);
+	PreviousPoolAssignmentId = PoolAssignment.StableId;
+	bHasClientMovementTarget = false;
+	SetActorHiddenInGame(IsPoolIdle());
+	SetActorEnableCollision(!IsPoolIdle());
+	if (IsPoolIdle())
+	{
+		GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+		GetWorldTimerManager().ClearTimer(DistanceOptimizationTimerHandle);
+		if (ChestMesh) ChestMesh->SetSimulatePhysics(false);
+		if (SWBuoyancyComponent) SWBuoyancyComponent->Deactivate();
+		SetActorTickEnabled(false);
+	}
+	else
+	{
+		SetActorTransform(PoolAssignment.Transform, false, nullptr, ETeleportType::TeleportPhysics);
+		ApplyPhysicsMode();
+		ApplyLockPresentation();
+	}
+}
+
+bool AStorageChest::CanReturnToPool() const
+{
+	if (IsPoolIdle() || bHasPendingRoomState || bStoryGateDormant
+		|| GetWorldTimerManager().IsTimerActive(EmptyDestroyTimerHandle)) return false;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		if (const auto* Controller = Cast<ABasePlayerController>(It->Get()); Controller && Controller->IsStorageOpenFor(this)) return false;
+	// Never freeze a falling chest before it has reached the water surface.
+	if (bEnablePhysicsAndBuoyancy)
+	{
+		if (!ChestMesh || !SWBuoyancyComponent || !SWBuoyancyComponent->GetLastRuntimeDiagnostic().bPontoonInWater
+			|| ChestMesh->GetPhysicsLinearVelocity().SizeSquared() > FMath::Square(100.f)
+			|| ChestMesh->GetPhysicsAngularVelocityInDegrees().SizeSquared() > FMath::Square(30.f)) return false;
+	}
+	return true;
 }
 
 void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
@@ -297,6 +361,31 @@ void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, con
 	{
 		StorageComponent->ConfigureStorage(InSlotCount, InColumnCount, InItems);
 	}
+}
+
+void AStorageChest::ResetForNewEncounter()
+{
+	if (!HasAuthority()) return;
+	ClearGuardBindings();
+	GuardCharacters.Reset();
+	BossGuardCharacter = nullptr;
+	BossGuardHealth = nullptr;
+	OwningShip = nullptr;
+	OwningShipHealthComponent = nullptr;
+	AliveGuardHealthComponents.Reset();
+	bHasBeenOpened = false;
+	bGuardFailed = false;
+	bRequiresGuardClear = false;
+	bBossEncounterReserved = false;
+	bIsBossChest = false;
+	bHasPendingRoomState = false;
+	ClearLegacyChestDefinition();
+	if (StorageComponent)
+		StorageComponent->ConfigureStorage(FMath::Max(1, StorageComponent->GetSlotCount()),
+			FMath::Max(1, StorageComponent->GetStorageColumns()), TArray<FStorageItemEntry>());
+	GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+	SetLocked(false);
+	ForceNetUpdate();
 }
 
 void AStorageChest::SetPhysicsAndBuoyancyEnabled(bool bEnabled)
@@ -408,6 +497,7 @@ void AStorageChest::AddGuardCharacter(ABaseCharacter* NewGuard)
 	}
 
 	GuardCharacters.AddUnique(NewGuard);
+	NewGuard->OnDestroyed.AddUniqueDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	bRequiresGuardClear = true;
 
 	UBaseHealthComponent* GuardHealth = NewGuard->FindComponentByClass<UBaseHealthComponent>();
@@ -489,6 +579,9 @@ void AStorageChest::AddBossGuardCharacter(ABaseCharacter* Boss)
 		BossGuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
 	}
 	BossGuardCharacter = Boss;
+	bIsBossChest = true;
+	ForceNetUpdate();
+	Boss->OnDestroyed.AddUniqueDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	BossGuardHealth = Boss->FindComponentByClass<UBaseHealthComponent>();
 	if (IsBossGuardAlive())
 	{
@@ -501,12 +594,29 @@ void AStorageChest::RemoveGuardCharacter(ABaseCharacter* Guard)
 {
 	if (!HasAuthorityOrIsTesting() || !Guard) return;
 	GuardCharacters.Remove(Guard);
+	Guard->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	if (UBaseHealthComponent* Health = Guard->FindComponentByClass<UBaseHealthComponent>())
 	{
 		Health->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
 		AliveGuardHealthComponents.Remove(Health);
 	}
 	RecalculateGuardLock();
+}
+
+void AStorageChest::HandleGuardDestroyed(AActor* DestroyedActor)
+{
+	if (!HasAuthorityOrIsTesting()) return;
+	ABaseCharacter* Guard = Cast<ABaseCharacter>(DestroyedActor);
+	if (!Guard) return;
+	RemoveGuardCharacter(Guard);
+	if (BossGuardCharacter == Guard)
+	{
+		if (BossGuardHealth)
+			BossGuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		BossGuardHealth = nullptr;
+		BossGuardCharacter = nullptr;
+		RecalculateGuardLock();
+	}
 }
 
 void AStorageChest::EnsureGuaranteedLoot(const TArray<FStorageItemEntry>& GuaranteedItems)
@@ -780,6 +890,7 @@ void AStorageChest::OnRep_Locked()
 
 void AStorageChest::OnRep_ReplicatedMovement()
 {
+	if (IsPoolIdle()) return;
 	if (bEnablePhysicsAndBuoyancy)
 	{
 		ClientMovementTargetLocation = GetReplicatedMovement().Location;
@@ -974,6 +1085,7 @@ void AStorageChest::InitializeGuardState()
 		}
 
 		++ValidConfiguredGuardCount;
+		GuardCharacter->OnDestroyed.AddUniqueDynamic(this, &AStorageChest::HandleGuardDestroyed);
 		if (!GuardHealth->IsDead())
 		{
 			AliveGuardHealthComponents.Add(GuardHealth);
@@ -1007,10 +1119,16 @@ void AStorageChest::InitializeGuardState()
 
 void AStorageChest::ClearGuardBindings()
 {
+	for (ABaseCharacter* Guard : GuardCharacters)
+		if (IsValid(Guard)) Guard->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
+	if (IsValid(BossGuardCharacter))
+		BossGuardCharacter->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
 	for (UBaseHealthComponent* GuardHealth : AliveGuardHealthComponents)
 	{
 		if (GuardHealth)
 		{
+			if (AActor* Guard = GuardHealth->GetOwner())
+				Guard->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleGuardDestroyed);
 			GuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
 		}
 	}
@@ -1037,6 +1155,13 @@ void AStorageChest::ApplyPhysicsMode()
 {
 	if (!ChestMesh)
 	{
+		return;
+	}
+	if (IsPoolIdle())
+	{
+		ChestMesh->SetSimulatePhysics(false);
+		SetActorTickEnabled(false);
+		if (SWBuoyancyComponent) { SWBuoyancyComponent->Deactivate(); SWBuoyancyComponent->SetComponentTickEnabled(false); }
 		return;
 	}
 

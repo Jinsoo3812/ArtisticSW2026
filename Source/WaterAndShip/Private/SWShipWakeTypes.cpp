@@ -9,7 +9,8 @@ namespace
 		const FVector2D& QueryPosition,
 		const double ServerTime,
 		const FSWShipWakeEvent& Event,
-		float& OutHeight)
+		float& OutHeight,
+		FSWShipWakeEventDiagnosticSample* Diagnostic = nullptr)
 	{
 		OutHeight = 0.0f;
 		if (!Event.IsActiveAt(ServerTime) || !FSWKelvinWakeAtlas::Get().IsReady()) return false;
@@ -19,10 +20,9 @@ namespace
 			? Event.Origin : Event.EndOrigin;
 		const double T0 = Event.StartServerTime;
 		const double T1 = FMath::Max(Event.EndServerTime, T0);
-		const float Amp = Event.InitialAmplitudeCm;
 		const float C = FMath::Max(Event.PropagationSpeedCmPerSecond, 1.0f);
 
-		if (Amp <= 0.0f || ServerTime < T0 || ServerTime >= Event.ExpireServerTime) return false;
+		if (ServerTime < T0 || ServerTime >= Event.ExpireServerTime) return false;
 
 		const float DeltaT = FMath::Max(static_cast<float>(T1 - T0), 1.0e-4f);
 		const FVector2D V = (P1 - P0) / DeltaT;
@@ -35,15 +35,17 @@ namespace
 		const float B = 2.0f * (static_cast<float>(FVector2D::DotProduct(D, V)) + C2 * Trem);
 		const float C_coeff = static_cast<float>(FVector2D::DotProduct(D, D)) - C2 * Trem * Trem;
 
+		// 기존 ±1 ms 허용과 끝점 clamp는 인접 구간의 같은 출발점을 두 번 합산해 높이를 튀게 했다.
+		// CPU/GPU 모두 [0, DeltaT)로 판정한다. 공유 끝점은 다음 구간만 소유하며 범위 밖 root는 버린다.
 		float Tau = -1.0f;
 		if (FMath::Abs(A) < 1.0e-5f)
 		{
 			if (FMath::Abs(B) > 1.0e-5f)
 			{
 				const float LinearTau = -C_coeff / B;
-				if (LinearTau >= -1.0e-3f && LinearTau <= DeltaT + 1.0e-3f && LinearTau <= Trem)
+				if (LinearTau >= 0.0f && LinearTau < DeltaT && LinearTau <= Trem)
 				{
-					Tau = FMath::Clamp(LinearTau, 0.0f, DeltaT);
+					Tau = LinearTau;
 				}
 			}
 		}
@@ -55,19 +57,15 @@ namespace
 				const float SqrtDisc = FMath::Sqrt(Disc);
 				const float Tau1 = (-B - SqrtDisc) / (2.0f * A);
 				const float Tau2 = (-B + SqrtDisc) / (2.0f * A);
-				const bool bValid1 = (Tau1 >= -1.0e-3f && Tau1 <= DeltaT + 1.0e-3f && Tau1 <= Trem);
-				const bool bValid2 = (Tau2 >= -1.0e-3f && Tau2 <= DeltaT + 1.0e-3f && Tau2 <= Trem);
-				if (bValid1 && bValid2)
+				const bool bValid1 = (Tau1 >= 0.0f && Tau1 < DeltaT && Tau1 <= Trem);
+				const bool bValid2 = (Tau2 >= 0.0f && Tau2 < DeltaT && Tau2 <= Trem);
+				if (bValid1)
 				{
-					Tau = (Tau1 >= 0.0f && Tau1 <= DeltaT) ? Tau1 : Tau2;
-				}
-				else if (bValid1)
-				{
-					Tau = FMath::Clamp(Tau1, 0.0f, DeltaT);
+					Tau = Tau1;
 				}
 				else if (bValid2)
 				{
-					Tau = FMath::Clamp(Tau2, 0.0f, DeltaT);
+					Tau = Tau2;
 				}
 			}
 		}
@@ -75,8 +73,18 @@ namespace
 		if (Tau < 0.0f) return false;
 
 		const float Alpha = FMath::Clamp(Tau / DeltaT, 0.0f, 1.0f);
+		// 렌더링과 같은 출발 시각 Alpha로 진폭을 보간한다. 쿼리와 비동기 부력도 이 함수를 공유한다.
+		// 현재 프레임 진폭으로 과거 wake를 덮어쓰지 않고, 기록된 구간 양 끝 진폭을 사용한다.
+		const float Amp = FMath::Lerp(Event.InitialAmplitudeCm, Event.GetEndAmplitudeCm(), Alpha);
 		const float Age = Trem - Tau;
 		if (Age < 0.0f) return false;
+		if (Diagnostic)
+		{
+			Diagnostic->bHasRoot = true;
+			Diagnostic->Alpha = Alpha;
+			Diagnostic->Age = Age;
+			Diagnostic->AmplitudeCm = Amp;
+		}
 
 		const float DecayRate = FMath::Max(Event.DecayRate, 0.0f);
 		const float Decay = FMath::Exp(-DecayRate * Age);
@@ -108,6 +116,7 @@ namespace
 			const float VNorm = FMath::Abs(V_signed) / WidthCut;
 			const float VFade = 1.0f - FMath::SmoothStep(0.60f, 1.0f, VNorm);
 			const float StampMask = UFadeIn * UFadeOut * VFade;
+			if (Diagnostic) Diagnostic->StampMask = StampMask;
 
 			if (StampMask > 0.0001f)
 			{
@@ -120,8 +129,22 @@ namespace
 			? FMath::SmoothStep(0.0f, Event.FadeInSeconds, Age) : 1.0f;
 
 		OutHeight = Amp * Golden * FadeIn * Decay;
+		if (Diagnostic)
+		{
+			Diagnostic->FadeIn = FadeIn;
+			Diagnostic->Height = OutHeight;
+		}
 		return true;
 	}
+}
+
+FSWShipWakeEventDiagnosticSample FSWShipWakeEvaluator::EvaluateEventDiagnostic(
+	const FVector2D& QueryPosition, const double ServerTime, const FSWShipWakeEvent& Event)
+{
+	FSWShipWakeEventDiagnosticSample Sample;
+	float Height = 0.0f;
+	EvaluateGoldenSample(QueryPosition, ServerTime, Event, Height, &Sample);
+	return Sample;
 }
 
 float FSWShipWakeEvaluator::EvaluateEventHeight(

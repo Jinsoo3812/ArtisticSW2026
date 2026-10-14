@@ -67,7 +67,7 @@ namespace SWCabinWaterCull
 			{
 				USWCabinWaterCullComponent* Component = Entry.Get();
 				const AActor* Owner = Component ? Component->GetOwner() : nullptr;
-				if (!Component || !Owner || !Component->bWaterCullEnabled)
+				if (!Component || !Owner || Owner->ActorHasTag(TEXT("SWEnemyShipPoolIdle")) || !Component->bWaterCullEnabled)
 				{
 					continue;
 				}
@@ -114,7 +114,7 @@ USWCabinWaterCullComponent::USWCabinWaterCullComponent()
 bool USWCabinWaterCullComponent::ContainsWorldPosition(const FVector& WorldPosition) const
 {
 	const AActor* Owner = GetOwner();
-	if (!bWaterCullEnabled || !IsValid(Owner) || !CabinData)
+	if (!bWaterCullEnabled || !IsValid(Owner) || Owner->ActorHasTag(TEXT("SWEnemyShipPoolIdle")) || !CabinData)
 	{
 		return false;
 	}

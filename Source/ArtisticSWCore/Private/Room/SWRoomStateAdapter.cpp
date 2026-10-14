@@ -180,5 +180,6 @@ bool FSWRoomStructCodec::CompareSaveGameStruct(const UScriptStruct* Type, const 
 	const void* Actual, float TimeToleranceSeconds, TArray<FString>& OutFields)
 {
 	CompareStruct(Type, Expected, Actual, FString(), TimeToleranceSeconds, OutFields);
+	SWRoomSaveAudit::RecordDifferences(Type->GetName(), OutFields);
 	return OutFields.IsEmpty();
 }

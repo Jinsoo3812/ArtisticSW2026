@@ -1,4 +1,5 @@
 #include "SWShipWakeEmitterComponent.h"
+#include "SWShipWakeRenderingDiagnostics.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Actor.h"
@@ -102,6 +103,7 @@ void USWShipWakeEmitterComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	ResolveKelvinFrame(LastSamplePosition, LastSampleForward);
+	LastSampleAmplitudeCm = 0.0f;
 	if (const USWShipWakeSubsystem* State = GetWorld()
 		? GetWorld()->GetSubsystem<USWShipWakeSubsystem>() : nullptr)
 	{
@@ -120,6 +122,14 @@ void USWShipWakeEmitterComponent::BeginPlay()
 			// LastSampleForward.X, LastSampleForward.Y,
 			// GetProfileName(FroudeProfile), LastSampleServerTime);
 	// }
+}
+
+void USWShipWakeEmitterComponent::ResetSamplingForTeleport()
+{
+	bHasSample = false;
+	bLastReversing = false;
+	LastSampleAmplitudeCm = 0.0f;
+	ResolveKelvinFrame(LastSamplePosition, LastSampleForward);
 }
 
 void USWShipWakeEmitterComponent::ResolveKelvinFrame(
@@ -191,6 +201,7 @@ void USWShipWakeEmitterComponent::TickComponent(
 	// 카메라 거리 컬링 검사 (플레이어 카메라와 멀면 생성 스킵)
 	if (IsCulledByCamera(Apex))
 	{
+		LastSampleAmplitudeCm = 0.0f;
 		LastSamplePosition = Apex;
 		LastSampleForward = Forward;
 		LastSampleServerTime = ServerTime;
@@ -216,6 +227,16 @@ void USWShipWakeEmitterComponent::TickComponent(
 
 	if (!bHasSample || Speed < MinimumSpeedCmPerSecond || bDirectionFlipped)
 	{
+		LastSampleAmplitudeCm = 0.0f;
+		if (FSWShipWakeRenderingDiagnostics::IsEnabled() && (bDirectionFlipped
+			|| FVector2D::Distance(LastSamplePosition, Apex) >= 1.0))
+		{
+			UE_LOG(LogSWShipWakeEmitter, Log,
+				TEXT("[KelvinDiag:1:Reset] World=%s Owner=%s Net=%d T=%.6f Predicted=%d DirectionFlipped=%d Speed=%.2f Minimum=%.2f DiscardedDt=%.4f"),
+				*GetNameSafe(World), *GetNameSafe(Owner), static_cast<int32>(World->GetNetMode()),
+				ServerTime, bPredicted, bDirectionFlipped, Speed, MinimumSpeedCmPerSecond,
+				ServerTime - LastSampleServerTime);
+		}
 		// if (bLogging && bDirectionFlipped)
 		// {
 			// UE_LOG(LogSWShipWakeEmitter, Log,
@@ -254,10 +275,19 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		Distance / Spacing, TurnDegrees / MaxTurn, 1.0f)), 1, MaximumCatchUpEvents);
 	const float SpeedFade = FMath::SmoothStep(
 		MinimumSpeedCmPerSecond, MinimumSpeedCmPerSecond * 2.0f, HorizontalSpeed);
+	const float EndAmplitudeCm = MaximumAmplitudeCm * SpeedFade;
 	const float MaximumRadius = FMath::Sqrt(
 		FMath::Square(WakeLengthCm) + FMath::Square(WakeHalfWidthCm));
 	const float Lifetime = FMath::Max(
 		(MaximumRadius + EnvelopeWidthCm) / FMath::Max(PropagationSpeedCmPerSecond, 1.0f), 1.0f);
+	if (FSWShipWakeRenderingDiagnostics::IsEnabled())
+	{
+		UE_LOG(LogSWShipWakeEmitter, Log,
+			TEXT("[KelvinDiag:1:Emit] World=%s Owner=%s Net=%d T=%.6f Predicted=%d Segment=[%.6f,%.6f] WithheldDt=%.4f Distance=%.2f TurnDeg=%.2f Triggers=%d/%d/%d Segments=%d Speed=%.2f Amp=%.3f"),
+			*GetNameSafe(GetWorld()), *GetNameSafe(GetOwner()), static_cast<int32>(GetWorld()->GetNetMode()),
+			ServerTime, bPredicted, LastSampleServerTime, ServerTime, Elapsed, Distance, TurnDegrees,
+			bDistanceTrigger, bTurnTrigger, bTimeTrigger, SegmentCount, HorizontalSpeed, MaximumAmplitudeCm * SpeedFade);
+	}
 
 	// const bool bLogging = IsDebugLogEnabled();
 	// if (bLogging)
@@ -302,7 +332,10 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		Event.StartServerTime = FMath::Lerp(LastSampleServerTime, ServerTime, Alpha0);
 		Event.EndServerTime = FMath::Lerp(LastSampleServerTime, ServerTime, Alpha1);
 		Event.ExpireServerTime = Event.EndServerTime + Lifetime;
-		Event.InitialAmplitudeCm = MaximumAmplitudeCm * SpeedFade;
+		// 기존에는 발행 시점 진폭 하나를 구간 전체에 적용해 가감속 때 높이가 계단식으로 바뀌었다.
+		// 이전 발행 진폭에서 현재 진폭까지 보간하고, catch-up 구간도 같은 공유 끝점 값을 사용한다.
+		Event.InitialAmplitudeCm = FMath::Lerp(LastSampleAmplitudeCm, EndAmplitudeCm, Alpha0);
+		Event.EndAmplitudeCm = FMath::Lerp(LastSampleAmplitudeCm, EndAmplitudeCm, Alpha1);
 		Event.PropagationSpeedCmPerSecond = FMath::Max(PropagationSpeedCmPerSecond, 1.0f);
 		Event.DecayRate = FMath::Max(DecayRate, 0.0f);
 		Event.WakeLengthCm = FMath::Max(WakeLengthCm, 100.0f);
@@ -337,4 +370,6 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 	LastSamplePosition = Apex;
 	LastSampleForward = Forward;
 	LastSampleServerTime = ServerTime;
+	// 다음 구간의 시작 진폭은 이번 구간의 종료 진폭과 같아야 한다.
+	LastSampleAmplitudeCm = EndAmplitudeCm;
 }
