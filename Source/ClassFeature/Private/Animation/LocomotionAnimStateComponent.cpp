@@ -1,4 +1,6 @@
 #include "Animation/LocomotionAnimStateComponent.h"
+#include "Components/SWFoleyComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "BasePlayer.h"
 #include "SwimmingComponent.h"
 #include "GameFramework/Character.h"
@@ -19,6 +21,15 @@
 
 namespace
 {
+    float FoleyEventAge(const ABasePlayer* Player, EReplicatedLocomotionEvent Kind)
+    {
+        if (!Player || Player->IsLocallyControlled() || Player->HasAuthority()) { return 0.f; }
+        const auto& Snapshot = Player->LocomotionStateSnapshot;
+        const auto* State = Player->GetWorld()->GetGameState();
+        if (!State || Snapshot.LastLocomotionEvent != Kind || Snapshot.EventServerTimeSeconds < 0.f) { return 1.f; }
+        return FMath::Max(0.f, float(State->GetServerWorldTimeSeconds()) - Snapshot.EventServerTimeSeconds);
+    }
+
     bool IsStopDebugEnabled()
     {
         const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("a.StopDebug"));
@@ -1463,6 +1474,11 @@ void ULocomotionAnimStateComponent::HandleRemoteJumpStarted(int32 EventSequence)
     }
 
     HandleJumpStarted();
+    // Simulated proxies do not receive Character::OnJumped. Reuse the accepted movement event.
+    if (CachedBasePlayer && CachedBasePlayer->FoleyComponent)
+    {
+        CachedBasePlayer->FoleyComponent->PlayJump(CachedBasePlayer->GetVelocity().Size2D(), FoleyEventAge(CachedBasePlayer, EReplicatedLocomotionEvent::Jump));
+    }
 }
 
 void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicatedLocomotionState& Snapshot)
@@ -1583,7 +1599,7 @@ void ULocomotionAnimStateComponent::StopFallOffStart()
     bIsFallOffStart = false;
 }
 
-void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent)
+void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent, float FoleyAgeSeconds)
 {
     UWorld* World = GetWorld();
     if (!World)
@@ -1597,6 +1613,12 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
     {
         RecordStateControllerDebugEvent(TEXT("StartLanding ignored: already landing"));
         return;
+    }
+
+    // After the existing duplicate/false-landing gates, before landing presentation changes state.
+    if (CachedBasePlayer && CachedBasePlayer->FoleyComponent)
+    {
+        CachedBasePlayer->FoleyComponent->PlayLanding(ImpactFallSpeed, FoleyAgeSeconds);
     }
 
     const bool bWasJumpLanding = bIsJumping;
@@ -1749,7 +1771,7 @@ void ULocomotionAnimStateComponent::HandleRemoteLanded(float ImpactFallSpeed, in
         return;
     }
 
-    StartLanding(ImpactFallSpeed, false);
+    StartLanding(ImpactFallSpeed, false, FoleyEventAge(CachedBasePlayer, EReplicatedLocomotionEvent::Landed));
 }
 
 bool ULocomotionAnimStateComponent::IsDiagonalLanding() const

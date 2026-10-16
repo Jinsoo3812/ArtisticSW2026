@@ -20,6 +20,7 @@ DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnQuickSlotsChangedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnConsumableQuickSlotInputChangedDelegate);
 
+class USWFoleyComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
@@ -92,6 +93,10 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProv
 	friend class ULocomotionAnimStateComponent;
 
 public:
+	/** Cosmetic contact audio, inherited by male/female player Blueprints. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio|Foley")
+	TObjectPtr<USWFoleyComponent> FoleyComponent;
+	virtual void OnJumped_Implementation() override;
 	virtual void SetMountedDamageMode(bool bEnabled) override;
 	virtual bool IsMountedForDamage() const override { return bMountedDamageMode; }
 	virtual void PrepareForHealthDeath() override;
