@@ -34,6 +34,8 @@ public:
 		return OutFields.IsEmpty();
 	}
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) { return true; }
+	/** An adapter may explicitly declare a new domain added by a supported schema migration. */
+	virtual bool AllowsMigratedRoomDomain(const FSWRoomDomainPart& Added, const TArray<FSWRoomDomainPart>& Previous) const { return false; }
 };
 
 struct ARTISTICSWCORE_API FSWRoomStructCodec

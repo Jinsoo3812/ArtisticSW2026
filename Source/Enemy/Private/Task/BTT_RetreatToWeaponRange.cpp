@@ -1,6 +1,7 @@
 #include "Task/BTT_RetreatToWeaponRange.h"
 
 #include "AIController.h"
+#include "AI/PointSelectionFailure.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -69,6 +70,7 @@ EBTNodeResult::Type UBTT_RetreatToWeaponRange::ExecuteTask(
 	if (!FindBestRetreatDestination(*Enemy, *Target, WeaponRange, DesiredRange, Destination)
 		|| !RequestMove(*Controller, Destination))
 	{
+		EnemyPointSelectionFailure::Log(this, Enemy, TEXT("No reachable retreat point or its move request was rejected."));
 		StopMovement(OwnerComp);
 		return EBTNodeResult::Failed;
 	}
@@ -133,6 +135,7 @@ void UBTT_RetreatToWeaponRange::TickTask(
 		if (!FindBestRetreatDestination(*Enemy, *Target, WeaponRange, DesiredRange, Destination)
 			|| !RequestMove(*Controller, Destination))
 		{
+			EnemyPointSelectionFailure::Log(this, Enemy, TEXT("No reachable retreat point during replanning."));
 			StopMovement(OwnerComp);
 			FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 			return;

@@ -1695,7 +1695,11 @@ void ABasePlayerController::FreezeLifeProgressForGameOver()
   }
   LifePawnCharacter->SetCanBeDamaged(false);
   if (UAbilitySystemComponent* ASC = LifePawnCharacter->GetAbilitySystemComponent()) { ASC->CancelAllAbilities(); if (!ASC->HasMatchingGameplayTag(State_Invulnerable)) ASC->AddLooseGameplayTag(State_Invulnerable); }
-  if (UCharacterMovementComponent* Movement = LifePawnCharacter->GetCharacterMovement()) { Movement->StopMovementImmediately(); Movement->DisableMovement(); }
+  if (UCharacterMovementComponent* Movement = LifePawnCharacter->GetCharacterMovement())
+  {
+   Movement->StopMovementImmediately();
+   if (!LifePawnCharacter->ShouldKeepCharacterMovementOnDeath()) Movement->DisableMovement();
+  }
  }
 }
 void ABasePlayerController::ReleaseFrozenLifeProgress()

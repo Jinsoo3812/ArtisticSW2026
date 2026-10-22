@@ -46,3 +46,57 @@ float CalculateGodotFoam(
     
     return FoamMix;
 }
+
+float SW_CalculateShoreFoamSafe(
+    float SceneDepth,
+    float PixelDepth,
+    float2 BaseUV,
+    float2 TimeDir,
+    float FoamScale,
+    float FoamDepthThreshold,
+    Texture2D FoamTexture, SamplerState FoamTextureSampler,
+    float FallbackDepth)
+{
+    if (!isfinite(SceneDepth) || !isfinite(PixelDepth)
+        || !isfinite(FoamDepthThreshold) || FoamDepthThreshold <= 0.0
+        || SceneDepth >= FallbackDepth || SceneDepth < PixelDepth)
+    {
+        return 0.0;
+    }
+
+    float DepthDiff = SceneDepth - PixelDepth;
+    if (DepthDiff >= FoamDepthThreshold)
+    {
+        return 0.0;
+    }
+
+    return CalculateGodotFoam(
+        SceneDepth, PixelDepth, BaseUV, TimeDir,
+        FoamScale, FoamDepthThreshold, FoamTexture, FoamTextureSampler);
+}
+
+float4 SW_ComposeShoreFoamSurface(
+    float3 OriginalBaseColor,
+    float OriginalOpacity,
+    float3 FoamColor,
+    float Alpha,
+    float Strength,
+    float FaceSign)
+{
+    if (FaceSign <= 0.0 || !isfinite(Alpha) || !isfinite(Strength))
+    {
+        return float4(OriginalBaseColor, OriginalOpacity);
+    }
+
+    float Coverage = saturate(Alpha * max(Strength, 0.0));
+    if (Coverage <= 0.0)
+    {
+        return float4(OriginalBaseColor, OriginalOpacity);
+    }
+
+    float WaterCoverage = OriginalOpacity * (1.0 - Coverage);
+    float SurfaceOpacity = WaterCoverage + Coverage;
+    float3 SurfaceColor = (OriginalBaseColor * WaterCoverage + FoamColor * Coverage)
+        / max(SurfaceOpacity, 1e-6);
+    return float4(SurfaceColor, SurfaceOpacity);
+}

@@ -1,5 +1,13 @@
 # Strength 전투 통합과 에디터 설정
 
+## 2026-10-08 최신 판정·검증 사항
+
+검 진단 `sw.Combat.Melee.Debug 1`은 서버 타격창·충돌 후보와 검의 공통 Resolver 거절 사유/체력 변화를 함께 기록한다. 공통 장애물 검사는 WorldStatic Object Multi Trace 결과에서 `PCGVolumeBounds` Profile 컴포넌트만 제외하고 실제 벽·다른 Profile의 생성 Mesh는 계속 차단한다. 이 정책은 WorldStatic 검사를 사용하는 플레이어/적 근접 및 보스 Resolver 호출에 적용된다. 화살은 `ResolveHit(..., true, false)`로 이 추가 장애물 검사를 끄고 기존 투사체 충돌을 사용한다.
+
+저장 레벨의 현재 PCG Profile은 LV_ET=`PCGVolumeBounds`, Lvl_CY=`Custom`이다. Lvl_CY 적용과 PIE의 피해/벽 차단 확인은 [PCG 가이드](PCG_Combat_Fix_Editor_Check.md)를 따른다. 실제 검 A/B와 T1 적 Capsule 테스트 및 기존 실패 기록은 [피격 진단](Deck_Melee_Hit_Diagnosis.md)에 있다.
+
+2026-10-08 Editor 대상 C++ 빌드는 성공했다. 아래의 17개 테스트 성공 기록은 이전 실행 결과다. 2026-10-07에는 `AuthoredSwordQueriesDeckCapsule`가 성공했으나 `SharedHitResolver`와 `MeleePayload`에서 기존 제작 설정/BP/상태 효과 기대값 문제가 기록되었으므로 현재 전체 전투 테스트 통과를 의미하지 않는다. 이번 문서 점검에서는 전투 자동화와 실제 다중 클라이언트 PIE를 다시 실행하지 않았다.
+
 ## 현재 구조
 
 ```text

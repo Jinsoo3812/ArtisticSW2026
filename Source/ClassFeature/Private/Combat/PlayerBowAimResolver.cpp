@@ -46,7 +46,7 @@ bool PlayerBowAimResolver::Resolve(const UWorld* World, const AActor* Shooter, c
 	if (Weapon) Params.AddIgnoredActor(Weapon);
 
 	FHitResult AimHit(1.0f), ObstacleHit(1.0f);
-	World->LineTraceSingleByChannel(AimHit, Start, End, ECC_WeaponAim, Params);
+	ArrowCollisionQuery::TraceAimTarget(World, Start, End, Params, AimHit);
 	ArrowCollisionQuery::TraceObstacles(World, Start, End, Params, ObstacleHit);
 	const bool bAimUsable = IsUsableAimHit(AimHit, Muzzle, OutViewDirection);
 	const bool bObstacleUsable = IsUsableAimHit(ObstacleHit, Muzzle, OutViewDirection);

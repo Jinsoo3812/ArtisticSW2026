@@ -4,6 +4,7 @@
 
 // Unreal
 #include "AIController.h"
+#include "AI/PointSelectionFailure.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Float.h"
@@ -49,6 +50,8 @@ EBTNodeResult::Type UBTT_FindPatrolLocation::ExecuteTask(UBehaviorTreeComponent&
 	UNavigationSystemV1* NavigationSystem = UNavigationSystemV1::GetCurrent(ControlledPawn->GetWorld());
 	if (!NavigationSystem)
 	{
+		EnemyPointSelectionFailure::Log(this, ControlledPawn, TEXT("Navigation is unavailable for patrol point selection."));
+		BlackboardComponent->ClearValue(PatrolLocationKey.SelectedKeyName);
 		return EBTNodeResult::Failed;
 	}
 
@@ -61,6 +64,8 @@ EBTNodeResult::Type UBTT_FindPatrolLocation::ExecuteTask(UBehaviorTreeComponent&
 
 	if (!bFoundLocation)
 	{
+		EnemyPointSelectionFailure::Log(this, ControlledPawn, TEXT("No reachable patrol point in the requested radius."));
+		BlackboardComponent->ClearValue(PatrolLocationKey.SelectedKeyName);
 		return EBTNodeResult::Failed;
 	}
 

@@ -47,8 +47,12 @@ public:
 	FGameplayTag GetStartupGameplayCueTag() const { return StartupGameplayCueTag; }
 	FGameplayTag GetImpactGameplayCueTag() const { return ImpactGameplayCueTag; }
 
+	/** Shared tag-backed cooldown application, also used by attacks with deferred cooldowns. */
+	static void ApplyTaggedCooldown(UAbilitySystemComponent& ASC, const UObject* Source,
+		const FGameplayTagContainer& Tags, float Duration, float Level);
+
 	/** A committed mobility ability can retain the destination selected by the BT. */
-	virtual bool OwnsPreselectedDestinationAfterCommit() const { return false; }
+	virtual bool OwnsPreselectedDestinationAfterCommit() const override { return false; }
 
 protected:
 	void SetBossAbilityTags(FGameplayTag AbilityTag, FGameplayTag InCooldownTag);

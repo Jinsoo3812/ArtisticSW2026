@@ -66,6 +66,8 @@ class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerContr
 
 public:
 	ABasePlayerController();
+	/** Development console request; the server always uses this controller's pawn. */
+	void RequestEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
 	virtual void UpdateCameraManager(float DeltaSeconds) override;
 	bool IsDevelopmentTestInputBlockedByUI() const;
 	bool IsDevelopmentTestInputBlockedByServerUI() const;
@@ -100,9 +102,17 @@ public:
 	TWeakObjectPtr<ABasePlayer> LifeCharacter;
 	TWeakObjectPtr<APawn> AppliedLifePawn;
 private:
+
+	UFUNCTION(Server, Reliable)
+	void ServerEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
+	UFUNCTION(Client, Reliable)
+	void ClientEnemyShipDebugTeleportResult(const FString& Message);
+	double NextEnemyShipDebugTeleportTime = 0.0;
+	
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FPlayerDeathCameraTest;
 #endif
+
 	bool bApplyingLifeProgress = false;
 	void TickDeathFlow(float DeltaTime);
 	void TickShipMotionDiagnostics();

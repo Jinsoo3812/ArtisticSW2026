@@ -5,9 +5,30 @@
 #include "Misc/ScopeExit.h"
 #include "Ship.h"
 #include "SwimmingComponent.h"
+#include "BasePlayer.h"
+#include "Components/BaseHealthComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 
 namespace
 {
+	bool IsDeadPlayerMovement(const ACharacter* Character)
+	{
+		const ABasePlayer* Player = Cast<ABasePlayer>(Character);
+		return Player && (Player->ShouldKeepCharacterMovementOnDeath()
+			|| (Player->GetHealthComponent() && Player->GetHealthComponent()->IsDead()));
+	}
+
+	USkeletalMeshComponent* GetShipDeathRagdoll(ACharacter* Character)
+	{
+		const ABasePlayer* Player = Cast<ABasePlayer>(Character);
+		UPrimitiveComponent* Base = Character ? Character->GetMovementBase() : nullptr;
+		USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+		return Player && Player->ShouldKeepCharacterMovementOnDeath() && IsValid(Base)
+			&& IsValid(Base->GetOwner()) && Base->GetOwner()->IsA<AShip>()
+			&& Base->GetCollisionProfileName() == TEXT("ShipDeck")
+			&& Mesh && Mesh->IsAnySimulatingPhysics() ? Mesh : nullptr;
+	}
+
 	constexpr double MaxSurfaceWaveTimeAgeSeconds = 2.0;
 	constexpr double MaxSurfaceWaveTimeLeadSeconds = 0.25;
 	constexpr double SurfaceWaveTimeDeltaToleranceSeconds = 0.25;
@@ -400,9 +421,122 @@ void USWCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations
 	}
 }
 
+bool USWCharacterMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
+{
+	UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	if (MovementMode != MOVE_Walking || !Base || !Base->GetOwner()->IsA<AShip>())
+	{
+		return Super::DoJump(bReplayingMoves, DeltaTime);
+	}
+
+	// A ship's heave must not increase the initial jump speed. Let CMC
+	// retain its normal jump checks, hold/count handling, and prediction.
+	const FVector PreviousVelocity = Velocity;
+	Velocity = FVector::VectorPlaneProject(Velocity, GetGravityDirection());
+	if (!Super::DoJump(bReplayingMoves, DeltaTime))
+	{
+		Velocity = PreviousVelocity;
+		return false;
+	}
+	return true;
+}
+
+FVector USWCharacterMovementComponent::GetImpartedMovementBaseVelocity() const
+{
+	const UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	// Ship displacement is transported by based movement, not added to
+	// the player's velocity. This also avoids an impulse when leaving its edge.
+	if (Base && Base->GetOwner()->IsA<AShip>())
+	{
+		return FVector::ZeroVector;
+	}
+	return Super::GetImpartedMovementBaseVelocity();
+}
+
+void USWCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
+{
+	if (MovementMode == MOVE_Falling && PreviousMovementMode != MOVE_Falling)
+	{
+		UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+		bStayBasedInAir = PreviousMovementMode == MOVE_Walking && Base
+			&& Base->GetOwner()->IsA<AShip>() && !IsDeadPlayerMovement(CharacterOwner);
+		if (bStayBasedInAir)
+		{
+			// Keep the downward base query long enough to cover the jump apex.
+			const float GravityMagnitude = FMath::Abs(GetGravityZ());
+			if (GravityMagnitude > KINDA_SMALL_NUMBER)
+			{
+				StayBasedInAirHeight = FMath::Max(StayBasedInAirHeight,
+					FMath::Square(JumpZVelocity) / (2.0f * GravityMagnitude) + MaxStepHeight + 50.0f);
+			}
+		}
+	}
+	else if (MovementMode != MOVE_Falling)
+	{
+		bStayBasedInAir = false;
+	}
+	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+}
+
+FVector USWCharacterMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const
+{
+	return IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : Super::ConstrainInputAcceleration(InputAcceleration);
+}
+
+void USWCharacterMovementComponent::UpdateBasedMovement(float DeltaSeconds)
+{
+	USkeletalMeshComponent* Mesh = GetShipDeathRagdoll(CharacterOwner);
+	TWeakObjectPtr<UPrimitiveComponent> Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	const FVector OldLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
+	// The engine already transports physics bodies when the base itself simulates.
+	const bool bEngineTransportsBodies = Base.IsValid() && Base->IsSimulatingPhysics();
+	const bool bFollowShipJump = IsFalling() && bStayBasedInAir && Base.IsValid()
+		&& Base->GetOwner()->IsA<AShip>();
+	const FQuat PreviousBaseRotation = OldBaseQuat;
+	Super::UpdateBasedMovement(DeltaSeconds);
+	if (bFollowShipJump && CharacterOwner->GetMovementBase() == Base.Get())
+	{
+		FVector BaseLocation;
+		FQuat BaseRotation;
+		if (MovementBaseUtility::GetMovementBaseTransform(Base.Get(),
+			CharacterOwner->GetBasedMovement().BoneName, BaseLocation, BaseRotation))
+		{
+			// Rotate player-controlled horizontal momentum with the deck while
+			// preserving the standard world-vertical jump/gravity trajectory.
+			const float YawDelta = (BaseRotation * PreviousBaseRotation.Inverse()).Rotator().Yaw;
+			Velocity = FRotator(0.0f, YawDelta, 0.0f).RotateVector(Velocity);
+		}
+	}
+	if (Mesh && !bEngineTransportsBodies && UpdatedComponent && Base.IsValid()
+		&& CharacterOwner->GetMovementBase() == Base.Get())
+	{
+		const FVector Delta = UpdatedComponent->GetComponentLocation() - OldLocation;
+		if (!Delta.IsNearlyZero()) Mesh->ApplyDeltaToAllPhysicsTransforms(Delta, FQuat::Identity);
+	}
+}
+
+void USWCharacterMovementComponent::SmoothCorrection(const FVector& OldLocation, const FQuat& OldRotation,
+	const FVector& NewLocation, const FQuat& NewRotation)
+{
+	USkeletalMeshComponent* Mesh = GetShipDeathRagdoll(CharacterOwner);
+	const FVector BeforeCorrection = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
+	Super::SmoothCorrection(OldLocation, OldRotation, NewLocation, NewRotation);
+	if (Mesh && UpdatedComponent)
+	{
+		const FVector Delta = UpdatedComponent->GetComponentLocation() - BeforeCorrection;
+		if (!Delta.IsNearlyZero()) Mesh->ApplyDeltaToAllPhysicsTransforms(Delta, FQuat::Identity);
+	}
+}
+
 void USWCharacterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 {
 	Super::UpdateFromCompressedFlags(Flags);
+	if (IsDeadPlayerMovement(CharacterOwner))
+	{
+		CharacterOwner->StopJumping();
+		SetSwimmingVerticalInput(false, false);
+		return;
+	}
 
 	const bool bDive = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
 	const bool bAscend = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
@@ -491,7 +625,8 @@ void USWCharacterMovementComponent::MoveAutonomous(
 		}
 	}
 
-	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags, NewAccel);
+	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags,
+		IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : NewAccel);
 }
 
 void USWCharacterMovementComponent::OnClientTimeStampResetDetected()
@@ -506,6 +641,8 @@ void USWCharacterMovementComponent::OnClientTimeStampResetDetected()
 void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+	if (const ABasePlayer* Player = Cast<ABasePlayer>(CharacterOwner);
+		Player && Player->ShouldKeepCharacterMovementOnDeath()) return;
 
 	if (MovementMode == MOVE_Walking)
 	{
@@ -552,12 +689,6 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 		ClientMovementMode);
 
 	if (!bExceedsDefaultTolerance)
-	{
-		return false;
-	}
-
-	// 배 위에서 점프/낙하 중(MOVE_Falling)일 때, 네트워크 물리 시뮬레이션 지연으로 인한 월드 좌표 오차를 수용하여 클라이언트 보정 스냅 방지
-	if (LastStandingShip.IsValid() && (MovementMode == MOVE_Falling || ClientMovementMode == MOVE_Falling))
 	{
 		return false;
 	}
@@ -624,7 +755,7 @@ bool USWCharacterMovementComponent::CanUseShipBasedClientPosition(
 	if (ShipBasedClientAuthorityMaxError <= 0.0f
 		|| !CharacterOwner
 		|| !UpdatedComponent
-		|| MovementMode != MOVE_Walking
+		|| !(MovementMode == MOVE_Walking || (MovementMode == MOVE_Falling && bStayBasedInAir))
 		|| PackNetworkMovementMode() != ClientMovementMode
 		|| !ClientMovementBase)
 	{

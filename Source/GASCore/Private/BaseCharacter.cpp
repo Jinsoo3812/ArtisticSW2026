@@ -112,7 +112,7 @@ void ABaseCharacter::ApplyLocalDeathRagdoll()
 		DetachFromControllerPendingDestroy();
 	}
 
-	if (bDisableMovementOnDeathRagdoll)
+	if (bDisableMovementOnDeathRagdoll && !ShouldKeepCharacterMovementOnDeath())
 	{
 		if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 		{
@@ -121,7 +121,7 @@ void ABaseCharacter::ApplyLocalDeathRagdoll()
 		}
 	}
 
-	if (bDisableCapsuleCollisionOnDeathRagdoll)
+	if (bDisableCapsuleCollisionOnDeathRagdoll && !ShouldKeepCharacterMovementOnDeath())
 	{
 		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 		{

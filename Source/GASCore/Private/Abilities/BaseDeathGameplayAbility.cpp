@@ -7,6 +7,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "BaseGameplayTags.h"
+#include "BaseCharacter.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -169,7 +170,10 @@ void UBaseDeathGameplayAbility::ApplyDeathState()
 		return;
 	}
 
-	if (bDisableMovement)
+	ABaseCharacter* BaseCharacter = Cast<ABaseCharacter>(Character);
+	if (BaseCharacter) BaseCharacter->PrepareDeathMovement();
+	const bool bKeepMovement = BaseCharacter && BaseCharacter->ShouldKeepCharacterMovementOnDeath();
+	if (bDisableMovement && !bKeepMovement)
 	{
 		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
 		{
@@ -178,7 +182,7 @@ void UBaseDeathGameplayAbility::ApplyDeathState()
 		}
 	}
 
-	if (bDisableCapsuleCollision)
+	if (bDisableCapsuleCollision && !bKeepMovement)
 	{
 		if (UCapsuleComponent* Capsule = Character->GetCapsuleComponent())
 		{

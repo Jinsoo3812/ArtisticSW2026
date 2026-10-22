@@ -52,8 +52,8 @@ Snapshot에는 ShotId, 캡처 시각, 소켓, 최종 조준점, 상대 속력·�
 
 1. 네이티브 빌드 후 에디터를 재시작하고 Player 활·화살 BP를 Compile한다. 활의 Spawn Class가 `PlayerArrowProjectile`을 상속하는지 확인한다.
 2. 캐릭터 `Arrow_socket`, 몽타주의 `NockArrow`·`FireArrow` Notify를 확인한다. 화살 BP의 `Flight Gravity Scale`이 실제 낙차 설정이다. Mesh 긴 축은 루트 전방 X축에 맞추고 BP Tick/Timeline이 발사 후 위치·속도를 덮어쓰거나 다시 활에 붙이지 않도록 한다.
-3. 실제 벽·지형·난간은 Arrow를 Block하고 유효한 Hurtbox는 WeaponAim과 Arrow를 Block하도록 둔다. PCG 생성 범위처럼 장애물이 아닌 보조 Brush는 `NoCollision` 또는 `WeaponAim=Ignore`, `Arrow=Ignore`로 설정한다. 생성된 실제 바위·나무 Mesh의 충돌은 유지한다. 화살 자신의 BoxComp가 런타임 NoCollision이어도 명시적 비행 sweep은 정상이다.
-4. 활의 Min/Max Fire Speed는 배 기준 속력이다. `BowComponent.LaunchProfile`과 `GetLaunchProfile`은 삭제했으며 관성 상속은 플레이어 경로의 고정 규칙이다. 배의 `BuoyancyRoot`가 물리 시뮬레이션 중이고 유효한 Collision/StaticMesh를 가지는지 확인한다.
+3. 실제 벽·지형·난간은 Arrow를 Block하고 유효한 Hurtbox는 WeaponAim과 Arrow를 Block하도록 둔다. PCGVolume의 범위 Brush는 Custom Profile이거나 Arrow/WeaponAim을 Block하더라도 화살의 조준·비행 query에서 자동 제외한다. `PCGVolumeBounds` Profile 컴포넌트도 제외한다. 생성된 실제 바위·나무 Mesh의 충돌은 유지한다. 그 밖의 보조 Brush는 `NoCollision` 또는 `WeaponAim=Ignore`, `Arrow=Ignore`로 설정한다. 화살 자신의 BoxComp가 런타임 NoCollision이어도 명시적 비행 sweep은 정상이다.
+4. 화살 BP의 **Class Defaults → Arrow → Movement → Initial Launch Speed**에서 초기 발사 속력을 cm/s로 설정한다. **0이면 기존 활의 Min/Max Fire Speed와 차지 속력을 사용**하고, 양수이면 그 값을 고정 발사 속력으로 사용한다. 로컬 가림 미리보기와 서버 발사가 같은 설정을 사용하며, 차지 피해 배율은 유지된다. 이 값은 배 기준 속력이므로 실제 월드 속도에는 배의 소켓 점속도가 더해질 수 있다. ProjectileComp의 Initial Speed는 확정된 월드 속도를 재해석하지 않도록 런타임에 0으로 유지된다. `BowComponent.LaunchProfile`과 `GetLaunchProfile`은 삭제했으며 관성 상속은 플레이어 경로의 고정 규칙이다. 배의 `BuoyancyRoot`가 물리 시뮬레이션 중이고 유효한 Collision/StaticMesh를 가지는지 확인한다.
 
 ## 진단 및 수동 확인
 

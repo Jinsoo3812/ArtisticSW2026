@@ -167,4 +167,8 @@ protected:
 	TObjectPtr<AShipBossEnemy> SpawnedBoss = nullptr;
 	FSWRoomBossEncounterState PendingRoomState;
 	bool bHasPendingRoomState = false;
+	void HandleHostRuntimeStateChanged(const struct FEnemyShipRuntimeState& Previous, const struct FEnemyShipRuntimeState& Current);
+	void EvaluateCurrentSight();
+	FDelegateHandle HostRuntimeStateHandle;
+	FTimerHandle SightEvaluationTimerHandle;
 };

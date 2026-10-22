@@ -8,6 +8,8 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "BossAI/SamuraiDashRecoveryComponent.h"
+#include "AIController.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
 #include "GAS/Ability/Boss/GA_BossBasicAttack.h"
 #include "Weapon/BaseWeapon.h"
@@ -107,8 +109,8 @@ bool UBTT_ActivateBossAbility::ShouldCancelAbilityOnAbort(
 void UBTT_ActivateBossAbility::OnAbilityTaskFinished(EBTNodeResult::Type Result)
 {
 	const FGameplayAbilitySpec* ActiveSpec = GetActiveAbilitySpec();
-	const UBossGameplayAbility* BossAbility = ActiveSpec
-		? Cast<UBossGameplayAbility>(ActiveSpec->Ability)
+	const UBaseGameplayAbility* BossAbility = ActiveSpec
+		? Cast<UBaseGameplayAbility>(ActiveSpec->Ability)
 		: nullptr;
 	if (Result == EBTNodeResult::Aborted && BossAbility
 		&& BossAbility->ShouldSurviveBehaviorTreeAbort()
@@ -117,6 +119,16 @@ void UBTT_ActivateBossAbility::OnAbilityTaskFinished(EBTNodeResult::Type Result)
 		return;
 	}
 	ResetDestinationState();
+	if (Result != EBTNodeResult::Succeeded
+		&& (AbilityAssetTag == GameplayAbility_Boss_DashSlash || AbilityAssetTag == GameplayAbility_Boss_ChainSlashDash))
+	{
+		AShipBossEnemy* Boss = Cast<AShipBossEnemy>(GetCachedPawn());
+		const auto* Policy = Boss ? Boss->GetSamuraiDashRecoveryComponent() : nullptr;
+		if (Policy && Policy->IsEnabled()
+			&& !Boss->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Boss_Busy))
+			if (auto* Owner = GetCachedOwnerComp(); Owner && Owner->GetAIOwner())
+				Owner->GetAIOwner()->ClearFocus(EAIFocusPriority::Gameplay);
+	}
 }
 
 void UBTT_ActivateBossAbility::ResetDestinationState()
@@ -130,6 +142,11 @@ void UBTT_ActivateBossAbility::ResetDestinationState()
 	if (!OwnerComp)
 	{
 		return;
+	}
+	if (AShipBossEnemy* Boss = Cast<AShipBossEnemy>(GetCachedPawn()))
+	{
+		// Another failed/aborted BT activation must not tear down a still-running mobility ability.
+		if (const auto* ASC = Boss->GetAbilitySystemComponent(); ASC && ASC->HasMatchingGameplayTag(State_Boss_Busy)) return;
 	}
 
 	if (UBlackboardComponent* Blackboard = OwnerComp->GetBlackboardComponent();

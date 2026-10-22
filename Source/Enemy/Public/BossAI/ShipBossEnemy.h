@@ -4,6 +4,7 @@
 #include "BaseEnemy.h"
 #include "DeckAI/DeckWalkTypes.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
+#include "BossAI/BossDeckPointSelector.h"
 #include "ShipBossEnemy.generated.h"
 
 USTRUCT()
@@ -31,6 +32,10 @@ class ADeckEnemy;
 class UBossBasicAttackSet;
 class USphereComponent;
 class UDeckWalkRouteComponent;
+class UDeckCombatTargetResolverComponent;
+class UBossDeckRecoveryComponent;
+class USamuraiDashRecoveryComponent;
+class UPrimitiveComponent;
 
 /** Server-authored boss pawn whose tactical positions live on a moving enemy ship. */
 UCLASS(Blueprintable)
@@ -39,7 +44,7 @@ class ENEMY_API AShipBossEnemy : public ABaseEnemy, public IDeckWaypointMovement
 	GENERATED_BODY()
 
 public:
-	AShipBossEnemy();
+	AShipBossEnemy(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
@@ -78,6 +83,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Boss|Ship")
 	AEnemyShip* GetHostShip() const { return HostShip; }
 	UDeckWalkRouteComponent* GetDeckWalkRouteComponent() const { return DeckWalkRouteComponent; }
+	UBossDeckRecoveryComponent* GetDeckRecoveryComponent() const { return DeckRecoveryComponent; }
+	USamuraiDashRecoveryComponent* GetSamuraiDashRecoveryComponent() const { return SamuraiDashRecoveryComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Boss|Spawn")
 	int32 GetInitialSpawnPointId() const { return InitialSpawnPointId; }
@@ -86,6 +93,8 @@ public:
 	bool HasDestination() const;
 	bool TrySetDestinationLocation(const FDeckWalkLocation& Location, bool bWalking);
 	void ClearDestination();
+	void TrackWalkingTarget(AActor* Target, const FBossDestinationSelectionSettings& Settings);
+	void ReplanWalkingTarget();
 	const FDeckWalkLocation& GetPreviousLocation() const { return PreviousLocation; }
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Point")
@@ -111,10 +120,10 @@ public:
 	bool BeginHiddenRelocation();
 
 	/** Teleports while hidden and reattaches to the live ship deck without revealing. */
-	bool RelocateWhileHidden(const FTransform& DestinationTransform);
+	bool RelocateWhileHidden(const FTransform& DestinationTransform, UPrimitiveComponent* DestinationBase = nullptr);
 
-	/** Restores a grounded walking state before the hidden presentation is removed. */
-	void FinishHiddenRelocation();
+	/** Restores movement/collision and reveals; support validation runs afterwards. */
+	void FinishHiddenRelocation(bool bFromRecovery = false);
 
 	bool IsHiddenRelocationActive() const { return bHiddenRelocationActive; }
 
@@ -143,12 +152,19 @@ protected:
 	TSet<int32> ConsumedSummonThresholds;
 	friend class FBossStatusTriggersTest;
 	void HandleConfirmedDamage(float Damage, const FGameplayEffectContextHandle& Context, bool bPeriodic);
+	void ApplyBossStun(TSubclassOf<UGameplayEffect> EffectClass, float Duration, const FGameplayEffectContextHandle& Context);
 	UFUNCTION()
 	void HandleStunHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor* InstigatorActor);
 	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
 	TSubclassOf<UGameplayEffect> HeadHitStunEffect;
 	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
 	TSubclassOf<UGameplayEffect> HealthThresholdStunEffect;
+	/** Duration of the stun caused by a head hit during an attack. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Status", meta = (ClampMin = "0.01", Units = "s"))
+	float HeadHitStunDuration = 4.f;
+	/** Duration of the one-time stun when health crosses StunHealthThreshold. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Status", meta = (ClampMin = "0.01", Units = "s"))
+	float HealthThresholdStunDuration = 4.f;
 	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status", meta = (ClampMin = "0", ClampMax = "1"))
 	float StunHealthThreshold = 0.5f;
 	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
@@ -198,6 +214,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Walk Area")
 	TObjectPtr<UDeckWalkRouteComponent> DeckWalkRouteComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Tracking")
+	TObjectPtr<UDeckCombatTargetResolverComponent> DeckTargetResolver;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Samurai Dash Recovery")
+	TObjectPtr<USamuraiDashRecoveryComponent> SamuraiDashRecoveryComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Deck Recovery")
+	TObjectPtr<UBossDeckRecoveryComponent> DeckRecoveryComponent;
+
 	/** Visual/cadence variations for the one currently equipped weapon. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Combat")
 	TObjectPtr<UBossBasicAttackSet> BasicAttackSet = nullptr;
@@ -221,6 +244,13 @@ protected:
 
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	bool bHiddenRelocationActive = false;
+	TWeakObjectPtr<UPrimitiveComponent> HiddenRelocationBase;
+	FTransform HiddenRelocationLocalTransform = FTransform::Identity;
 	FSWRoomShipBossState PendingRoomState;
 	bool bHasPendingRoomState = false;
+	TWeakObjectPtr<AActor> WalkingTarget;
+	FBossDestinationSelectionSettings WalkingSettings;
+	FVector PlannedWalkingCenter = FVector::ZeroVector;
+	FName PlannedWalkingSurface;
+	double NextWalkingReplanTime = 0.;
 };

@@ -14,6 +14,7 @@
 #include "BaseGameplayTags.h"
 #include "BaseAttributeSet.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "BossAI/BossAttackPositionLibrary.h"
 #include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -97,6 +98,12 @@ void UGA_BasicAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	ABaseEnemy* EnemyOwner = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo());
+	if (const AShipBossEnemy* Boss = Cast<AShipBossEnemy>(EnemyOwner);
+		Boss && GetAssetTags().HasTagExact(GameplayAbility_BasicAttack)
+		&& !UBossAttackPositionLibrary::CanMeleeAttackFromCurrentPosition(Boss, Boss->GetBossCombatTarget(), 0.f))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true); return;
+	}
 	DeckCombat.Reset(); DeckAttackAttempt = 0;
 	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(EnemyOwner))
 	{
@@ -327,6 +334,7 @@ void UGA_BasicAttack::OnAttackMontageCancelled()
 
 void UGA_BasicAttack::OnHitScanStartEvent(FGameplayEventData Payload)
 {
+	if (!IsHitScanAllowed()) return;
 	if (CachedExecutionData.bUseTimedHitWindow) return;
 	if (Payload.OptionalObject)
 	{
@@ -347,7 +355,7 @@ void UGA_BasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 
 void UGA_BasicAttack::StartHitScan()
 {
-	if (!IsActive() || bAttackFinished || bHitScanActive || bOpenedAttackWindow || !IsValid(CachedWeapon)) return;
+	if (!IsActive() || !IsHitScanAllowed() || bAttackFinished || bHitScanActive || bOpenedAttackWindow || !IsValid(CachedWeapon)) return;
 	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(GetAvatarActorFromActorInfo()))
 	{
 		if (!DeckCombat.IsValid() || !DeckCombat->IsCurrentAttack(DeckAttackAttempt))

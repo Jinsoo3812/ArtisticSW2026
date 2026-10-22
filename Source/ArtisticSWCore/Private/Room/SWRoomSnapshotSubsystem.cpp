@@ -221,12 +221,16 @@ void USWRoomSnapshotSubsystem::Deinitialize()
 	DestroyedLevelActorIds.Reset();
 	RestoreIssues.Reset();
 	bRestoring = false;
+	OnRestoreCompleted.Clear();
 	Super::Deinitialize();
 }
 
 bool USWRoomSnapshotSubsystem::CompleteRestore(FString& OutError)
 {
+	if (!bRestoring) return true;
+
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.CompleteRestore"));
+	
 	TMap<FGuid, AActor*> ActorsById;
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : RegisteredActors)
 		if (AActor* Actor = Pair.Value.Get()) ActorsById.Add(Pair.Key, Actor);
@@ -239,6 +243,7 @@ bool USWRoomSnapshotSubsystem::CompleteRestore(FString& OutError)
 				return false;
 			}
 	bRestoring = false;
+	OnRestoreCompleted.Broadcast();
 	return true;
 }
 
@@ -458,16 +463,22 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			const bool bShipPersisted = OwnerType == TEXT("Ship")
 				&& (FieldName == TEXT("bIsSinking") || FieldName == TEXT("bIsAnchorDropped") || FieldName == TEXT("AnchorOriginXY"));
 			const bool bEnemyShipPersisted = OwnerType == TEXT("EnemyShip") && FieldName == TEXT("bCrewDefeated");
+			bool bHasDeckPoolAdapter = false;
+			for (const UClass* Type = Actor->GetClass(); Type; Type = Type->GetSuperClass())
+				if (Type->GetFName() == TEXT("DeckEnemy")) { bHasDeckPoolAdapter = true; break; }
+			const bool bDeckPoolPersisted = bHasDeckPoolAdapter && ((OwnerType == TEXT("DeckEnemy") && FieldName == TEXT("PoolNetState"))
+				|| (OwnerType == TEXT("RangedEnemy") && FieldName == TEXT("HostShip")));
 			const bool bTransient = OwnerType == TEXT("Ship")
 				&& (FieldName == TEXT("RidingPlayer") || FieldName == TEXT("bBombardmentTargeting")
 					|| FieldName == TEXT("ActiveBombardmentClass") || FieldName == TEXT("ReplicatedState")
 					|| FieldName == TEXT("ServerPhysicsTimeOrigin") || FieldName == TEXT("ServerPhysicsStepSeconds")
 					|| FieldName == TEXT("CurrentAIPropulsionScale") || FieldName == TEXT("CurrentAITurnScale"));
-			const bool bDerived = bEngineField || (OwnerType == TEXT("EnemyShip") && FieldName == TEXT("bDistanceOptimizationDormant"));
-			const bool bPersisted = bSerialized || bShipPersisted || bEnemyShipPersisted;
+			const bool bDerived = bEngineField || (OwnerType == TEXT("EnemyShip")
+				&& (FieldName == TEXT("bDistanceOptimizationDormant") || FieldName == TEXT("RuntimeState")));
+			const bool bPersisted = bSerialized || bShipPersisted || bEnemyShipPersisted || bDeckPoolPersisted;
 			const TCHAR* Disposition = bPersisted ? TEXT("Persisted") : bTransient ? TEXT("Transient")
 				: bDerived ? TEXT("Derived") : TEXT("Unclassified");
-			const TCHAR* Reason = bSerialized ? TEXT("SaveGame field") : bShipPersisted || bEnemyShipPersisted
+			const TCHAR* Reason = bSerialized ? TEXT("SaveGame field") : bShipPersisted || bEnemyShipPersisted || bDeckPoolPersisted
 				? TEXT("Explicit room adapter field") : bTransient ? TEXT("Explicit restart policy")
 				: bDerived ? TEXT("Engine or derived field") : TEXT("Project replicated field lacks explicit room disposition");
 			if (bDetailedLog) AuditRows.Add(FString::Printf(TEXT("%s | %s | Component= | Field=%s | Reason=%s | Disposition=%s"),
@@ -852,7 +863,8 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 		if (OutError.IsEmpty()) OutError = TEXT("Room map mismatch");
 		return false;
 	}
-	TGuardValue<bool> RestoreGuard(bRestoring, true);
+	// Keep the barrier closed after Deserialize; only CompleteRestore may reopen it.
+	bRestoring = true;
 	TSet<FGuid> DiskIds;
 	auto ValidateDiskRecord = [&](const FSWRoomActorRecord& Record) -> bool
 	{
@@ -1314,10 +1326,17 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 			OutDifferences.Add(Prefix + TEXT(" Field=Adapter.Payload Expected=Readable Actual=Invalid"));
 			return;
 		}
-		if (BeforePayload.Parts.Num() != AfterPayload.Parts.Num()) OutDifferences.Add(Prefix + TEXT(" Field=DomainCount"));
 		AActor* Registered = nullptr;
 		if (const TWeakObjectPtr<AActor>* Found = RegisteredActors.Find(Before.StableId)) Registered = Found->Get();
 		const ISWRoomStateAdapter* Adapter = Cast<ISWRoomStateAdapter>(Registered);
+		if (BeforePayload.Parts.Num() != AfterPayload.Parts.Num())
+		{
+			bool bSupportedMigration = Adapter && AfterPayload.Parts.Num() > BeforePayload.Parts.Num();
+			for (const FSWRoomDomainPart& Added : AfterPayload.Parts)
+				if (!BeforePayload.Parts.ContainsByPredicate([&Added](const FSWRoomDomainPart& Part) { return Part.Domain == Added.Domain; }))
+					bSupportedMigration &= Adapter && Adapter->AllowsMigratedRoomDomain(Added, BeforePayload.Parts);
+			if (!bSupportedMigration) OutDifferences.Add(Prefix + TEXT(" Field=DomainCount"));
+		}
 		for (const FSWRoomDomainPart& Part : BeforePayload.Parts)
 		{
 			const FSWRoomDomainPart* Other = AfterPayload.Parts.FindByPredicate([&](const FSWRoomDomainPart& Candidate)

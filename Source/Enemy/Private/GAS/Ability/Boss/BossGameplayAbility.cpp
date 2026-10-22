@@ -66,19 +66,26 @@ void UBossGameplayAbility::ApplyCooldown(
 		return;
 	}
 
-	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
-	Context.AddSourceObject(this);
-	FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(
+	ApplyTaggedCooldown(*ASC, this, NativeCooldownTags, CooldownDuration, GetAbilityLevel(Handle, ActorInfo));
+}
+
+void UBossGameplayAbility::ApplyTaggedCooldown(UAbilitySystemComponent& ASC, const UObject* Source,
+	const FGameplayTagContainer& Tags, float Duration, float Level)
+{
+	if (Tags.IsEmpty() || Duration <= 0.0f) return;
+	FGameplayEffectContextHandle Context = ASC.MakeEffectContext();
+	Context.AddSourceObject(Source);
+	FGameplayEffectSpecHandle Spec = ASC.MakeOutgoingSpec(
 		UBossAbilityCooldownEffect::StaticClass(),
-		GetAbilityLevel(Handle, ActorInfo),
+		Level,
 		Context);
 	if (!Spec.IsValid() || !Spec.Data.IsValid())
 	{
 		return;
 	}
-	Spec.Data->SetDuration(CooldownDuration, true);
-	Spec.Data->DynamicGrantedTags.AppendTags(NativeCooldownTags);
-	ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	Spec.Data->SetDuration(Duration, true);
+	Spec.Data->DynamicGrantedTags.AppendTags(Tags);
+	ASC.ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 }
 
 void UBossGameplayAbility::SetBossAbilityTags(FGameplayTag AbilityTag, FGameplayTag InCooldownTag)

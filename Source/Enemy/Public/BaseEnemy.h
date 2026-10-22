@@ -27,6 +27,16 @@ struct FSWRoomEnemyState
 	UPROPERTY(SaveGame) float SpawnMovementSpeedMultiplier = 1.f;
 	UPROPERTY(SaveGame) float CorpseLifeRemaining = 0.f;
 	UPROPERTY(SaveGame) TArray<FSWRoomGameplayEffectState> ActiveEffects;
+	UPROPERTY(SaveGame) FDataTableRowHandle SpawnStatsRow;
+	UPROPERTY(SaveGame) bool bBalanceApplied = false;
+	UPROPERTY(SaveGame) bool bBalanceReady = false;
+	UPROPERTY(SaveGame) float SpawnHealthMultiplier = 1.f;
+	UPROPERTY(SaveGame) float BalancedAttackInterval = 0.f;
+	UPROPERTY(SaveGame) int32 BalancedMeleeAttackerLimit = 0;
+	UPROPERTY(SaveGame) float BalanceAttackDelayRemaining = 0.f;
+	UPROPERTY(SaveGame) float Strength = 0.f;
+	UPROPERTY(SaveGame) float MoveSpeedMultiplier = 1.f;
+	UPROPERTY(SaveGame) float AttackSpeedMultiplier = 1.f;
 };
 
 class UAbilitySystemComponent;
@@ -54,12 +64,11 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter, public ISWRoomStateAdapter
 	GENERATED_BODY()
 
 public:
-	ABaseEnemy();
+	ABaseEnemy(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
-		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
-	{ return FSWRoomStructCodec::Compare<FSWRoomEnemyState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override;
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	/** Empty selection preserves legacy defaults; an explicitly invalid selection fails initialization. */

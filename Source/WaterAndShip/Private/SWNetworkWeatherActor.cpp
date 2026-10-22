@@ -5,6 +5,7 @@
 #include "Curves/CurveLinearColor.h"
 #include "Components/LightComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformProcess.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -29,7 +30,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogSWWeatherDiagnostics, Log, All);
 namespace
 {
 	TAutoConsoleVariable<int32> CVarWeatherDiagnostics(TEXT("sw.Weather.Diagnostics"), 1,
-		TEXT("Weather transition diagnostics: 0=off, 1=compact events and samples every five seconds, 2=verbose per-frame diagnostics."));
+		TEXT("Weather transition diagnostics: 0=off, 1=boundary changes and samples every five seconds, 2=detailed samples every second and frame changes over 0.05 (at most once per second)."));
 	// Only persistent assets and value types; never local MIDs, components, or effect actors.
 	const TArray<FName>& WeatherProperties()
 	{
@@ -548,7 +549,7 @@ bool FSWWeatherPlaybackWindow::NetSerialize(FArchive& Ar, UPackageMap* Map, bool
 		static bool bReportedInvalidWire = false;
 		if (!bReportedInvalidWire)
 		{
-			// UE_LOG(LogSWWeatherDiagnostics, Warning, TEXT("ReceivedWindowInvalid"));
+			// UE_LOG(LogSWWeatherDiagnostics, Warning, TEXT("ReceivedWindowInvalid PID=%u RawBytes=%u CompressedBytes=%u"), FPlatformProcess::GetCurrentProcessId(), Raw, Compressed);
 			bReportedInvalidWire = true;
 		}
 	}
@@ -697,6 +698,8 @@ void ASWNetworkWeatherActor::BeginPlay()
 		Recovery->CopyParameterOverrides(MID); RecoveryMaterials.Add(Recovery);
 	}
 	LastLocalWorldTime = GetWorld()->GetTimeSeconds(); ClockSampleStartTime = LastLocalWorldTime;
+	// UE_LOG(LogSWWeatherDiagnostics, Log, TEXT("DiagnosticsStart PID=%u World=%s Actor=%s Authority=%d NetMode=%d Level=%d FrameThreshold=0.05 FrameLogInterval=1s"),
+		// FPlatformProcess::GetCurrentProcessId(), *GetWorld()->GetName(), *GetName(), HasAuthority(), static_cast<int32>(GetNetMode()), CVarWeatherDiagnostics.GetValueOnGameThread());
 	if (GetNetMode() != NM_DedicatedServer)
 	{
 		if (!ResolveComponent<UDirectionalLightComponent>(ReadObject(TEXT("DirectionalLight")))
@@ -722,6 +725,7 @@ void ASWNetworkWeatherActor::BeginPlay()
 
 void ASWNetworkWeatherActor::EndPlay(const EEndPlayReason::Type Reason)
 {
+	LogWeatherDiagnostics(TEXT("EndPlay"), GetServerTime());
 	for (auto& Pair : AssetLoadHandles) if (Pair.Value) Pair.Value->CancelHandle();
 	AssetLoadHandles.Empty(); CompletedAssetLoads.Empty(); FailedAssetPaths.Empty(); ReportedErrors.Empty(); SegmentReadiness.Empty(); ClockSamples.Empty();
 	PlaybackBuffer.Empty(); PendingEpochBuffer.Empty(); ServerHistory.Empty(); ReadyAssets.Empty(); PlannerMaterials.Empty(); RecoveryMaterials.Empty();
@@ -730,6 +734,8 @@ void ASWNetworkWeatherActor::EndPlay(const EEndPlayReason::Type Reason)
 	AppliedEpoch = AppliedSequence = ReceivedEpoch = 0; ReceivedPublishedTime = EpochPlaybackStartServerTime = ServerEpochStartTime = 0.;
 	PlaybackServerTime = LastLocalWorldTime = LocalElapsed = PlaybackStep = RecoveryElapsed = LastPresentedAlpha = 0.; PlaybackRate = 1.;
 	DiagnosticLastServerTime = DiagnosticLastLocalTime = DiagnosticLastAlpha = DiagnosticNextSampleTime = 0.; DiagnosticLastSequence = 0;
+	DiagnosticNextFrameWarningTime = DiagnosticNextHitchWarningTime = DiagnosticMaximumElapsed = 0.;
+	DiagnosticSuppressedFrameChanges = DiagnosticHitchCount = 0;
 	NextClockSampleTime = ClockSampleStartTime = NextClockWarningTime = NextClockErrorTime = NextWindServerTime = 0.;
 	WindState = {}; PendingVisibilityFrom = 1.f;
 	bAdapterReady = bEventsReady = bGenerationFailed = bInitialWindowPublished = bHasVisualFrame = false;
@@ -931,12 +937,14 @@ void ASWNetworkWeatherActor::PublishPlaybackWindow(double Now)
 	}
 	ServerHistory = Candidate.Segments; PlaybackWindow = MoveTemp(Candidate); bInitialWindowPublished = true;
 	ForceNetUpdate();
+	LogWeatherDiagnostics(TEXT("PublishWindow"), Now);
 	if (GetNetMode() != NM_DedicatedServer) MergePlaybackWindow(PlaybackWindow);
 }
 
 void ASWNetworkWeatherActor::OnRep_PlaybackWindow()
 {
 	MergePlaybackWindow(PlaybackWindow);
+	LogWeatherDiagnostics(TEXT("ReceiveWindow"), GetServerTime());
 }
 
 void ASWNetworkWeatherActor::MergePlaybackWindow(const FSWWeatherPlaybackWindow& Window)
@@ -1124,6 +1132,7 @@ void ASWNetworkWeatherActor::AdvanceAcrossSegments(double Step)
 		if (Step < Remaining) { PlaybackServerTime += Step; return; }
 		PlaybackServerTime = End; Step -= Remaining;
 		EvaluatePresentedWeather();
+		if (PlaybackStatus == ESWWeatherPlaybackStatus::Playing) LogWeatherDiagnostics(TEXT("BoundaryEnd"), GetServerTime());
 		FSWWeatherVisualFrame BoundaryFrame; CaptureVisualFrame(BoundaryFrame);
 		const auto* Next = PlaybackBuffer.FindByPredicate([this](const auto& S) { return S.Epoch == AppliedEpoch && S.Sequence == AppliedSequence + 1; });
 		if (!Next || !IsReady(*Next) || FMath::Abs(Next->StartServerTime - End) > BoundaryTolerance)
@@ -1142,6 +1151,7 @@ void ASWNetworkWeatherActor::AdvanceAcrossSegments(double Step)
 		const FSWWeatherPlaybackSegment Incoming = *Next;
 		if (!EnterSegment(Incoming)) { PlaybackStatus = ESWWeatherPlaybackStatus::HoldingForData; return; }
 		PlaybackServerTime = Incoming.StartServerTime; PlaybackStatus = ESWWeatherPlaybackStatus::Playing;
+		LogWeatherDiagnostics(TEXT("BoundaryRestored"), GetServerTime());
 		EvaluatePresentedWeather();
 		FSWWeatherVisualFrame StartFrame;
 		if (CaptureVisualFrame(StartFrame)) CompareVisualFrames(TEXT("BoundaryDiscontinuity"), BoundaryFrame, StartFrame);
@@ -1367,21 +1377,33 @@ void ASWNetworkWeatherActor::AdvanceRecovery(double Step)
 
 void ASWNetworkWeatherActor::CompareVisualFrames(const TCHAR* Phase, const FSWWeatherVisualFrame& From, const FSWWeatherVisualFrame& To)
 {
-	// TODO (2026-10-03): BoundaryDiscontinuity still occurs after the playback fixes.
-	// Observed Epoch=1 Sequence=21, Hour 8->9: CloudMaterial.Star_GChannel delta=1.0.
-	// The cause and visible impact remain unverified; commenting out diagnostics is not a fix.
-	// Re-enable the UE_LOG calls below when investigating boundary continuity.
+	// Previously observed Hour 8->9: CloudMaterial.Star_GChannel delta=1.0.
+	// Record the actual endpoints and curve references; a parameter delta alone
+	// does not establish that the parameter contributes to the visible sky.
 	if (!CVarWeatherDiagnostics.GetValueOnGameThread()) return;
-	if (CVarWeatherDiagnostics.GetValueOnGameThread() < 2 && FCString::Strcmp(Phase, TEXT("FrameParameterChange")) == 0) return;
-	float Maximum = 0.f; FString Parameter;
-	auto Difference = [&Maximum, &Parameter](float Delta, const FString& Name) { if (Delta > Maximum) { Maximum = Delta; Parameter = Name; } };
+	const bool bFrameChange = FCString::Strcmp(Phase, TEXT("FrameParameterChange")) == 0;
+	if (CVarWeatherDiagnostics.GetValueOnGameThread() < 2 && bFrameChange) return;
+	const float Threshold = bFrameChange ? 0.05f : 0.01f;
+	float Maximum = 0.f; FString Parameter, Changes;
+	auto Difference = [&Maximum, &Parameter, &Changes, Threshold](float Delta, const FString& Name, const FString& Values = FString())
+	{
+		if (Delta > Maximum) { Maximum = Delta; Parameter = Name; }
+		if (Delta > Threshold) Changes += FString::Printf(TEXT(" {%s Delta=%.6f %s}"), *Name, Delta, *Values);
+	};
 	auto ColorDifference = [&Difference](const FLinearColor& A, const FLinearColor& B, const FString& Name)
 	{
-		Difference(FMath::Max(FMath::Max(FMath::Abs(A.R - B.R), FMath::Abs(A.G - B.G)), FMath::Max(FMath::Abs(A.B - B.B), FMath::Abs(A.A - B.A))), Name);
+		Difference(FMath::Max(FMath::Max(FMath::Abs(A.R - B.R), FMath::Abs(A.G - B.G)), FMath::Max(FMath::Abs(A.B - B.B), FMath::Abs(A.A - B.A))), Name,
+			TEXT("From=") + A.ToString() + TEXT(" To=") + B.ToString());
 	};
 	ColorDifference(From.DirectionalColor, To.DirectionalColor, TEXT("DirectionalLight")); ColorDifference(From.SkyLightColor, To.SkyLightColor, TEXT("SkyLight"));
 	ColorDifference(From.FogColor, To.FogColor, TEXT("Fog")); ColorDifference(From.DirectionalFogColor, To.DirectionalFogColor, TEXT("DirectionalFog"));
-	Difference(FMath::Abs(From.SunVisible - To.SunVisible), TEXT("SunVisible")); Difference(FMath::Abs(From.Darkness - To.Darkness), TEXT("Darkness"));
+	Difference(FMath::Abs(From.SunVisible - To.SunVisible), TEXT("SunVisible"), FString::Printf(TEXT("From=%.6f To=%.6f"), From.SunVisible, To.SunVisible));
+	Difference(FMath::Abs(From.Darkness - To.Darkness), TEXT("Darkness"), FString::Printf(TEXT("From=%.6f To=%.6f"), From.Darkness, To.Darkness));
+	Difference(FMath::RadiansToDegrees(From.DirectionalRotation.AngularDistance(To.DirectionalRotation)), TEXT("DirectionalRotationDegrees"),
+		TEXT("From=") + From.DirectionalRotation.Rotator().ToString() + TEXT(" To=") + To.DirectionalRotation.Rotator().ToString());
+	FString DiscreteChanges;
+	if (From.BillboardMaterial != To.BillboardMaterial)
+		DiscreteChanges += FString::Printf(TEXT(" BillboardMaterial=%s->%s Scale=%s->%s"), *GetPathNameSafe(From.BillboardMaterial), *GetPathNameSafe(To.BillboardMaterial), *From.BillboardScale.ToString(), *To.BillboardScale.ToString());
 	FString SkyDetails;
 	for (const auto& M : From.Materials)
 	{
@@ -1399,7 +1421,7 @@ void ASWNetworkWeatherActor::CompareVisualFrames(const TCHAR* Phase, const FSWWe
 				return MID->Parent->GetScalarParameterValue(FMaterialParameterInfo(Name), Result);
 			};
 			float A = 0.f, B = 0.f;
-			if (Value(M, A) && Value(*N, B)) Difference(FMath::Abs(A - B), M.PropertyName.ToString() + TEXT(".") + Name.ToString());
+			if (Value(M, A) && Value(*N, B)) Difference(FMath::Abs(A - B), M.PropertyName.ToString() + TEXT(".") + Name.ToString(), FString::Printf(TEXT("From=%.6f To=%.6f"), A, B));
 		}
 		for (FName Name : Vectors)
 		{
@@ -1415,21 +1437,34 @@ void ASWNetworkWeatherActor::CompareVisualFrames(const TCHAR* Phase, const FSWWe
 			const auto* V = State.Textures.FindByPredicate([Name](const auto& P) { return P.Name == Name; }); return V ? V->ObjectPath : FString();
 		};
 		SkyDetails += FString::Printf(TEXT(" %s Sky=%s->%s Target=%s->%s"), *M.PropertyName.ToString(), *SkyTexture(M, TEXT("SkyColor_Texture")), *SkyTexture(*N, TEXT("SkyColor_Texture")), *SkyTexture(M, TEXT("BlendBroker0")), *SkyTexture(*N, TEXT("BlendBroker0")));
+		if (bFrameChange)
+		{
+			for (const auto& Texture : M.Textures)
+				if (SkyTexture(M, Texture.Name) != SkyTexture(*N, Texture.Name))
+					DiscreteChanges += FString::Printf(TEXT(" %s.%s=%s->%s"), *M.PropertyName.ToString(), *Texture.Name.ToString(), *Texture.ObjectPath, *SkyTexture(*N, Texture.Name));
+			for (const auto& Texture : N->Textures)
+				if (!M.Textures.ContainsByPredicate([&Texture](const auto& T) { return T.Name == Texture.Name; }))
+					DiscreteChanges += FString::Printf(TEXT(" %s.%s=<default>->%s"), *M.PropertyName.ToString(), *Texture.Name.ToString(), *Texture.ObjectPath);
+		}
 		if (M.PropertyName != TEXT("CurrentDynamicParam") && FCString::Strcmp(Phase, TEXT("BoundaryDiscontinuity")) == 0
 			&& SkyTexture(M, TEXT("BlendBroker0")) != SkyTexture(*N, TEXT("SkyColor_Texture"))) Difference(1.f, M.PropertyName.ToString() + TEXT(".SkyEndpoint"));
 	}
-	if (Maximum > 0.01f)
+	if (Maximum > Threshold || !DiscreteChanges.IsEmpty())
 	{
-		if (CVarWeatherDiagnostics.GetValueOnGameThread() < 2)
+		const double LocalTime = GetWorld()->GetTimeSeconds();
+		if (bFrameChange && LocalTime < DiagnosticNextFrameWarningTime)
 		{
-			// UE_LOG(LogSWWeatherDiagnostics, Warning, TEXT("%s Epoch=%u Sequence=%u Max=%.6f Parameter=%s Alpha=%.6f Step=%.6f"), Phase, AppliedEpoch, AppliedSequence, Maximum, *Parameter, LastPresentedAlpha, PlaybackStep);
+			++DiagnosticSuppressedFrameChanges;
 			return;
 		}
+		if (bFrameChange) DiagnosticNextFrameWarningTime = LocalTime + 1.;
 		FString Curves;
 		for (const auto& P : ActiveWeatherState.Properties) for (const auto& R : P.References)
-			if (!R.bIsNull && R.Kind == ESWWeatherAssetKind::ScalarCurve) Curves += TEXT(" ") + R.MemberPath + TEXT("=") + R.ObjectPath;
-		// UE_LOG(LogSWWeatherDiagnostics, Warning, TEXT("%s Epoch=%u Sequence=%u Max=%.6f Parameter=%s Alpha=%.6f Step=%.6f Curve=%s SunCurve=%s AuthoredScalarCurves=%s%s"),
-		// 	Phase, AppliedEpoch, AppliedSequence, Maximum, *Parameter, LastPresentedAlpha, PlaybackStep, *GetPathNameSafe(ReadObject(TEXT("CurrentOverallColor"))), *GetPathNameSafe(ReadObject(TEXT("SunAngle"))), *Curves, *SkyDetails);
+			if (!R.bIsNull && R.Kind == ESWWeatherAssetKind::ScalarCurve) Curves += TEXT(" ") + P.Name.ToString() + TEXT(".") + R.MemberPath + TEXT("=") + R.ObjectPath;
+		// UE_LOG(LogSWWeatherDiagnostics, Warning, TEXT("Phase=%s World=%s Actor=%s Authority=%d Epoch=%u Sequence=%u Hour=%d Max=%.6f Parameter=%s Alpha=%.6f PreviousFrameAlpha=%.6f Elapsed=%.6f Step=%.6f Curve=%s NextCurve=%s SunCurve=%s ScalarCurves=[%s] Changes=[%s] Discrete=[%s] Textures=[%s]"),
+			// Phase, *GetWorld()->GetName(), *GetName(), HasAuthority(), AppliedEpoch, AppliedSequence, ActiveWeatherState.Hour, Maximum, *Parameter,
+			// LastPresentedAlpha, DiagnosticLastAlpha, LocalElapsed, PlaybackStep, *GetPathNameSafe(ReadObject(TEXT("CurrentOverallColor"))), *GetPathNameSafe(ReadObject(TEXT("NextOverallColor"))),
+			// *GetPathNameSafe(ReadObject(TEXT("SunAngle"))), *Curves, *Changes, *DiscreteChanges, *SkyDetails);
 	}
 }
 
@@ -1438,7 +1473,7 @@ void ASWNetworkWeatherActor::LogOnce(uint32 Epoch, uint32 Sequence, const FStrin
 	const FString Key = FString::Printf(TEXT("%u/%u/%s"), Epoch, Sequence, *Reason);
 	if (ReportedErrors.Contains(Key)) return;
 	ReportedErrors.Add(Key);
-	// UE_LOG(LogSWWeatherDiagnostics, Warning, TEXT("Epoch=%u Sequence=%u Reason=%s"), Epoch, Sequence, *Reason);
+	// UE_LOG(LogSWWeatherDiagnostics, Warning, TEXT("World=%s Actor=%s Authority=%d Epoch=%u Sequence=%u Reason=%s"), *GetWorld()->GetName(), *GetName(), HasAuthority(), Epoch, Sequence, *Reason);
 }
 
 void ASWNetworkWeatherActor::LogWeatherDiagnostics(const TCHAR* Phase, double ServerTime) const
@@ -1447,9 +1482,14 @@ void ASWNetworkWeatherActor::LogWeatherDiagnostics(const TCHAR* Phase, double Se
 	const uint32 Oldest = PlaybackBuffer.IsEmpty() ? 0 : PlaybackBuffer[0].Sequence, Newest = PlaybackBuffer.IsEmpty() ? 0 : PlaybackBuffer.Last().Sequence;
 	double Ahead = 0.;
 	for (const auto& S : PlaybackBuffer) if (S.Epoch == AppliedEpoch && IsReady(S)) Ahead = FMath::Max(Ahead, S.StartServerTime + S.SecondsPerHour - PlaybackServerTime);
-	if (CVarWeatherDiagnostics.GetValueOnGameThread() < 2)
+	const auto* Next = PlaybackBuffer.FindByPredicate([this](const auto& S) { return S.Epoch == AppliedEpoch && S.Sequence == AppliedSequence + 1; });
+	const bool bNextReady = Next && IsReady(*Next);
+	if (CVarWeatherDiagnostics.GetValueOnGameThread() < 2 && !FString(Phase).StartsWith(TEXT("Boundary")))
 	{
-		// UE_LOG(LogSWWeatherDiagnostics, Log, TEXT("Phase=%s Epoch=%u Sequence=%u Hour=%d Alpha=%.6f Playback=%.6f Error=%.6f Rate=%.6f Status=%d BufferAhead=%.3f BufferCount=%d"), Phase, AppliedEpoch, AppliedSequence, ActiveWeatherState.Hour, LastPresentedAlpha, PlaybackServerTime, ServerTime - 2. - PlaybackServerTime, PlaybackRate, static_cast<int32>(PlaybackStatus), Ahead, PlaybackBuffer.Num());
+		// UE_LOG(LogSWWeatherDiagnostics, Log, TEXT("Phase=%s World=%s Actor=%s Authority=%d NetMode=%d Epoch=%u Sequence=%u Hour=%d Alpha=%.6f Server=%.6f Playback=%.6f Error=%.6f Elapsed=%.6f Step=%.6f Rate=%.6f Status=%d BufferAhead=%.3f BufferCount=%d NextPresent=%d NextReady=%d Loads=%d WindowEpoch=%u WindowPublished=%.6f WireBytes=%d Hitches=%u MaxElapsed=%.6f SuppressedFrameChanges=%u"),
+			// Phase, *GetWorld()->GetName(), *GetName(), HasAuthority(), static_cast<int32>(GetNetMode()), AppliedEpoch, AppliedSequence, ActiveWeatherState.Hour, LastPresentedAlpha,
+			// ServerTime, PlaybackServerTime, ServerTime - 2. - PlaybackServerTime, LocalElapsed, PlaybackStep, PlaybackRate, static_cast<int32>(PlaybackStatus), Ahead, PlaybackBuffer.Num(),
+			// Next != nullptr, bNextReady, AssetLoadHandles.Num(), PlaybackWindow.Epoch, PlaybackWindow.PublishedServerTime, PlaybackWindow.CompressedPayload.Num(), DiagnosticHitchCount, DiagnosticMaximumElapsed, DiagnosticSuppressedFrameChanges);
 		return;
 	}
 	FString Details;
@@ -1460,9 +1500,16 @@ void ASWNetworkWeatherActor::LogWeatherDiagnostics(const TCHAR* Phase, double Se
 	if (auto* Fog = ResolveComponent<UExponentialHeightFogComponent>(ReadObject(TEXT("ExponentialHeightFog")))) Details += TEXT(" FogRGB=") + Fog->FogInscatteringLuminance.ToString() + TEXT(" DirectionalFogRGB=") + Fog->DirectionalInscatteringLuminance.ToString();
 	float Visible = -1.f, Darkness = -1.f;
 	if (auto* P = GetWorld()->GetParameterCollectionInstance(SkyParameters)) { P->GetScalarParameterValue(TEXT("SunVisible"), Visible); P->GetScalarParameterValue(TEXT("Darkness"), Darkness); }
-	// UE_LOG(LogSWWeatherDiagnostics, Log, TEXT("Phase=%s World=%s Authority=%d NetMode=%d Epoch=%u Sequence=%u ReceivedEpoch=%u Oldest=%u Newest=%u LocalElapsed=%.6f Step=%.6f Server=%.6f Target=%.6f Playback=%.6f Error=%.6f Rate=%.6f Status=%d BufferAhead=%.6f BufferCount=%d Hour=%d Alpha=%.6f Visible=%.4f Darkness=%.4f%s"),
-	// 	Phase, *GetWorld()->GetName(), HasAuthority(), static_cast<int32>(GetNetMode()), AppliedEpoch, AppliedSequence, ReceivedEpoch, Oldest, Newest,
-	// 	LocalElapsed, PlaybackStep, ServerTime, ServerTime - 2., PlaybackServerTime, ServerTime - 2. - PlaybackServerTime, PlaybackRate, static_cast<int32>(PlaybackStatus), Ahead, PlaybackBuffer.Num(), ActiveWeatherState.Hour, LastPresentedAlpha, Visible, Darkness, *Details);
+	for (FName Name : {FName(TEXT("CurrentOverallColor")), FName(TEXT("NextOverallColor")), FName(TEXT("CurrentSunColor")), FName(TEXT("NextSunColor")),
+		FName(TEXT("CurrentSkyLightColor")), FName(TEXT("NextSkyLightColor")), FName(TEXT("CurrentFogColor")), FName(TEXT("NextFogColor")), FName(TEXT("SunRizeOffset"))})
+		Details += FString::Printf(TEXT(" %s=%s"), *Name.ToString(), *GetPathNameSafe(ReadObject(Name)));
+	if (const auto* Offset = Cast<UCurveFloat>(ReadObject(TEXT("SunRizeOffset"))))
+		Details += FString::Printf(TEXT(" ColorCurveTime=%.6f"), Offset->GetFloatValue(static_cast<float>((ActiveWeatherState.Hour + LastPresentedAlpha) / 24.)));
+	// UE_LOG(LogSWWeatherDiagnostics, Log, TEXT("Phase=%s World=%s Actor=%s Authority=%d NetMode=%d Epoch=%u Sequence=%u ReceivedEpoch=%u Oldest=%u Newest=%u LocalElapsed=%.6f Step=%.6f Server=%.6f Target=%.6f Playback=%.6f Error=%.6f Rate=%.6f Status=%d BufferAhead=%.6f BufferCount=%d Hour=%d Alpha=%.6f Start=%.6f Duration=%.6f Visible=%.4f Darkness=%.4f NextPresent=%d NextReady=%d Loads=%d WindowEpoch=%u WindowPublished=%.6f RawBytes=%u WireBytes=%d GenerationFailed=%d Hitches=%u MaxElapsed=%.6f SuppressedFrameChanges=%u%s"),
+		// Phase, *GetWorld()->GetName(), *GetName(), HasAuthority(), static_cast<int32>(GetNetMode()), AppliedEpoch, AppliedSequence, ReceivedEpoch, Oldest, Newest,
+		// LocalElapsed, PlaybackStep, ServerTime, ServerTime - 2., PlaybackServerTime, ServerTime - 2. - PlaybackServerTime, PlaybackRate, static_cast<int32>(PlaybackStatus), Ahead, PlaybackBuffer.Num(), ActiveWeatherState.Hour, LastPresentedAlpha,
+		// ActiveWeatherState.StartServerTime, ActiveWeatherState.SecondsPerHour, Visible, Darkness, Next != nullptr, bNextReady, AssetLoadHandles.Num(), PlaybackWindow.Epoch, PlaybackWindow.PublishedServerTime,
+		// PlaybackWindow.RawPayloadBytes, PlaybackWindow.CompressedPayload.Num(), bGenerationFailed, DiagnosticHitchCount, DiagnosticMaximumElapsed, DiagnosticSuppressedFrameChanges, *Details);
 }
 
 void ASWNetworkWeatherActor::SampleWeatherDiagnostics(double ServerTime, double Alpha)
@@ -1506,11 +1553,17 @@ void ASWNetworkWeatherActor::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	const double LocalTime = GetWorld()->GetTimeSeconds();
 	LocalElapsed = FMath::Max(0., LocalTime - LastLocalWorldTime);
+	DiagnosticMaximumElapsed = FMath::Max(DiagnosticMaximumElapsed, LocalElapsed);
+	if (LocalElapsed > 0.250) ++DiagnosticHitchCount;
 	if (LocalTime < LastLocalWorldTime) { LogWeatherDiagnostics(TEXT("LocalClockReset"), GetServerTime()); ClockSamples.Reset(); ClockSampleStartTime = LocalTime; NextClockSampleTime = LocalTime; }
 	LastLocalWorldTime = LocalTime; PlaybackStep = 0.;
 	if (!bAdapterReady || (!HasAuthority() && !GetWorld()->GetGameState())) return;
 	const double Now = GetServerTime();
 	if (!FMath::IsFinite(Now)) return;
+	if (LocalElapsed > 0.250 && LocalTime >= DiagnosticNextHitchWarningTime)
+	{
+		LogWeatherDiagnostics(TEXT("FrameHitch"), Now); DiagnosticNextHitchWarningTime = LocalTime + 5.;
+	}
 	if (HasAuthority()) { BuildFutureSegments(Now); PublishPlaybackWindow(Now); }
 	else if (!PlaybackWindow.Segments.IsEmpty()) MergePlaybackWindow(PlaybackWindow);
 	if (GetNetMode() != NM_DedicatedServer)

@@ -4,6 +4,7 @@
 #include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "ShipAI/EnemyShip.h"
 
 UBTS_MaintainDeckCombatFocus::UBTS_MaintainDeckCombatFocus()
@@ -34,6 +35,14 @@ void UBTS_MaintainDeckCombatFocus::TickNode(UBehaviorTreeComponent& OwnerComp, u
 	if (Enemy && AI && Combat.IsValid() && !Combat->HasCommittedAttack()
 		&& Combat->HasStoredRecovery() && !Combat->HasRecovery())
 	{
+		FDeckTargetAnchor Current;
+		if (UDeckCombatTargetResolverComponent::ResolveFor(Enemy, AI->GetCombatTarget(), Current)
+			&& Current.Source == EDeckTargetAnchorSource::SupportedObstacle && Current.HasCurrentEvidence())
+		{
+			// Expired LOS recovery does not mean an observed player on this ship's rail disappeared.
+			Combat->ClearRecovery();
+			return;
+		}
 		FDeckWalkLocation Snapshot;
 		const UDeckWalkAreaComponent* Area = Enemy->GetDeckHostShip() ? Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent() : nullptr;
 		if (Area && Combat->GetRecoveryGoal(Snapshot))

@@ -28,6 +28,8 @@ public:
 	const TArray<FString>& GetUnsupportedCandidates() const { return UnsupportedCandidates; }
 	bool IsRestoringSnapshot() const { return bRestoring; }
 	bool CompleteRestore(FString& OutError);
+	/** Broadcast only after all actor references/effects have finalized successfully. Server-local. */
+	FSimpleMulticastDelegate OnRestoreCompleted;
 	void UpdateRegisteredActorId(AActor* Actor, const FGuid& PreviousId, const FGuid& ReservedId);
 
 private:

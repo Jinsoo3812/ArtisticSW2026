@@ -12,6 +12,11 @@
 #include "StatusEffectLibrary.h"
 #include "CollisionChannels.h"
 #include "WeaponFeedback/WeaponFeedbackComponent.h"
+#include "HAL/IConsoleManager.h"
+
+static TAutoConsoleVariable<int32> CVarMeleeTraceDebug(
+	TEXT("sw.Combat.Melee.Debug"), 0,
+	TEXT("Draw and log server sword hit windows and collision candidates."), ECVF_Cheat);
 
 ASwordItem::ASwordItem()
 {
@@ -72,6 +77,12 @@ bool ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecH
 	bHasPreviousTracePoints = true;
 	PreviousTraceStart = TraceStartPoint->GetComponentLocation();
 	PreviousTraceEnd = TraceEndPoint->GetComponentLocation();
+	if (CVarMeleeTraceDebug.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[MeleeTrace] WindowOpened Sword=%s Source=%s Start=%s End=%s Radius=%.1f"),
+			*GetNameSafe(this), *GetNameSafe(ResolveSourceActor()), *PreviousTraceStart.ToString(),
+			*PreviousTraceEnd.ToString(), TraceRadius);
+	}
 
 	// Capture actors already intersecting the blade when the window opens.
 	TraceSegment(PreviousTraceStart, PreviousTraceEnd);
@@ -80,6 +91,10 @@ bool ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecH
 
 void ASwordItem::HitScanEnd()
 {
+	if (bHitScanActive && CVarMeleeTraceDebug.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[MeleeTrace] WindowClosed Sword=%s"), *GetNameSafe(this));
+	}
 	if (auto* Resolver = FindComponentByClass<UCombatHitResolver>()) Resolver->CloseWindow();
 	ClearHitScanState();
 }
@@ -144,12 +159,19 @@ void ASwordItem::TraceSegment(const FVector& Start, const FVector& End)
 		ActiveTraceObjectTypes,
 		bTraceComplex,
 		ActorsToIgnore,
-		bDrawDebugTrace ? EDrawDebugTrace::ForOneFrame : EDrawDebugTrace::None,
+		CVarMeleeTraceDebug.GetValueOnGameThread() != 0 ? EDrawDebugTrace::ForDuration
+			: (bDrawDebugTrace ? EDrawDebugTrace::ForOneFrame : EDrawDebugTrace::None),
 		HitResults,
 		true);
 
 	for (const FHitResult& HitResult : HitResults)
 	{
+		if (CVarMeleeTraceDebug.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(LogTemp, Display, TEXT("[MeleeTrace] Candidate Sword=%s Target=%s Component=%s Bone=%s"),
+				*GetNameSafe(this), *GetNameSafe(HitResult.GetActor()),
+				*GetNameSafe(HitResult.GetComponent()), *HitResult.BoneName.ToString());
+		}
 		HandleHit(HitResult);
 	}
 }
@@ -171,6 +193,19 @@ void ASwordItem::HandleHit(const FHitResult& HitResult)
 
 	if (ShouldIgnoreActor(HitActor, TargetASC))
 	{
+		if (CVarMeleeTraceDebug.GetValueOnGameThread() != 0)
+		{
+			FGameplayTagContainer SourceTags;
+			FGameplayTagContainer TargetTags;
+			if (const UAbilitySystemComponent* SourceASC = ResolveSourceAbilitySystem())
+			{
+				SourceASC->GetOwnedGameplayTags(SourceTags);
+			}
+			TargetASC->GetOwnedGameplayTags(TargetTags);
+			UE_LOG(LogTemp, Display, TEXT("[MeleeTrace] IgnoredTarget Sword=%s Target=%s Dead=%d SourceTags=%s TargetTags=%s"),
+				*GetNameSafe(this), *GetNameSafe(HitActor), TargetASC->HasMatchingGameplayTag(State_Dead),
+				*SourceTags.ToStringSimple(), *TargetTags.ToStringSimple());
+		}
 		return;
 	}
 
@@ -181,12 +216,24 @@ void ASwordItem::ApplyEffectToTarget(UAbilitySystemComponent* TargetASC, const F
 {
 	if (!TargetASC || !CachedDamageEffectSpecHandle.IsValid() || !CachedDamageEffectSpecHandle.Data.IsValid())
 	{
+		if (CVarMeleeTraceDebug.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(LogTemp, Display, TEXT("[MeleeTrace] Rejected=InvalidDamageSpec Sword=%s"), *GetNameSafe(this));
+		}
 		return;
 	}
 
 	if (!HasAuthority()) return;
 	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
-	if (!Resolver || !Resolver->ResolveHit(
+	if (!Resolver)
+	{
+		if (CVarMeleeTraceDebug.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(LogTemp, Display, TEXT("[MeleeTrace] Rejected=MissingResolver Sword=%s"), *GetNameSafe(this));
+		}
+		return;
+	}
+	if (!Resolver->ResolveHit(
 		TargetASC, HitResult, bIgnoreSameTeam, bIncludeAnimatedCombatHurtboxes)) return;
 	AActor* SourceActor = ResolveSourceActor();
 	AActor* TargetActor = TargetASC->GetAvatarActor();

@@ -73,3 +73,13 @@ struct ENEMY_API FDeckWalkLocation
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")
 	FVector LocalFloor = FVector::ZeroVector;
 };
+
+/** Optional ship-local association for rails shared by multiple floors; never creates walking links. */
+USTRUCT(BlueprintType)
+struct ENEMY_API FDeckTrackingSupportRegion
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck Tracking") FName SurfaceId;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck Tracking") FVector LocalCenter = FVector::ZeroVector;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck Tracking") FVector LocalExtent = FVector(100.f);
+};

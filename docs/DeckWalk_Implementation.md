@@ -1,6 +1,6 @@
 # EnemyShip 갑판 스폰 앵커와 보행면 AI 구현
 
-> 기준: 2026-10-03 저장된 C++·Blueprint·Behavior Tree·DataTable. 에디터에서 값을 확인하고 플레이할 순서는 [에디터 안내](DeckWalk_Manual_Anchor_Editor_Setup.md)에, 보스 밸런스 테이블의 복구 내역은 [보스 데이터 진단](BossSpawn_Diagnosis_2026-10-03.md)에 둔다.
+> 구현 대조: 2026-10-08. 최신 LV_ET/Lvl_CY의 앵커와 편성은 [에디터 안내](DeckWalk_Manual_Anchor_Editor_Setup.md), 소환·휴면·복원은 [생명주기 가이드](Deck_Enemy_Spawn_Refactoring_Editor_Test_Guide.md)를 따른다. 아래 Test_Level·노드 수·보스 클래스 확인 결과는 2026-10-03 당시 기록이며 이번 점검에서 해당 레벨을 재검증하지 않았다. [보스 데이터 진단](BossSpawn_Diagnosis_2026-10-03.md)도 당시 복구 기록이다.
 
 ## 현재 구조
 
@@ -8,8 +8,8 @@
 
 | 담당 | 현재 책임 |
 | --- | --- |
-| `AEnemyShip` | 수동 앵커 등록, 보행면 생성과 적 풀 준비 순서 조정 |
-| `UDeckEnemySpawnerComponent` | `SpawnPlan`, 기존 풀·정확한 ID의 스폰 예약과 점유, 소환용 앵커 선택 |
+| `AEnemyShip` | 수동 앵커 등록, 보행면·풀 준비, RuntimeState 적용 후 발행, 휴면 정책 |
+| `UDeckEnemySpawnerComponent` | `SpawnPlan`, 요청/슬롯 결과, 정확한 ID 예약·점유, 준비/공개 분리 |
 | `UBossEncounterComponent` | 조우 조건과 `BossSpawnPointId`를 통한 최초 보스 생성 |
 | `FDeckSpawnAnchorValidator` | ID 중복·부착·면·스폰 참조·캡슐 여유·바닥의 읽기 전용 검증 |
 | `FDeckWalkHeightResolver` | 앵커 위치를 `DeckMesh_Complex` 기준 로컬 높이 범위로 변환 |
@@ -21,19 +21,20 @@
 
 ## 저장된 함선 설정
 
-`BP_EnemyShip`의 `DeckMesh_Complex` 아래에 기본 앵커 다섯 개가 있다. **ID 0도 유효**하다. ID 1·11은 위치를 정하기 전까지 스폰을 끈 예비 앵커다.
+2026-10-08 BP_EnemyShip과 두 저장 레벨의 앵커는 여섯 개다. **ID 0도 유효**하다. 일반 0·1·10·11·12는 CanSpawn=true, 보스 전용 20은 false다.
 
 | 컴포넌트 | ID | 면 | 로컬 Z | 용도 |
 | --- | ---: | --- | ---: | --- |
-| `L_MeleeEnemySpawnPoint_1` | 0 | `LowerDeck` | 351 | 아래층 일반 적 스폰·높이 기준 |
-| `L_EnemySpawnPoint_1` | 1 | `LowerDeck` | 351 | 예비 앵커, `CanSpawn=false` |
-| `U_MeleeEnemySpawnPoint_1` | 10 | `UpperDeck` | 678 | 위층 일반 적 스폰·높이 기준 |
-| `U_EnemySpawnPoint_11` | 11 | `UpperDeck` | 678 | 예비 앵커, `CanSpawn=false` |
-| `BossSpawnPoint` | 12 | `UpperDeck` | 678 | 최초 보스 스폰 전용, `CanSpawn=false` |
+| `L_MeleeEnemySpawnPoint_0` | 0 | `LowerDeck` | 341 | 아래층 일반 적 스폰·높이 기준 |
+| `L_MeleeEnemySpawnPoint_1` | 1 | `LowerDeck` | 351 | 아래층 일반 적 스폰 |
+| `U_MeleeEnemySpawnPoint_0` | 10 | `UpperDeck` | 678 | 위층 일반 적 스폰·높이 기준 |
+| `U_RangedEnemySpawnPoint_1` | 11 | `UpperDeck` | 678 | 위층 일반 적 스폰 |
+| `U_RangedEnemySpawnPoint_2` | 12 | `UpperDeck` | 678 | 위층 일반 적 스폰 |
+| `BossSpawnPoint` | 20 | `UpperDeck` | 678 | 최초 보스 스폰 전용, `CanSpawn=false` |
 
-두 면은 `WaypointReference` 높이 모드를 사용한다. `LowerDeck`은 ID 0을 기준으로 아래 31 cm·위 29 cm인 **320–380**, `UpperDeck`은 ID 10을 기준으로 아래 3 cm·위 7 cm인 **675–685**다. 두 면의 `SeedPointIds`는 비어 있다. 빈 Seed 배열은 최소 크기를 만족하는 모든 유효 연결 영역을 유지한다.
+두 면은 `WaypointReference` 높이 모드를 사용한다. LowerDeck의 기준은 ID 0, UpperDeck의 기준은 ID 10이다. 실제 범위는 현재 앵커 Z와 Height Below/Above Reference로 계산하므로 BP/인스턴스의 값을 확인한다. 과거 앵커 Z=351에서의 LowerDeck 320–380 기록을 현재 앵커 Z=341에 그대로 적용하지 않는다. 빈 Seed 배열은 최소 크기를 만족하는 모든 유효 연결 영역을 유지한다.
 
-일반 적 `SpawnPlan`에는 **아래층 `BP_DeckMeleeEnemy` 1명(ID 0), 위층 `T1_BP_DeckMeleeEnemy` 1명(ID 10)**이 있다. 이전 원거리 슬롯은 사용자 결정으로 제거했다. 보스 최초 위치는 ID 12다. Test_Level에서 보스가 설정된 함선의 클래스는 현재 `T2_BP_ShipBoss_Rogue`다. 다른 함선 인스턴스의 `BossClass=None`은 그대로 두었다.
+기본 BP_EnemyShip/Lvl_CY는 아래층 BP_DeckMeleeEnemy 1명(ID 0), 위층 T1_BP_DeckMeleeEnemy 1명(ID 10)을 사용한다. LV_ET는 티어·MMR/MRR/RRR별 자식 BP이며 [레벨 비교](LV_ET_vs_Lvl_CY_EnemySpawn_Audit.md)의 편성을 따른다. 보스 최초 위치는 현재 ID 20이고 두 레벨 모두 Boss Encounter가 비활성이다. Test_Level의 T2_BP_ShipBoss_Rogue 설정은 2026-10-03 확인 기록이다.
 
 ## 보행면 생성과 스폰 승인
 
@@ -45,7 +46,7 @@
 
 `BP_EnemyShip` 또는 배 인스턴스의 `DeckEnemySpawnerComponent`를 선택하고 **Deck Enemy Spawner > Timing > Spawn Start Delay**를 조정한다. 기본값은 **3초**, `0`은 추가 대기 없음이다. 배의 BeginPlay부터 시간을 세며, 플레이어 발견 등 기존 배치 조건도 충족되어야 적이 나타난다. 실제 첫 배치는 `배 BeginPlay + Spawn Start Delay`와 `플레이어 발견 + Sight Activation Delay` 중 늦은 시점이다. 이후 적 사이 간격은 기존 `Activation Interval`을 따른다.
 
-비활성 풀은 기존처럼 미리 준비하지만 대기 중에는 표시·충돌·이동이 비활성화되어 있다. 대기 시간이 지나 활성화할 때 해당 스폰 앵커를 현재 배의 위치와 회전에 맞춰 다시 계산한다. 반복 감지는 대기 시간을 연장하지 않으며, 취소·배 파괴 때 기존 배치 타이머가 정리된다. 스냅샷에는 남은 대기 시간을 저장한다. 이 설정은 갑판 적 생성기의 배치에 적용하며, 별도 `BossEncounterComponent`의 최초 보스 생성 시간은 변경하지 않는다.
+비활성 풀은 함선·보행면 준비 조건 아래 준비하며 대기 중에는 표시·충돌·이동을 끈다. 자동 활성화에는 실제 Sight가 필요하고 항해 상태만으로 시작하지 않는다. 현재 배 변환으로 위치를 다시 계산하고 슬롯 스탯 준비 → 점유/결과 확정 → 표시·AI 공개를 수행한다. 반복 감지는 지연을 연장하지 않으며 Generation/Epoch로 오래된 타이머를 무효화한다. 스냅샷의 남은 시간은 전체 Room 복원 완료 후 재개한다. 별도 BossEncounter의 트리거·스토리 정책은 유지한다.
 
 직전 추가했던 스폰 전 위쪽 충돌 보정과 자체 선체 겹침 차단은 제거했다. 고정 대기 시간은 물리 진동 종료를 판정하지 않으므로 T4에서 배가 안정되는 시간에 맞춰 값을 조정해야 한다.
 

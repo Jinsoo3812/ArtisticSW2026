@@ -1,437 +1,54 @@
 # Deck Enemy Core Architecture Guide
 
-> 이 문서의 Waypoint 연결 그래프와 전투 포인트 설명은 과거 구현 기록이다. 현재 `BP_EnemyShip`의 이동·스폰 구조는 [보행면 구현 설명서](DeckWalk_Implementation.md), 설정과 수동 확인은 [에디터 안내](DeckWalk_Manual_Anchor_Editor_Setup.md)를 따른다. 일반 갑판 Melee/Ranged의 최신 전투·경보·거리 이동 BT는 [Combat 구현 및 설정](DeckEnemy_Combat_BT_Design_2026-10-04.md)을 따른다.
+구현 대조: 2026-10-08. 현재 C++와 저장된 LV_ET/Lvl_CY 설정을 기준으로 한다. 에디터 절차는 [스폰 생명주기 검증](Deck_Enemy_Spawn_Refactoring_Editor_Test_Guide.md), 보행면 구조는 [DeckWalk 구현](DeckWalk_Implementation.md), 전투 BT는 [Combat 구현 및 설정](DeckEnemy_Combat_BT_Design_2026-10-04.md)을 따른다.
 
-이 문서는 움직이는 EnemyShip 위에서 동작하는 `DeckEnemy`의 공통 구조를 빠르게 파악하기 위한 요약본이다.  
-세부 에디터 수치, Boss Encounter 연출, 디버깅 절차와 초기 MVP 기록은 제외하고 핵심 책임만 정리한다.
+## 1. 공통 구조
 
----
+`ADeckEnemy`는 `ARangedEnemy`의 ASC·상태·무기·감지 기능을 재사용하며, Melee/Ranged 역할을 갑판 전투 컴포넌트에서 구분한다. `ADeckRangedEnemy`는 기존 BP 참조를 보존하는 파생 클래스다.
 
-## 1. 전체 구조
+| 담당 | 책임 |
+| --- | --- |
+| AEnemyShip | 수동 앵커, 함선 유효 상태, 승무원과 휴면 정책 |
+| UDeckEnemySpawnerComponent | Spawn Plan, 풀, 요청/슬롯 결과, 스폰 포인트 예약·점유 |
+| UDeckWalkAreaComponent | 충돌 Mesh 기반 함선 로컬 보행면 그래프, 경로·위치 예약 |
+| UDeckWalkRouteComponent | 개별 적의 목표·이동·재탐색 |
+| UDeckEnemyNavigationComponent | BT 목적지 질의와 전투 이동 연동 |
+| UDeckEnemyCombatComponent | 공격 거리·쿨타임·LOS·재배치 |
+| UDeckCombatTargetResolverComponent | 대상의 현재 보행면·갑판 위치 증거 |
+| ADeckEnemy | 풀 준비/공개/반환, 복제 상태와 갑판 Movement Base |
 
-```text
-AEnemyShip
-├─ ShipDeckMesh
-├─ DeckWaypointComponent[]
-├─ UDeckNavigationComponent
-└─ UDeckEnemySpawnerComponent
-        |
-        ├─ Enemy Pool / Spawn
-        ├─ Point Occupancy / Reservation / Claim
-        └─ DeckEnemy 활성화
-                |
-                v
-            ADeckEnemy
-            ├─ CharacterMovement Base = ShipDeckMesh
-            ├─ UDeckEnemyNavigationComponent
-            └─ Base Enemy State / Perception / GAS 재사용
-                    |
-                    v
-              Deck 전용 BT Subtree
-```
+Waypoint는 소수의 **스폰/높이 기준 앵커**다. 이동 목적지는 보행면에서 선택한다. 삭제된 Waypoint 링크 그래프, Next-hop 예약, Combat 플래그를 새 에셋 설정에 사용하지 않는다. 경로와 AI 판단은 서버에서 수행하고, 캐릭터는 CharacterMovement의 Movement Base로 배를 따른다.
 
-핵심 원칙:
+## 2. 소환과 풀 생명주기
 
-- `DeckEnemy`는 일반 Enemy의 State / Perception / GAS 구조를 재사용한다.
-- 차이는 **움직이는 갑판 위 위치와 이동을 Ship-local Waypoint 그래프로 처리한다는 것**이다.
-- Enemy를 함선에 고정 Attach하여 이동시키지 않고 `CharacterMovement`의 Movement Base로 갑판을 따른다.
-- Spawn, Path 선택, Reservation, AI 판단은 서버 권위다.
+Spawn Plan은 적 한 명당 Enemy Class + Stats Row + Spawn Point Id 한 항목이다. 최대 32명이며 고정 ID를 다른 앵커로 대체하지 않는다. 명시 Row가 비어 있으면 적 CDO의 DefaultStatsRow를 사용한다.
 
----
+함선 상태는 Restoring / Dormant / Active / Terminal이다. 자동 큐는 실제 Player 배의 Sight, 함선 Active, 보행면 준비와 지연을 함께 검사한다. Approach/Orbit는 준비 재평가만 요청한다. Wake 자체는 소환 명령이 아니다.
 
-## 2. ADeckEnemy 역할
+`ResetToFreshPoolState`는 스탯을 미리 적용하지 않는 비활성 초기화다. 실제 활성화는 슬롯 스탯 구성 → PreparePoolActivation → 점유/슬롯 확정 → CommitPoolActivation으로 진행한다. 자동·수동·보스 추가 소환이 같은 내부 트랜잭션을 사용한다. 사망/반환 시 타깃·AI·효과·예약을 정리하고 재구성 가능한 비활성 풀로 돌린다.
 
-`ADeckEnemy`는 갑판 전용 Enemy의 공통 기반이다.
+Spawner는 None / PendingReadiness / Running / Finished / Cancelled 요청 상태와 EncounterGeneration / RequestId / ExecutionEpoch를 관리한다. 이미 활성화된 슬롯은 반복 Sight로 다시 실행하지 않는다. 일시 충돌은 제한 재시도하고 영구 오류는 원인을 남긴다.
 
-```text
-ADeckEnemy
-├─ Base Enemy 기능
-├─ Deck Combat Role
-├─ Host Ship / Deck 관계
-├─ Pool 활성/비활성
-└─ Deck Navigation 연동
-```
+거리 휴면은 조우나 체력을 초기화하지 않는다. 큐·활성 승무원·예약·유효 감지가 있으면 일반 휴면을 거부한다. 명시적인 귀환 완료만 새 조우를 시작한다.
 
-`Deck Combat Role`에 따라 Combat Point 선택 정책만 달라진다.
+## 3. 이동과 전투
 
-```text
-Melee
--> Target에 가까운 유효 Combat Point 선호
+보행면의 NodeIndex / SurfaceId / LocalFloor / Revision으로 위치를 식별한다. Rebuild 후 예전 Revision의 경로와 위치를 다시 사용하지 않는다. 순찰과 전투는 실제 지지 바닥과 연결 영역에서 목적지를 선택한다.
 
-Ranged
--> 무기 사거리에 적합한 Combat Point 선호
-```
+일반 갑판 적은 자신과 대상의 보행면 증거를 확인하고 같은 Surface에서 기존 무기 거리·LOS 조건으로 공격한다. Melee는 장착 무기 사거리, Ranged는 원거리 전투 정책을 사용한다. 경보/조사/쿨타임 재배치 BT의 세부 값은 Combat 문서에서 관리한다.
 
-기존 `ADeckRangedEnemy`는 자산 호환용 파생 클래스로 유지할 수 있으며,
-새 공통 Deck 기능은 `ADeckEnemy`에 두는 것이 기본 구조다.
+스폰 포인트 점유와 전투 위치 예약은 구분한다. 이동 시작, BT Abort, 이동 실패, 사망, 풀 반환에서 관련 예약을 해제한다. 계단 등 실제 연결 바닥이 없는 서로 다른 면 사이에 경로가 자동 생성되지는 않는다.
 
----
+## 4. 복제와 저장
 
-## 3. Moving Deck 계약
+서버는 RuntimeState와 PoolNetState의 최종 상태를 복제한다. PoolNetState에는 Active / Dead / Host / PointId / ActivationGeneration / Revision이 있다. 클라이언트는 늦은 Host·무기·이동 상태 수신과 새 활성화 세대에 맞춰 표시·충돌·Movement Base를 재조정한다.
 
-DeckEnemy는 `ShipDeckMesh`를 `CharacterMovement Base`로 사용한다.
+AIController, Blackboard, BT, 보행면 그래프와 예약 내부 상태는 복제하지 않는다. 기존 CharacterMovement와 전투 연출 복제를 사용한다.
 
-따라서 함선이:
+Room 저장은 EnemyShip Enemy v4, BaseEnemy Enemy v2, DeckEnemy Spawner v1을 사용한다. 전체 Finalize 성공 후 복원 완료 알림이 와야 큐/AI를 재개한다. 슬롯 결과·계획 지문·StableId·남은 타이머를 복원하며 저장된 체력·사망 상태를 새 풀 초기화로 덮어쓰지 않는다.
 
-```text
-이동
-회전
-Pitch / Roll
-```
+## 5. 현재 콘텐츠와 검증 범위
 
-하더라도 Enemy는 갑판 기준 위치를 유지한다.
+2026-10-08 저장 레벨 확인 결과 두 레벨은 각각 EnemyShip 51척이다. 기본 BP_EnemyShip 앵커는 아래층 0/1, 위층 10/11/12, 보스 전용 20이다. Lvl_CY는 T1 근접 2명 @0/10, LV_ET는 Final 폴더의 티어/편성별 자식 BP를 사용한다. 과거의 “25개 Point가 모두 ID 0” 설명은 현재 설정에 적용되지 않는다.
 
-중요한 규칙:
-
-```text
-월드 좌표를 한 번 저장한 MoveTo
-X
-
-현재 DeckWaypoint의 live transform 추적
-O
-```
-
-움직이는 배에서는 시작 시 계산한 World Vector가 곧 오래된 위치가 되므로,
-Deck 이동 Task는 Waypoint의 최신 Ship-relative 위치를 계속 조회해야 한다.
-
----
-
-## 4. Deck Waypoint Graph
-
-Waypoint는 별도 Actor가 아니라 `AEnemyShip` 내부의 `DeckWaypointComponent`다.
-
-각 Point는 핵심적으로 다음 정보를 가진다.
-
-```text
-WaypointId
-LinkedWaypointIds
-CanSpawn
-CanPatrol
-CanUseInCombat
-```
-
-### ID / Link 계약
-
-- Point ID는 함선 내부에서 고유해야 한다.
-- 링크는 실제 이동 가능한 이웃만 연결한다.
-- 이동 가능한 관계라면 기본적으로 양방향 링크를 유지한다.
-- Spawn Point는 안전한 위치이며 Combat 사용 가능 상태와 유효한 연결을 가져야 한다.
-
-자동 생성 Point와 수동 Point를 함께 사용할 수 있지만,
-최종 이동 그래프는 반드시 Validation을 통과해야 한다.
-
----
-
-## 5. Navigation 책임 분리
-
-Deck 이동은 세 계층으로 분리한다.
-
-### `UDeckNavigationComponent`
-
-```text
-EnemyShip 단위
--> Ship-local Waypoint Graph 관리
--> 그래프 연결 / 경로 탐색
-```
-
-### `UDeckEnemyNavigationComponent`
-
-```text
-Enemy 단위
--> 현재 이동 상태
--> Combat 후보 산출
--> Target 변화에 따른 재탐색
-```
-
-### BT Tasks
-
-```text
-Select Deck Waypoint
--> 목적/Role에 맞는 경로와 목표 선택
-
-Move To Live Deck Waypoint
--> 선택된 경로를 따라 live Point 추적
-```
-
-즉:
-
-```text
-Graph 자체
-!=
-Enemy별 전술 판단
-!=
-실제 이동 Task
-```
-
-로 책임을 분리한다.
-
----
-
-## 6. Spawn / Reservation 구조
-
-`UDeckEnemySpawnerComponent`가 서버에서 다음 상태를 단독 관리한다.
-
-```text
-Enemy Pool
-Spawn Plan
-Waypoint Occupancy
-Next-hop Reservation
-Final Combat Point Claim
-```
-
-Spawn Plan:
-
-```text
-Enemy Class + Spawn Point Id
-```
-
-를 Enemy 한 명당 하나씩 지정한다.
-
-지정한 Point를 사용할 수 없다고 임의의 다른 Point로 대체하지 않는다.
-
-### Point 경쟁 방지
-
-여러 Enemy가 같은 위치를 선택하는 문제는 다음처럼 분리한다.
-
-```text
-Final Combat Point
--> Soft Claim
-
-다음 이동 Point
--> Hard Reservation
-
-실제 도착
--> Occupancy로 Commit
-```
-
-전체 경로를 한 번에 예약하지 않아 서로 다른 AI의 교차 경로가 장시간 막히는 것을 줄인다.
-
-이동 실패, BT Abort, 사망, Pool 반환 시 관련 Reservation / Claim을 함께 해제한다.
-
----
-
-## 7. Passive Behavior
-
-Deck 전용 Passive Subtree의 기본 형태:
-
-```text
-Select Deck Waypoint
-  Selection Mode = Patrol
-        |
-        v
-Move To Live Deck Waypoint
-        |
-        v
-Wait At Deck Waypoint
-        |
-        `-> 반복
-```
-
-Patrol은 `CanPatrol` Point만 사용한다.
-
-일반 NavMesh `Move To(Vector)`가 아니라 Deck 전용 live waypoint 이동을 사용한다.
-
----
-
-## 8. Combat Behavior
-
-Deck Combat의 기본 구조:
-
-```text
-Root Selector
-├─ Release-LOS Reposition
-├─ Attack
-└─ Normal Reposition
-```
-
-`Release-LOS Reposition`은 원거리 공격 Montage의 발사 Notify 시점에 LOS가
-막힌 경우에만 활성화되는 갑판형 원거리 적 전용 분기다.
-
-```text
-Sequence  [Has Deck Release LOS Reposition, TargetActor]
-├─ Select Deck Waypoint
-│    Selection Mode = ReleaseLineOfSightReposition
-└─ Move To Live Deck Waypoint
-```
-
-이 분기는 Attack보다 높은 우선순위에 둔다. Decorator의 `Observer Aborts`는
-`None`으로 둔다. 이동 목적지는 현재 Point에 직접 연결된 Combat Point 중에서
-선택하며, 직전에 지나온 Point는 제외한다. 후보 Point별 LOS 검사는 수행하지 않는다.
-
-후보 Point가 잠시 모두 점유된 상황에서도 공격 분기로 바로 내려가지 않게 하려면
-다음과 같이 짧은 재시도 대기를 둔다.
-
-```text
-Sequence  [Has Deck Release LOS Reposition]
-└─ Selector
-   ├─ Sequence
-   │  ├─ Select Deck Waypoint (ReleaseLineOfSightReposition)
-   │  └─ Move To Live Deck Waypoint
-   └─ Wait (0.2s)
-```
-
-이동은 목적지까지 강제되지 않는다. `Move To Live Deck Waypoint`가 이동 중 LOS
-회복을 확인하면 기존과 동일하게 이동을 끝내고 Root를 다시 평가하여 Attack으로
-전환한다. 목적지 도착, 이동 실패, Abort, 사망 또는 Pool 복귀 시 요청은 제거된다.
-
-### Attack
-
-```text
-Can Attack
--> Set Focus(TargetActor)
--> 역할별 Attack
-```
-
-공격 가능한 상태가 가장 높은 우선순위다.
-
-### Reposition
-
-```text
-Select Deck Waypoint
-  Selection Mode = Combat
--> Move To Live Deck Waypoint
-```
-
-이동 중에도 공격 가능 여부를 다시 확인한다.
-
-```text
-이동 중 Can Attack = true
--> 이동 종료
--> 다음 BT 평가
--> Attack Branch
-```
-
-Target이 크게 움직이거나 기존 경로가 더 이상 유효하지 않으면 다시 Combat Point를 선택한다.
-
----
-
-## 9. Base Enemy 구조와의 관계
-
-DeckEnemy가 새로 구현할 필요가 없는 것:
-
-```text
-EEnemyAIState
-Sight / Hearing / Damage
-TargetActor
-BT_EnemyBase State Router
-Gameplay Ability
-Weapon
-Health / Death
-```
-
-DeckEnemy가 특화해야 하는 것:
-
-```text
-Passive 이동
-Combat Reposition
-Ship-local Waypoint
-Pool / Spawn
-Point Reservation
-Moving Deck Movement
-```
-
-따라서 구조적으로는:
-
-```text
-Base Enemy
-+ Deck 전용 Navigation
-+ Deck 전용 Passive / Combat Subtree
-```
-
-라고 이해하면 된다.
-
----
-
-## 10. Pool & Network 정책
-
-DeckEnemy Pool은 서버에서 미리 Actor를 준비하고 필요할 때 활성화한다.
-
-비활성 상태에서는 불필요한:
-
-```text
-Tick
-Collision
-Brain
-Movement Update
-```
-
-를 정지시키고 Dormancy를 사용할 수 있다.
-
-네트워크에서 복제하는 것은 주로:
-
-```text
-활성 Enemy Actor 상태
-현재 Waypoint 관련 최소 상태
-CharacterMovement 결과
-```
-
-이다.
-
-복제하지 않는 것:
-
-```text
-AI Controller
-Blackboard
-Behavior Tree
-Waypoint Graph 자체
-Reservation / Claim 내부 상태
-```
-
-즉 모든 AI와 경로 판단은 서버에서 실행하고,
-Client는 최종 Actor 이동과 Gameplay 결과를 받는다.
-
----
-
-## 11. 현재 BP_EnemyShip Waypoint 상태 주의
-
-제공된 `BP_EnemyShip` snapshot 기준으로 현재 저장된 Waypoint에는 정리가 필요한 부분이 있다.
-
-- 수동 Point 25개가 모두 `WaypointId = 0`
-- 수동 Point의 `LinkedWaypointIds`가 비어 있음
-- 자동 생성 Point 중 `10060`, `10120`은 고립 상태
-
-따라서 현재 snapshot 그대로라면 수동 Point는 고유 ID / 링크 계약을 만족하지 않는다.
-
-DeckEnemy 시스템을 실제 적용하기 전:
-
-```text
-Unique Waypoint ID
--> Bidirectional Link
--> Spawn / Patrol / Combat Flag
--> Isolated Point 제거
-```
-
-순으로 그래프를 정리하는 것이 필요하다.
-
----
-
-## 12. 핵심 구조 요약
-
-```text
-Base Enemy
-        |
-        v
-ADeckEnemy
-        |
-        +----------------------+
-        |                      |
-        v                      v
-Deck Navigation         DeckEnemy Spawner
-        |                      |
- Ship-local Graph       Pool / Reservation
-        |                      |
-        +----------+-----------+
-                   |
-                   v
-          Deck Behavior Tree
-          ├─ Patrol
-          ├─ Attack
-          └─ Combat Reposition
-                   |
-                   v
-       CharacterMovement on ShipDeckMesh
-```
-
-DeckEnemy의 핵심은 새로운 공격 시스템을 만드는 것이 아니라,
-
-**기존 Enemy AI를 유지한 채, 움직이는 함선에서 Spawn·Waypoint·경로·Point 경쟁을 안정적으로 처리하는 Deck 전용 이동 계층을 추가하는 것**이다.
+현재 Editor 대상 빌드는 성공했다. 생명주기 변경의 실제 PIE·멀티플레이·저장 복원은 남은 검증이며 [검증 가이드](Deck_Enemy_Spawn_Refactoring_Editor_Test_Guide.md)에 절차를 기록한다.

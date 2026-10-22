@@ -237,8 +237,8 @@ void USWBuoyancyComponent::MonitorChestLaunch(UPrimitiveComponent* Body, float D
 	{
 		NextLaunchLogTime = Now + 10.0;
 		++ChestDiagnosticRequest;
-		UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-REQUEST] Actor=%s Request=%u GTSequence=%u World=%.6f"),
-			*GetOwner()->GetName(), ChestDiagnosticRequest, ChestDiagnosticSequence + 1, Now);
+		// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-REQUEST] Actor=%s Request=%u GTSequence=%u World=%.6f"),
+			// *GetOwner()->GetName(), ChestDiagnosticRequest, ChestDiagnosticSequence + 1, Now);
 		for (const UWaterBodyComponent* WaterBody : WaterBodies)
 		{
 			if (!IsValid(WaterBody) || WaterBody->GetPathName() != Current.Solve.WaterBodyName) continue;
@@ -253,10 +253,10 @@ void USWBuoyancyComponent::MonitorChestLaunch(UPrimitiveComponent* Body, float D
 					Plane.GetWaterSurfaceDepth(), Current.Solve.WaveReferenceTime, Normal);
 				const float AtServerNow = Waves->GetWaveHeightAtPosition(Plane.GetWaterSurfaceLocation(),
 					Plane.GetWaterSurfaceDepth(), static_cast<float>(Current.Solve.ServerTimeSeconds), Normal);
-				UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-WAVE-COMPARE] Actor=%s Request=%u PlaneZ=%.3f Depth=%.3f ReferenceTime=%.6f EffectiveTime=%.6f ServerNow=%.6f RawAtReference=%.3f RawAtServerNow=%.3f RawHeightDifference=%.3f (same_position_depth_before_attenuation)"),
-					*GetOwner()->GetName(), ChestDiagnosticRequest, Plane.GetWaterSurfaceLocation().Z,
-					Plane.GetWaterSurfaceDepth(), Current.Solve.WaveReferenceTime, Current.Solve.EffectiveWaveTime,
-					Current.Solve.ServerTimeSeconds, AtReference, AtServerNow, AtServerNow - AtReference);
+				// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-WAVE-COMPARE] Actor=%s Request=%u PlaneZ=%.3f Depth=%.3f ReferenceTime=%.6f EffectiveTime=%.6f ServerNow=%.6f RawAtReference=%.3f RawAtServerNow=%.3f RawHeightDifference=%.3f (same_position_depth_before_attenuation)"),
+					// *GetOwner()->GetName(), ChestDiagnosticRequest, Plane.GetWaterSurfaceLocation().Z,
+					// Plane.GetWaterSurfaceDepth(), Current.Solve.WaveReferenceTime, Current.Solve.EffectiveWaveTime,
+					// Current.Solve.ServerTimeSeconds, AtReference, AtServerNow, AtServerNow - AtReference);
 			}
 		}
 		TInlineComponentArray<UActorComponent*> Components(GetOwner());
@@ -264,28 +264,28 @@ void USWBuoyancyComponent::MonitorChestLaunch(UPrimitiveComponent* Body, float D
 		{
 			if (Component->IsA<UBuoyancyComponent>() || Component->IsA<USWBuoyancyComponent>())
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-WRITER] Actor=%s Component=%s Class=%s Active=%d Tick=%d"),
-					*GetOwner()->GetName(), *Component->GetName(), *Component->GetClass()->GetName(),
-					Component->IsActive(), Component->IsComponentTickEnabled());
+				// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-WRITER] Actor=%s Component=%s Class=%s Active=%d Tick=%d"),
+					// *GetOwner()->GetName(), *Component->GetName(), *Component->GetClass()->GetName(),
+					// Component->IsActive(), Component->IsComponentTickEnabled());
 			}
 		}
-		UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH] Actor=%s Class=%s SpawnOwner=%s Time=%.3f Age=%.3f Reasons=%u (1=Vz,2=DeltaVz,4=UnexplainedDeltaVz,8=WaterJump,16=Force) Scale=%s Mass=%.2f Gravity=%.1f DeltaVz=%.1f ExpectedDeltaVz=%.1f WaterDelta=%.1f Pontoons=%d Coeff=%.3f Deep=%.2f Damp=%.1f Damp2=%.2f MaxForce=%.1f LinearDamp=%.2f AngularDamp=%.2f"),
-			*GetOwner()->GetPathName(), *GetOwner()->GetClass()->GetPathName(), *GetNameSafe(GetOwner()->GetOwner()),
-			Now, GetOwner()->GetGameTimeSinceCreation(), Reasons, *Body->GetComponentScale().ToString(), Mass, Gravity,
-			DeltaV, ExpectedDeltaV, WaterDelta, Pontoons.Num(), ForceSettings.BuoyancyCoefficient,
-			ForceSettings.DeepWaterBuoyancyMultiplier, ForceSettings.BuoyancyDamp, ForceSettings.BuoyancyDamp2,
-			ForceSettings.MaxBuoyantForce, Body->GetLinearDamping(), Body->GetAngularDamping());
+		// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH] Actor=%s Class=%s SpawnOwner=%s Time=%.3f Age=%.3f Reasons=%u (1=Vz,2=DeltaVz,4=UnexplainedDeltaVz,8=WaterJump,16=Force) Scale=%s Mass=%.2f Gravity=%.1f DeltaVz=%.1f ExpectedDeltaVz=%.1f WaterDelta=%.1f Pontoons=%d Coeff=%.3f Deep=%.2f Damp=%.1f Damp2=%.2f MaxForce=%.1f LinearDamp=%.2f AngularDamp=%.2f"),
+			// *GetOwner()->GetPathName(), *GetOwner()->GetClass()->GetPathName(), *GetNameSafe(GetOwner()->GetOwner()),
+			// Now, GetOwner()->GetGameTimeSinceCreation(), Reasons, *Body->GetComponentScale().ToString(), Mass, Gravity,
+			// DeltaV, ExpectedDeltaV, WaterDelta, Pontoons.Num(), ForceSettings.BuoyancyCoefficient,
+			// ForceSettings.DeepWaterBuoyancyMultiplier, ForceSettings.BuoyancyDamp, ForceSettings.BuoyancyDamp2,
+			// ForceSettings.MaxBuoyantForce, Body->GetLinearDamping(), Body->GetAngularDamping());
 		const auto LogSample = [this](const TCHAR* Phase, const FChestLaunchSample& Sample)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-CLOCK] Actor=%s Phase=%s World=%.6f Server=%.6f WaveReference=%.6f EffectiveWave=%.6f WaveClass=%s"),
-				*GetOwner()->GetName(), Phase, Sample.Solve.WorldTimeSeconds, Sample.Solve.ServerTimeSeconds,
-				Sample.Solve.WaveReferenceTime, Sample.Solve.EffectiveWaveTime, *Sample.Solve.WaveClass);
-			UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-SAMPLE] Actor=%s Phase=%s Time=%.3f Dt=%.4f Pos=%s Vel=%s Water=%s Found=%d Height=%.1f Pontoon=%s Immersion=%.1f RelativeVz=%.1f ForceZ=%.1f DampingForce=%.1f Bodies=%d"),
-				*GetOwner()->GetName(), Phase, Sample.Solve.WorldTimeSeconds, Sample.DeltaTime,
-				*Sample.Location.ToString(), *Sample.Velocity.ToString(), *Sample.Solve.WaterBodyName,
-				Sample.Solve.bWaterSurfaceFound, Sample.Solve.WaterHeight, *Sample.Solve.PontoonWorldPosition.ToString(),
-				Sample.Solve.ImmersionDepth, Sample.Solve.RelativeVelocityZ, Sample.Solve.BuoyantForceZ,
-				Sample.Solve.DampingForce, Sample.Solve.WaterBodyCount);
+			// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-CLOCK] Actor=%s Phase=%s World=%.6f Server=%.6f WaveReference=%.6f EffectiveWave=%.6f WaveClass=%s"),
+				// *GetOwner()->GetName(), Phase, Sample.Solve.WorldTimeSeconds, Sample.Solve.ServerTimeSeconds,
+				// Sample.Solve.WaveReferenceTime, Sample.Solve.EffectiveWaveTime, *Sample.Solve.WaveClass);
+			// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-SAMPLE] Actor=%s Phase=%s Time=%.3f Dt=%.4f Pos=%s Vel=%s Water=%s Found=%d Height=%.1f Pontoon=%s Immersion=%.1f RelativeVz=%.1f ForceZ=%.1f DampingForce=%.1f Bodies=%d"),
+				// *GetOwner()->GetName(), Phase, Sample.Solve.WorldTimeSeconds, Sample.DeltaTime,
+				// *Sample.Location.ToString(), *Sample.Velocity.ToString(), *Sample.Solve.WaterBodyName,
+				// Sample.Solve.bWaterSurfaceFound, Sample.Solve.WaterHeight, *Sample.Solve.PontoonWorldPosition.ToString(),
+				// Sample.Solve.ImmersionDepth, Sample.Solve.RelativeVelocityZ, Sample.Solve.BuoyantForceZ,
+				// Sample.Solve.DampingForce, Sample.Solve.WaterBodyCount);
 		};
 		for (int32 Index = 0; Index < LaunchHistoryCount; ++Index)
 		{
@@ -295,9 +295,9 @@ void USWBuoyancyComponent::MonitorChestLaunch(UPrimitiveComponent* Body, float D
 		LogSample(TEXT("Trigger"), Current);
 		for (const FSWBuoyancyPontoon& Pontoon : Pontoons)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-PONTOON] Actor=%s Name=%s Radius=%.1f Offset=%s ForceScale=%.2f"),
-				*GetOwner()->GetName(), *Pontoon.Name.ToString(), Pontoon.Radius,
-				*Pontoon.RelativeLocation.ToString(), Pontoon.ForceScale);
+			// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-PONTOON] Actor=%s Name=%s Radius=%.1f Offset=%s ForceScale=%.2f"),
+				// *GetOwner()->GetName(), *Pontoon.Name.ToString(), Pontoon.Radius,
+				// *Pontoon.RelativeLocation.ToString(), Pontoon.ForceScale);
 		}
 	}
 	if (!bContinuous)
@@ -339,19 +339,19 @@ void USWBuoyancyComponent::UpdateChestPhysicsDiagnostic(UPrimitiveComponent* Bod
 	Input->EffectiveWaveTime = LastRuntimeDiagnostic.EffectiveWaveTime;
 	while (auto Output = ChestPhysicsDiagnostic->PopOutputData_External())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-PT] Actor=%s Request=%u PhysicsTrigger=%d TriggerSimTime=%.6f Samples=%d"),
-			*GetOwner()->GetPathName(), Output->Request, Output->bPhysicsTrigger, Output->TriggerTime, Output->Count);
+		// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-PT] Actor=%s Request=%u PhysicsTrigger=%d TriggerSimTime=%.6f Samples=%d"),
+			// *GetOwner()->GetPathName(), Output->Request, Output->bPhysicsTrigger, Output->TriggerTime, Output->Count);
 		for (int32 Index = 0; Index < Output->Count; ++Index)
 		{
 			const FChestLaunchPhysicsSample& Sample = Output->Samples[Index];
-			UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-PT-SAMPLE] Actor=%s Frame=%d SimTime=%.6f Dt=%.6f GTSequence=%u GTWorld=%.6f GTServer=%.6f GTForceZ=%.1f GTWaterHeight=%.3f WaveReference=%.6f EffectiveWave=%.6f Mass=%.2f PosZ=%.3f BeforeVz=%.3f IntegratedVz=%.3f AfterVz=%.3f AppliedAccelerationZ=%.3f GravityZ=%.1f ForceStageDeltaVz=%.3f SolveStageDeltaVz=%.3f"),
-				*GetOwner()->GetName(), Sample.Frame, Sample.Time, Sample.Dt, Sample.Input.Sequence,
-				Sample.Input.WorldTime, Sample.Input.ServerTime, Sample.Input.ForceZ,
-				Sample.Input.WaterHeight, Sample.Input.WaveReferenceTime, Sample.Input.EffectiveWaveTime, Sample.Mass,
-				Sample.Position.Z, Sample.BeforeVelocity.Z, Sample.IntegratedVelocity.Z, Sample.AfterVelocity.Z,
-				Sample.Acceleration.Z, Sample.Input.GravityZ,
-				Sample.IntegratedVelocity.Z - Sample.BeforeVelocity.Z,
-				Sample.AfterVelocity.Z - Sample.IntegratedVelocity.Z);
+			// UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-PT-SAMPLE] Actor=%s Frame=%d SimTime=%.6f Dt=%.6f GTSequence=%u GTWorld=%.6f GTServer=%.6f GTForceZ=%.1f GTWaterHeight=%.3f WaveReference=%.6f EffectiveWave=%.6f Mass=%.2f PosZ=%.3f BeforeVz=%.3f IntegratedVz=%.3f AfterVz=%.3f AppliedAccelerationZ=%.3f GravityZ=%.1f ForceStageDeltaVz=%.3f SolveStageDeltaVz=%.3f"),
+				// *GetOwner()->GetName(), Sample.Frame, Sample.Time, Sample.Dt, Sample.Input.Sequence,
+				// Sample.Input.WorldTime, Sample.Input.ServerTime, Sample.Input.ForceZ,
+				// Sample.Input.WaterHeight, Sample.Input.WaveReferenceTime, Sample.Input.EffectiveWaveTime, Sample.Mass,
+				// Sample.Position.Z, Sample.BeforeVelocity.Z, Sample.IntegratedVelocity.Z, Sample.AfterVelocity.Z,
+				// Sample.Acceleration.Z, Sample.Input.GravityZ,
+				// Sample.IntegratedVelocity.Z - Sample.BeforeVelocity.Z,
+				// Sample.AfterVelocity.Z - Sample.IntegratedVelocity.Z);
 		}
 	}
 }

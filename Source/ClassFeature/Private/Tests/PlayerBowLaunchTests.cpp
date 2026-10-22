@@ -17,6 +17,7 @@
 #include "Item/Projectiles/PlayerArrowProjectile.h"
 #include "Settings_Item.h"
 #include "Ship.h"
+#include "UObject/UnrealType.h"
 
 namespace PlayerBowLaunchTests
 {
@@ -119,15 +120,26 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerBowIndependentFlightTest,
 bool FPlayerBowIndependentFlightTest::RunTest(const FString& Parameters)
 {
 	PlayerBowLaunchTests::FWorldScope Scope;
+	APlayerArrowProjectile* Defaults = GetMutableDefault<APlayerArrowProjectile>();
+	FFloatProperty* SpeedProperty = FindFProperty<FFloatProperty>(AArrowProjectile::StaticClass(), TEXT("InitialLaunchSpeed"));
+	if (!TestNotNull(TEXT("Arrow launch speed is exposed as an editor property"), SpeedProperty)) return false;
+	float& AuthoredSpeed = *SpeedProperty->ContainerPtrToValuePtr<float>(Defaults);
+	TGuardValue<float> SpeedGuard(AuthoredSpeed, 0.0f);
+	TestEqual(TEXT("Zero preserves the bow's existing draw speed"), Defaults->ResolveInitialLaunchSpeed(4000.0f), 4000.0f);
+	AuthoredSpeed = 6200.0f;
 	AShip* Ship = Scope.MakeShip();
 	ACharacter* Shooter = Scope.World->SpawnActor<ACharacter>();
 	if (!TestNotNull(TEXT("Ship"), Ship) || !TestNotNull(TEXT("Shooter"), Shooter)) return false;
 	Shooter->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	Shooter->SetBase(Ship->GetDeckMeshComplex());
 	Ship->BuoyancyRoot->SetPhysicsLinearVelocity(FVector(2000, 500, 100));
-	const auto Input = PlayerBowLaunchTests::MakeInput(Ship->GetActorLocation() + FVector(0, 0, 600));
+	auto Input = PlayerBowLaunchTests::MakeInput(Ship->GetActorLocation() + FVector(0, 0, 600));
+	Input.Speed = Defaults->ResolveInitialLaunchSpeed(Input.Speed);
 	FProjectileShotSnapshot Shot;
 	if (!TestTrue(TEXT("Ship shot prepares"), PlayerBowShotPreparation::Prepare(Shooter, Input, Shot))) return false;
+	TestTrue(TEXT("Authored launch speed reaches the snapshot before ship inertia is added"),
+		FMath::IsNearlyEqual(Shot.Input.Speed, 6200.0)
+		&& (Shot.WorldVelocity - Shot.InheritedVelocity).Equals(Shot.Input.AimDirection * 6200.0, 0.01));
 
 	UAbilitySystemComponent* ASC = NewObject<UAbilitySystemComponent>(Shooter);
 	Shooter->AddInstanceComponent(ASC);

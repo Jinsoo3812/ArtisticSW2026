@@ -57,8 +57,8 @@ bool FSWKelvinWakeAtlas::Initialize()
 		const FString Path = FPaths::Combine(FPaths::ProjectContentDir(), ProfileFileNames[Index]);
 		if (!FFileHelper::LoadFileToArray(Payloads[Index], *Path) || Payloads[Index].Num() != GoldenBytes)
 		{
-			UE_LOG(LogSWKelvinGolden, Error, TEXT("M7 Golden Image load failed for profile %d: %s (%d/%lld bytes)"),
-				Index, *Path, Payloads[Index].Num(), GoldenBytes);
+			// UE_LOG(LogSWKelvinGolden, Error, TEXT("M7 Golden Image load failed for profile %d: %s (%d/%lld bytes)"),
+				// Index, *Path, Payloads[Index].Num(), GoldenBytes);
 			Payloads[Index].Reset();
 			ProfileReady[Index] = false;
 		}
@@ -70,9 +70,9 @@ bool FSWKelvinWakeAtlas::Initialize()
 	}
 
 	bReady = (LoadedCount > 0);
-	UE_LOG(LogSWKelvinGolden, Display,
-		TEXT("M7 Multi-Profile Golden Images loaded: %d/%d profiles ready (%dx%d RGBA16F Normalized)"),
-		LoadedCount, ProfileCount, TextureWidth, TextureHeight);
+	// UE_LOG(LogSWKelvinGolden, Display,
+		// TEXT("M7 Multi-Profile Golden Images loaded: %d/%d profiles ready (%dx%d RGBA16F Normalized)"),
+		// LoadedCount, ProfileCount, TextureWidth, TextureHeight);
 	return bReady;
 }
 

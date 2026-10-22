@@ -20,6 +20,8 @@ public:
 
 	/** Whether an already active atomic action may outlive the Behavior Tree branch that started it. */
 	virtual bool ShouldSurviveBehaviorTreeAbort() const { return false; }
+	/** A committed mobility action can retain its reserved destination after a BT abort. */
+	virtual bool OwnsPreselectedDestinationAfterCommit() const { return false; }
 
 	// Ability가 활성화될 때 호출되는 진입점입니다. 공통 시작 로직을 넣는 위치입니다.
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
