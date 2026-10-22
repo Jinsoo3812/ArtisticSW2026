@@ -201,19 +201,19 @@ void FShipCrewChestIntegrationTest::GetTests(TArray<FString>& Names, TArray<FStr
 
 bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 {
-	// Known unrelated authored recipe errors emitted once when item data is first loaded.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 0);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	const bool bPooledPreparation = Parameters == TEXT("Crew.PooledDeckPreparation");
 	TSharedPtr<ShipCrewChestIntegration::FFixture> FixturePtr = MakeShared<ShipCrewChestIntegration::FFixture>(bPooledPreparation);
 	ShipCrewChestIntegration::FFixture& Fixture = *FixturePtr;
 	if (bPooledPreparation)
 	{
 		UDeckEnemySpawnerComponent* Spawner = Fixture.Ship->GetDeckEnemySpawnerComponent();
-		TestFalse(TEXT("Idle BeginPlay defers deck sampling"), Fixture.Ship->GetDeckWalkAreaComponent()->IsReady());
+		TestTrue(TEXT("Idle reserve builds its reusable deck graph once"), Fixture.Ship->GetDeckWalkAreaComponent()->IsReady());
+		const int32 InitialDeckRevision = Fixture.Ship->GetDeckWalkAreaComponent()->GetRevision();
 		TestEqual(TEXT("Idle BeginPlay does not allocate crew before the profile"), Spawner->GetPooledEnemyCount(), 0);
 		FString Error;
 		if (!TestTrue(TEXT("Restore preparation builds navigation without creating crew"), Fixture.Ship->PrepareBundleDeck(false, Error))) return false;
+		TestEqual(TEXT("Restore preparation reuses the initial reserve graph"), Fixture.Ship->GetDeckWalkAreaComponent()->GetRevision(), InitialDeckRevision);
 		TestEqual(TEXT("Restore preparation preserves the empty saved crew state"), Spawner->GetPooledEnemyCount(), 0);
 		Fixture.Ship->PrepareFreshBundleEncounter(Fixture.Ship->GetActorTransform());
 		if (!TestTrue(TEXT("Fresh preparation succeeds while idle"), Fixture.Ship->PrepareBundleDeck(true, Error))) return false;

@@ -34,6 +34,11 @@ bool FCraftingPipelineTest::RunTest(const FString& Parameters)
 		GEngine->DestroyWorldContext(World);
 		return false;
 	}
+	TArray<FString> AuthoredErrors;
+	TestTrue(TEXT("Production crafting recipes include valid campaign quest identities"),
+		ItemSubsystem->ValidateCraftingRecipes(AuthoredErrors));
+	const FCraftingRecipeRow* AuthoredQuestRecipe = ItemSubsystem->FindCraftingRecipe(TEXT("QuestItem"));
+	TestNotNull(TEXT("Production cipher recipe exists"), AuthoredQuestRecipe);
 	ItemSubsystem->ClearCraftingRecipesForTesting();
 
 	FCraftingRecipeRow BasicRecipe;
@@ -162,6 +167,36 @@ bool FCraftingPipelineTest::RunTest(const FString& Parameters)
 	OversizedRequest.CraftCount = 1;
 	Crafting->RequestCraft(OversizedRequest);
 	TestEqual(TEXT("Server rejects oversized recipes"), Crafting->GetLastCraftingResult().Reason, ECraftingFailureReason::InvalidRecipe);
+
+	// The campaign uses Item.Quest identities through the same atomic inventory transaction.
+	ItemSubsystem->ClearCraftingRecipesForTesting();
+	FCraftingRecipeRow QuestRecipe;
+	QuestRecipe.ResultItemTag = Item_Quest_DecipheredCipher;
+	FCraftingItemStack CipherBook;
+	CipherBook.ItemTag = Item_Quest_CipherBook;
+	QuestRecipe.Ingredients.Add(CipherBook);
+	FCraftingItemStack JapaneseCipher;
+	JapaneseCipher.ItemTag = Item_Quest_JapaneseCipher;
+	QuestRecipe.Ingredients.Add(JapaneseCipher);
+	ItemSubsystem->AddCraftingRecipeForTesting(TEXT("Test_Cipher"), QuestRecipe);
+	TestTrue(TEXT("Campaign quest recipe validates"), ItemSubsystem->ValidateCraftingRecipes(ValidationErrors));
+	Inventory->AddItem(Item_Quest_CipherBook, 1);
+	Inventory->AddItem(Item_Quest_JapaneseCipher, 1);
+	FCraftingRequest QuestRequest;
+	QuestRequest.RequestId = FGuid::NewGuid();
+	QuestRequest.RecipeId = TEXT("Test_Cipher");
+	QuestRequest.CraftCount = 1;
+	Crafting->RequestCraft(QuestRequest);
+	TestEqual(TEXT("Quest craft consumes the cipher book"), Inventory->GetItemCount(Item_Quest_CipherBook), 0);
+	TestEqual(TEXT("Quest craft consumes the Japanese cipher"), Inventory->GetItemCount(Item_Quest_JapaneseCipher), 0);
+	TestEqual(TEXT("Quest craft grants the deciphered campaign item"), Inventory->GetItemCount(Item_Quest_DecipheredCipher), 1);
+
+	QuestRecipe.ResultItemTag = State_Invulnerable;
+	QuestRecipe.RequiredRecipeItemTag = State_Invulnerable;
+	QuestRecipe.Ingredients[0].ItemTag = State_Invulnerable;
+	ItemSubsystem->AddCraftingRecipeForTesting(TEXT("Test_Cipher"), QuestRecipe);
+	TestFalse(TEXT("State tags cannot act as inventory identities"), ItemSubsystem->ValidateCraftingRecipes(ValidationErrors));
+	TestEqual(TEXT("Result, requirement and ingredient all enforce the identity contract"), ValidationErrors.Num(), 3);
 
 	ItemSubsystem->ClearCraftingRecipesForTesting();
 	World->DestroyWorld(false);

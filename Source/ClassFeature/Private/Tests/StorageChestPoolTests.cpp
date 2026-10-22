@@ -17,8 +17,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FStorageChestPoolLifecycleTest,
 
 bool FStorageChestPoolLifecycleTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 0);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("StorageChestPoolTestWorld"));
 	FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
 	Context.SetCurrentWorld(World);
@@ -144,8 +143,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FStorageChestPoolClassBudgetTest,
 
 bool FStorageChestPoolClassBudgetTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 0);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("StorageChestClassBudgetTestWorld"));
 	FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
 	Context.SetCurrentWorld(World);

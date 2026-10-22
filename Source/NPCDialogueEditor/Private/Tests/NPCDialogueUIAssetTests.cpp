@@ -20,13 +20,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FNPCDialogueUIAssetTest::RunTest(const FString& Parameters)
 {
 	const TCHAR* MainObjectPath =
-		TEXT("/Game/New/NPC/Blueprints/UI/WBP_NPCDialogue.WBP_NPCDialogue");
+		TEXT("/Game/Blueprints/NPC/Blueprints/UI/WBP_NPCDialogue.WBP_NPCDialogue");
 	const TCHAR* MainClassPath =
-		TEXT("/Game/New/NPC/Blueprints/UI/WBP_NPCDialogue.WBP_NPCDialogue_C");
+		TEXT("/Game/Blueprints/NPC/Blueprints/UI/WBP_NPCDialogue.WBP_NPCDialogue_C");
 	const TCHAR* ReplyObjectPath =
-		TEXT("/Game/New/NPC/Blueprints/UI/WBP_NPCDialogueReply.WBP_NPCDialogueReply");
+		TEXT("/Game/Blueprints/NPC/Blueprints/UI/WBP_NPCDialogueReply.WBP_NPCDialogueReply");
 	const TCHAR* ReplyClassPath =
-		TEXT("/Game/New/NPC/Blueprints/UI/WBP_NPCDialogueReply.WBP_NPCDialogueReply_C");
+		TEXT("/Game/Blueprints/NPC/Blueprints/UI/WBP_NPCDialogueReply.WBP_NPCDialogueReply_C");
 
 	UWidgetBlueprint* MainBlueprint = LoadObject<UWidgetBlueprint>(nullptr, MainObjectPath);
 	UWidgetBlueprint* ReplyBlueprint = LoadObject<UWidgetBlueprint>(nullptr, ReplyObjectPath);
@@ -122,20 +122,23 @@ bool FNPCDialogueUIAssetTest::RunTest(const FString& Parameters)
 			MainCDO->GetReplyWidgetClass().Get(), ReplyClass);
 	}
 
-	UBlueprint* PlayerBlueprint = LoadObject<UBlueprint>(
-		nullptr, TEXT("/Game/Blueprints/Player/BP_Player.BP_Player"));
-	TestNotNull(TEXT("BP_Player loads"), PlayerBlueprint);
-	if (PlayerBlueprint && PlayerBlueprint->GeneratedClass && MainClass)
+	for (const TCHAR* PlayerPath : {
+		TEXT("/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man"),
+		TEXT("/Game/Blueprints/Player/BP_Player_Woman.BP_Player_Woman") })
 	{
-		const AActor* PlayerCDO = Cast<AActor>(PlayerBlueprint->GeneratedClass->GetDefaultObject());
-		const UPlayerDialogueComponent* DialogueComponent = PlayerCDO
-			? PlayerCDO->FindComponentByClass<UPlayerDialogueComponent>()
-			: nullptr;
-		TestNotNull(TEXT("BP_Player owns PlayerDialogueComponent"), DialogueComponent);
-		if (DialogueComponent)
+		UBlueprint* PlayerBlueprint = LoadObject<UBlueprint>(nullptr, PlayerPath);
+		TestNotNull(FString::Printf(TEXT("Player Blueprint loads: %s"), PlayerPath), PlayerBlueprint);
+		if (PlayerBlueprint && PlayerBlueprint->GeneratedClass && MainClass)
 		{
-			TestEqual(TEXT("BP_Player is connected to WBP_NPCDialogue"),
-				DialogueComponent->GetDialogueWidgetClass().Get(), MainClass);
+			const AActor* PlayerCDO = Cast<AActor>(PlayerBlueprint->GeneratedClass->GetDefaultObject());
+			const UPlayerDialogueComponent* DialogueComponent = PlayerCDO
+				? PlayerCDO->FindComponentByClass<UPlayerDialogueComponent>() : nullptr;
+			TestNotNull(TEXT("Player owns PlayerDialogueComponent"), DialogueComponent);
+			if (DialogueComponent)
+			{
+				TestEqual(TEXT("Player is connected to WBP_NPCDialogue"),
+					DialogueComponent->GetDialogueWidgetClass().Get(), MainClass);
+			}
 		}
 	}
 

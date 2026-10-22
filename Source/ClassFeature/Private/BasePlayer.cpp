@@ -252,8 +252,10 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	if (HasAuthority() && DialogueComponent)
+	{
 		DialogueComponent->OnFinalDepartureRequested.BindUObject(this, &ABasePlayer::HandleFinalDepartureRequested);
 		DialogueComponent->OnBossQuestAccepted.BindUObject(this, &ABasePlayer::HandleBossQuestAccepted);
+	}
 	InitializeSwimmingAnimLayers();
 
 	// Apply presentation-only smoothing after Blueprint defaults are loaded.

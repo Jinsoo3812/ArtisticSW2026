@@ -68,9 +68,6 @@ bool FHitReactionAuthorityRootMotionTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// Existing item-table errors from the game-world subsystem, unrelated to movement.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	HitReactionRootMotionTests::FScopedWorld Scope;
 	if (!TestNotNull(TEXT("Test world exists"), Scope.World))
 	{
