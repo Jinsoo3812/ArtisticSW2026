@@ -5,6 +5,7 @@
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
 #include "Network/SWRoomLoadDiagnostics.h"
+#include "Network/SWRoomSaveAudit.h"
 #include "EngineUtils.h"
 #include "Engine/Level.h"
 #include "Engine/LevelStreaming.h"
@@ -19,6 +20,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "GameplayTasksComponent.h"
 #include "UObject/UnrealType.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "Serialization/MemoryReader.h"
@@ -31,7 +33,9 @@ namespace
 {
 bool IsExcluded(const AActor* Actor)
 {
-	return !Actor || Actor->IsA<AController>() || Actor->IsA<APlayerState>()
+	return !Actor || Actor->ActorHasTag(TEXT("SWEnemyShipPoolIdle"))
+		|| Actor->ActorHasTag(TEXT("SWStorageChestPoolIdle")) || Actor->ActorHasTag(TEXT("SWStorageChestPoolReleased"))
+		|| Actor->ActorHasTag(TEXT("SWEnemyShipPoolReleased")) || Actor->IsA<AController>() || Actor->IsA<APlayerState>()
 		|| Actor->IsA<AGameModeBase>() || Actor->IsA<AGameStateBase>() || Actor->IsA<AInfo>()
 		|| (Cast<APawn>(Actor) && Cast<APawn>(Actor)->IsPlayerControlled()
 			&& !Actor->FindComponentByClass<USWRoomSnapshotComponent>());
@@ -39,7 +43,8 @@ bool IsExcluded(const AActor* Actor)
 
 bool IsLevelPlacedActor(const AActor* Actor)
 {
-	return Actor && Actor->HasAnyFlags(RF_WasLoaded);
+	return Actor && (Actor->ActorHasTag(TEXT("SWEnemyShipPoolLevelOrigin"))
+		|| (Actor->HasAnyFlags(RF_WasLoaded) && !Actor->ActorHasTag(TEXT("SWEnemyShipPoolAssigned"))));
 }
 
 bool ShouldTraceRoomPhysics(const AActor* Actor)
@@ -108,6 +113,9 @@ FString GetPartitionKey(const FSWRoomDestroyedActorPartition& Partition)
 FName GetRoomComponentKey(const UActorComponent* Component)
 {
 	if (!Component) return NAME_None;
+	// A lazily created task runner has no authored identity or persistent task state.
+	// Preserve native default subobjects (including AbilitySystemComponent subclasses).
+	if (Component->IsA<UGameplayTasksComponent>() && !Component->HasAnyFlags(RF_DefaultSubObject)) return NAME_None;
 	if (Component->CreationMethod == EComponentCreationMethod::Native)
 		return Component->GetFName();
 	const FString Prefix = TEXT("SWRoomComponentId=");
@@ -190,6 +198,7 @@ void USWRoomSnapshotSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	if (UGameInstance* GameInstance = InWorld.GetGameInstance())
 		if (const USWRoomProgressSubsystem* Room = GameInstance->GetSubsystem<USWRoomProgressSubsystem>())
 			bRestoring = Room->IsHostedRoom() && !Room->IsNewRoomPending()
+				&& !Room->IsWorldRecoveryPending()
 				&& !Room->IsReturnTravelPending() && !Room->IsFinalDepartureTravelPending()
 				&& !Room->IsGameOverTravelPending();
 	SpawnHandle = InWorld.AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateUObject(this, &USWRoomSnapshotSubsystem::HandleActorSpawned));
@@ -222,6 +231,7 @@ void USWRoomSnapshotSubsystem::Deinitialize()
 	RestoreIssues.Reset();
 	bRestoring = false;
 	OnRestoreCompleted.Clear();
+	OnPrepareCapture.Clear();
 	Super::Deinitialize();
 }
 
@@ -276,8 +286,22 @@ void USWRoomSnapshotSubsystem::HandleActorSpawned(AActor* Actor)
 	if (Component->StableId.IsValid()) RegisteredActors.Add(Component->StableId, Actor);
 }
 
+void USWRoomSnapshotSubsystem::ReleaseActorForPooling(AActor* Actor)
+{
+	if (!Actor) return;
+	for (auto It = RegisteredActors.CreateIterator(); It; ++It)
+		if (It.Value().Get() == Actor) It.RemoveCurrent();
+}
+
+void USWRoomSnapshotSubsystem::ClearPooledActorTombstone(const FGuid& Id)
+{
+	DestroyedLevelActorIds.Remove(Id);
+	DestroyedActorPartitions.Remove(Id);
+}
+
 void USWRoomSnapshotSubsystem::HandleActorDestroyed(AActor* Actor)
 {
+	if (IsExcluded(Actor)) return;
 	if (bRestoring || !Actor || !GetWorld() || GetWorld()->bIsTearingDown) return;
 	const USWRoomSnapshotComponent* Component = Actor->FindComponentByClass<USWRoomSnapshotComponent>();
 	if (!Component || !Component->StableId.IsValid()) return;
@@ -413,6 +437,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			}
 			if (bCandidate)
 			{
+				SWRoomSaveAudit::RecordObject(*Actor->GetPathName(), Actor);
 				const FString CandidateKey = Actor->GetPathName() + TEXT(" | ") + Actor->GetClass()->GetPathName();
 				UnsupportedCandidates.Add(CandidateKey);
 				if (bDetailedLog) AuditRows.Add(CandidateKey + TEXT(" | Component= | Field=Actor | Reason=Persistent gameplay candidate has no room contract | Disposition=Unclassified"));
@@ -473,7 +498,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 					|| FieldName == TEXT("ActiveBombardmentClass") || FieldName == TEXT("ReplicatedState")
 					|| FieldName == TEXT("ServerPhysicsTimeOrigin") || FieldName == TEXT("ServerPhysicsStepSeconds")
 					|| FieldName == TEXT("CurrentAIPropulsionScale") || FieldName == TEXT("CurrentAITurnScale"));
-			const bool bDerived = bEngineField || (OwnerType == TEXT("EnemyShip")
+			const bool bDerived = bEngineField || (OwnerType == TEXT("StorageChest") && FieldName == TEXT("PoolAssignment")) || (OwnerType == TEXT("EnemyShip")
 				&& (FieldName == TEXT("bDistanceOptimizationDormant") || FieldName == TEXT("RuntimeState")));
 			const bool bPersisted = bSerialized || bShipPersisted || bEnemyShipPersisted || bDeckPoolPersisted;
 			const TCHAR* Disposition = bPersisted ? TEXT("Persisted") : bTransient ? TEXT("Transient")
@@ -514,6 +539,9 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoomSaveKind Kind,
 	uint64 Sequence, FString& OutError, ESWRoomCaptureFailureKind* OutFailureKind)
 {
+	const USWRoomProgressSubsystem* AuditRoom = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const FGuid AuditRoomId = AuditRoom && AuditRoom->GetActiveRoom() ? AuditRoom->GetActiveRoom()->RoomId : FGuid();
+	SWRoomSaveAudit::FScopedContext CaptureAudit(TEXT("WorldCapture"), AuditRoomId, Sequence, TEXT("World"));
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.Capture"));
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=WorldCapture Phase=Begin Sequence=%llu Kind=%s World=%s"),
 		Sequence, *UEnum::GetValueAsString(Kind), *GetNameSafe(GetWorld()));
@@ -525,6 +553,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::StateUnavailable;
 		return false;
 	}
+	OnPrepareCapture.Broadcast();
 	if (bStructuralPartitionFailure || !Audit(OutError))
 	{
 		if (bStructuralPartitionFailure) OutError = TEXT("Structural partition capture failure: ") + FString::JoinBy(FailedPartitions, TEXT(", "),
@@ -542,6 +571,8 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : RegisteredActors)
 	{
 		AActor* Actor = Pair.Value.Get();
+		SWRoomSaveAudit::FScopedContext ActorAudit(TEXT("CaptureActor"), AuditRoomId, Sequence, GetPathNameSafe(Actor));
+		SWRoomSaveAudit::RecordObject(TEXT("LiveActor"), Actor);
 		TRACE_CPUPROFILER_EVENT_SCOPE_TEXT_CONDITIONAL(SWRoomLoadDiagnostics::IsEnabled() && Actor ? *Actor->GetClass()->GetPathName() : TEXT("SnapshotActor"), SWRoomLoadDiagnostics::IsEnabled());
 		if (!Actor || Actor->IsActorBeingDestroyed())
 		{
@@ -693,6 +724,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		for (UActorComponent* Child : Actor->GetComponents())
 		{
 			if (!Child || Child == Component) continue;
+			SWRoomSaveAudit::RecordObject(*Child->GetName(), Child);
 			const bool bIndependentPhysics = Cast<UPrimitiveComponent>(Child)
 				&& Child != Actor->GetRootComponent()
 				&& CastChecked<UPrimitiveComponent>(Child)->IsSimulatingPhysics()
@@ -852,11 +884,16 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	if (!OutSnapshot.CaptureIssues.IsEmpty())
 		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=CaptureIssues Sequence=%llu Count=%d DetailedLog=%d"),
 			Sequence, OutSnapshot.CaptureIssues.Num(), SWRoomLogging::IsDetailedEnabled());
+	SWRoomSaveAudit::RecordStruct(FSWRoomWorldSnapshot::StaticStruct(), &OutSnapshot);
 	return true;
 }
 
 bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FString& OutError, bool bPartitionRestore)
 {
+	const USWRoomProgressSubsystem* AuditRoom = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const FGuid AuditRoomId = AuditRoom && AuditRoom->GetActiveRoom() ? AuditRoom->GetActiveRoom()->RoomId : FGuid();
+	SWRoomSaveAudit::FScopedContext RestoreAudit(TEXT("WorldRestore"), AuditRoomId, Snapshot.CaptureSequence, TEXT("World"));
+	SWRoomSaveAudit::RecordStruct(FSWRoomWorldSnapshot::StaticStruct(), &Snapshot);
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.Restore"));
 	if (!GetWorld() || GetWorld()->GetNetMode() == NM_Client || Snapshot.MapPath != GetMapPath(GetWorld()) || !Audit(OutError))
 	{
@@ -973,10 +1010,16 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 			*Issue.StableId.ToString(), *Issue.OwnerPath, *Issue.ClassPath.ToString(), *Issue.Domain.ToString(),
 			*Issue.FieldKey.ToString(), *Issue.Reason);
 	TSet<FGuid> SavedIds;
+	OnPrepareRestore.Broadcast(Applied, OutError);
+	if (!OutError.IsEmpty()) return false;
 	for (const FSWRoomActorRecord& Record : Applied.Actors) SavedIds.Add(Record.StableId);
+	TArray<TWeakObjectPtr<AActor>> ActorsToDestroy;
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : RegisteredActors)
-		if (AActor* Actor = Pair.Value.Get(); Actor && !IsLevelPlacedActor(Actor) && !SavedIds.Contains(Pair.Key)
-			&& (!bPartitionRestore || GetPartitionKey(Actor->GetLevel()) == PartitionRestorePackage)) Actor->Destroy();
+		if (AActor* Actor = Pair.Value.Get(); Actor && !Actor->ActorHasTag(TEXT("SWEnemyShipPoolManager"))
+			&& !IsLevelPlacedActor(Actor) && !SavedIds.Contains(Pair.Key)
+			&& (!bPartitionRestore || GetPartitionKey(Actor->GetLevel()) == PartitionRestorePackage)) ActorsToDestroy.Add(Actor);
+	for (const TWeakObjectPtr<AActor>& Actor : ActorsToDestroy)
+		if (Actor.IsValid()) Actor->Destroy();
 	TMap<FGuid, ESWRoomPersistenceClass> RestoredDestroyedClasses;
 	for (const FGuid& Id : Applied.DestroyedLevelActorIds)
 	{
@@ -1012,7 +1055,6 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 				USWRoomSnapshotComponent* Component = Actor->FindComponentByClass<USWRoomSnapshotComponent>();
 				if (Component) Component->SetRuntimeId(Record.StableId);
 				if (Component) Component->SetRuntimeOrigin(Record.CreatorId, Record.CreatorSequence);
-				NextCreatorSequence = FMath::Max(NextCreatorSequence, Record.CreatorSequence);
 				Actor->FinishSpawning(Record.WorldTransform);
 			}
 		}
@@ -1039,8 +1081,16 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 		if (!Component || Component->StableId != Record.StableId || Component->ContractVersion != Record.ContractVersion
 			|| FSoftClassPath(Actor->GetClass()) != Record.ClassPath)
 		{ OutError = TEXT("Room actor contract mismatch"); return false; }
+		// Runtime actors may already exist (subsystem managers or prepared bundles).
+		// Restore their provenance too; spawn-only assignment loses it on the next save.
+		if (Record.Origin == ESWRoomSpawnOrigin::Runtime)
+		{
+			Component->SetRuntimeOrigin(Record.CreatorId, Record.CreatorSequence);
+			NextCreatorSequence = FMath::Max(NextCreatorSequence, Record.CreatorSequence);
+		}
 		RegisteredActors.Add(Record.StableId, Actor);
 		RestoredActorsById.Add(Record.StableId, Actor);
+		SWRoomSaveAudit::FScopedContext ActorAudit(TEXT("RestoreActor"), AuditRoomId, Snapshot.CaptureSequence, Actor->GetPathName());
 		DeserializeValues(Actor, Record.SaveGameBytes);
 		if (!Record.AdapterBytes.IsEmpty())
 		{
@@ -1132,6 +1182,56 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 			*Record.StableId.ToString(), *Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString(),
 			*Record.AttachSocketName.ToString());
 	}
+	// Actor records are ordered by identity, not attachment hierarchy. Applying a
+	// child's world transform before its parent moves it a second time. Once every
+	// parent/component/attachment is restored, establish world transforms top-down.
+	TMap<FGuid, const FSWRoomActorRecord*> AttachmentRecords;
+	for (const FSWRoomActorRecord& Record : Applied.Actors) AttachmentRecords.Add(Record.StableId, &Record);
+	TMap<FGuid, int32> AttachmentDepths;
+	TArray<const FSWRoomActorRecord*> AttachedRecords;
+	for (const FSWRoomActorRecord& Record : Applied.Actors)
+	{
+		if (!Record.AttachParentId.IsValid()) continue;
+		TSet<FGuid> Visited;
+		Visited.Add(Record.StableId);
+		FGuid ParentId = Record.AttachParentId;
+		int32 Depth = 0;
+		while (ParentId.IsValid())
+		{
+			if (Visited.Contains(ParentId))
+			{
+				OutError = TEXT("Room attachment hierarchy contains a cycle");
+				return false;
+			}
+			Visited.Add(ParentId);
+			++Depth;
+			const FSWRoomActorRecord* const* ParentRecord = AttachmentRecords.Find(ParentId);
+			ParentId = ParentRecord ? (*ParentRecord)->AttachParentId : FGuid();
+		}
+		AttachmentDepths.Add(Record.StableId, Depth);
+		AttachedRecords.Add(&Record);
+	}
+	AttachedRecords.Sort([&](const FSWRoomActorRecord& A, const FSWRoomActorRecord& B)
+	{
+		return AttachmentDepths.FindChecked(A.StableId) < AttachmentDepths.FindChecked(B.StableId);
+	});
+	for (const FSWRoomActorRecord* Record : AttachedRecords)
+		if (AActor* const* Actor = RestoredActorsById.Find(Record->StableId))
+		{
+			(*Actor)->SetActorTransform(Record->WorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
+			// Independent simulated components must retain their saved world pose too.
+			for (const FSWRoomComponentRecord& ComponentRecord : Record->Components)
+				if (ComponentRecord.MotionState.bHasMotion)
+					for (UActorComponent* Candidate : (*Actor)->GetComponents())
+						if (GetRoomComponentKey(Candidate) == ComponentRecord.StableKey)
+							if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Candidate))
+							{
+								Primitive->SetWorldTransform(ComponentRecord.WorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
+								RestoreMotion(nullptr, Primitive, ComponentRecord.MotionState);
+							}
+			SW_ROOM_DETAIL_LOG(LogSWRoom, Display, TEXT("Flow=RoomAttachment Phase=FinalWorldTransform Id=%s Depth=%d"),
+				*Record->StableId.ToString(), AttachmentDepths.FindChecked(Record->StableId));
+		}
 	if (!bPartitionRestore) DestroyedLevelActorIds.Reset();
 	for (const FGuid& Id : Applied.DestroyedLevelActorIds)
 		DestroyedLevelActorIds.Add(Id, RestoredDestroyedClasses.Contains(Id)
@@ -1233,6 +1333,9 @@ bool USWRoomSnapshotSubsystem::CompareDeclared(const FSWRoomWorldSnapshot& Expec
 bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expected,
 	const FSWRoomWorldSnapshot& Actual, TArray<FString>& OutDifferences) const
 {
+	const USWRoomProgressSubsystem* AuditRoom = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const FGuid AuditRoomId = AuditRoom && AuditRoom->GetActiveRoom() ? AuditRoom->GetActiveRoom()->RoomId : FGuid();
+	SWRoomSaveAudit::FScopedContext CompareAudit(TEXT("CompareRestored"), AuditRoomId, Actual.CaptureSequence, TEXT("World"));
 	OutDifferences.Reset();
 	if (Expected.MapPath != Actual.MapPath) OutDifferences.Add(TEXT("MapPath"));
 	TMap<FGuid, const FSWRoomActorRecord*> ActualActors;
@@ -1251,6 +1354,7 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 	auto CompareActor = [&](const FSWRoomActorRecord& Before, const FSWRoomActorRecord* After)
 	{
 		const FString Prefix = FString::Printf(TEXT("ID=%s Class=%s"), *Before.StableId.ToString(), *Before.ClassPath.ToString());
+		SWRoomSaveAudit::FScopedContext ActorAudit(TEXT("CompareRestoredActor"), AuditRoomId, Actual.CaptureSequence, Prefix);
 		if (!After)
 		{
 			OutDifferences.Add(Prefix + TEXT(" Field=Existence Expected=Present Actual=Missing"));
@@ -1259,6 +1363,11 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 		if (Before.ClassPath != After->ClassPath || Before.ContractVersion != After->ContractVersion)
 			OutDifferences.Add(Prefix + TEXT(" Field=ClassOrContract Expected=") + Before.ClassPath.ToString()
 				+ TEXT(" Actual=") + After->ClassPath.ToString());
+		if (Before.Origin != After->Origin || (Before.Origin == ESWRoomSpawnOrigin::Runtime
+			&& (Before.CreatorId != After->CreatorId || Before.CreatorSequence != After->CreatorSequence)))
+			OutDifferences.Add(Prefix + FString::Printf(
+				TEXT(" Field=RuntimeOrigin ExpectedCreator=%s ActualCreator=%s ExpectedSequence=%llu ActualSequence=%llu"),
+				*Before.CreatorId.ToString(), *After->CreatorId.ToString(), Before.CreatorSequence, After->CreatorSequence));
 		if (!Before.WorldTransform.GetLocation().Equals(After->WorldTransform.GetLocation(), 1.f)
 			|| !Before.WorldTransform.GetRotation().Equals(After->WorldTransform.GetRotation(), FMath::DegreesToRadians(0.1f))
 			|| !Before.WorldTransform.GetScale3D().Equals(After->WorldTransform.GetScale3D(), 0.01f))
@@ -1312,7 +1421,13 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 				OutDifferences.Add(Prefix + TEXT(" Field=Component.Transform Key=") + Child.StableKey.ToString());
 			CompareMotion(Child.MotionState, (*Found)->MotionState, TEXT("Component.Motion.") + Child.StableKey.ToString());
 		}
-		if (Before.Components.Num() != After->Components.Num()) OutDifferences.Add(Prefix + TEXT(" Field=Component.Count"));
+		if (Before.Components.Num() != After->Components.Num())
+		{
+			TArray<FString> ExtraKeys;
+			for (const auto& Pair : ActualComponents) if (!ExpectedKeys.Contains(Pair.Key)) ExtraKeys.Add(Pair.Key.ToString());
+			OutDifferences.Add(Prefix + FString::Printf(TEXT(" Field=Component.Count Expected=%d Actual=%d ExtraKeys=%s"),
+				Before.Components.Num(), After->Components.Num(), *FString::Join(ExtraKeys, TEXT(","))));
+		}
 		TSet<FGuid> BeforeRefs(Before.ReferenceIds), AfterRefs(After->ReferenceIds);
 		if (BeforeRefs.Difference(AfterRefs).Num() || AfterRefs.Difference(BeforeRefs).Num())
 			OutDifferences.Add(Prefix + TEXT(" Field=ReferenceIds"));
@@ -1462,7 +1577,12 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 		bool bCovered = false;
 		for (const FSWRoomCaptureIssue& Issue : Expected.CaptureIssues) bCovered |= IsCovered(Issue);
 		for (const FSWRoomCaptureIssue& Issue : RestoreIssues) bCovered |= IsCovered(Issue);
-		if (bCovered) OutDifferences.RemoveAt(Index);
+		if (bCovered)
+		{
+			SWRoomSaveAudit::RecordDifferences(TEXT("DeclaredCaptureIssue"), {Difference});
+			OutDifferences.RemoveAt(Index);
+		}
 	}
+	SWRoomSaveAudit::RecordDifferences(TEXT("WorldRestoreResult"), OutDifferences);
 	return OutDifferences.IsEmpty();
 }

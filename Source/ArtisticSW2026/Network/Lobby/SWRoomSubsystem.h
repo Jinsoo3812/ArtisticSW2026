@@ -55,6 +55,8 @@ private:
 	FString DisplayName;
 	FString PublicAddress;
 	FString DisplayCode;
+	FString PendingServerExecutable;
+	FString PendingServerProject;
 	FText Message;
 	ESWRoomState State = ESWRoomState::Idle;
 	uint64 OperationId = 0;
@@ -66,6 +68,7 @@ private:
 	FProcHandle ServerHandle;
 	uint32 ServerPid = 0;
 	bool bOwnsServer = false;
+	bool bPendingPackagedServer = false;
 	bool bAwaitingHostJoin = false;
 	bool bNeedsManualPublicIP = false;
 	bool bReturningToLobby = false;

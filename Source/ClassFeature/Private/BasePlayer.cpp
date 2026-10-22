@@ -247,6 +247,7 @@ void ABasePlayer::BeginPlay()
 	Super::BeginPlay();
 	if (HasAuthority() && DialogueComponent)
 		DialogueComponent->OnFinalDepartureRequested.BindUObject(this, &ABasePlayer::HandleFinalDepartureRequested);
+		DialogueComponent->OnBossQuestAccepted.BindUObject(this, &ABasePlayer::HandleBossQuestAccepted);
 	InitializeSwimmingAnimLayers();
 
 	// Apply presentation-only smoothing after Blueprint defaults are loaded.
@@ -369,6 +370,7 @@ void ABasePlayer::GiveStartingItemsForTest()
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (DialogueComponent) DialogueComponent->OnFinalDepartureRequested.Unbind();
+	if (DialogueComponent) DialogueComponent->OnBossQuestAccepted.Unbind();
 	ResetAutomaticSwimDiveInput();
 
 	if (InventoryComponent)
@@ -393,6 +395,18 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 		GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
 		return Progress->TryFinalDeparture(GetWorld(), this);
 	return false;
+}
+
+void ABasePlayer::HandleBossQuestAccepted(AActor* Requester)
+{
+	if (!HasAuthority() || Requester != this || !GetGameInstance()) return;
+	UClassFeatureRoomProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>();
+	if (!Progress || !Progress->TryReturn(GetWorld(), this))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Boss quest accepted, but return could not start for %s"), *GetName());
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			PC->ClientMessage(TEXT("Quest accepted. Return failed; retry returning before departure."));
+	}
 }
 
 bool ABasePlayer::IsMoveInputIgnored() const

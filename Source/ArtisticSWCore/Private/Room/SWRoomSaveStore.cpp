@@ -5,6 +5,7 @@
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
 #include "Network/SWRoomLoadDiagnostics.h"
+#include "Network/SWRoomSaveAudit.h"
 #include "SWRoomName.h"
 #include "HAL/PlatformFileManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -20,6 +21,12 @@ namespace
 constexpr int64 MaxRoomFileBytes = 64ll * 1024 * 1024;
 constexpr int32 MaxActorRecords = 100000;
 constexpr int32 MaxRecordBytes = 1024 * 1024;
+constexpr int32 MaxEnemyShipPoolAdapterBytes = 8 * 1024 * 1024;
+int32 AdapterByteLimit(const FSWRoomActorRecord& Record)
+{
+	return Record.ClassPath.ToString() == TEXT("/Script/Enemy.EnemyShipBundlePool")
+		? MaxEnemyShipPoolAdapterBytes : MaxRecordBytes;
+}
 constexpr int32 MaxGuests = 256;
 constexpr int32 MaxPlayerSlots = 40000;
 constexpr int32 MaxStorageSlots = 40000;
@@ -62,19 +69,24 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 	TSet<FString> UnloadedPackages;
 	auto ValidAdapter = [](const FSWRoomActorRecord& Record)
 	{
-		if (Record.AdapterBytes.IsEmpty()) return Record.AdapterType.IsNone() && Record.AdapterVersion == 0;
+		const bool bPool = AdapterByteLimit(Record) == MaxEnemyShipPoolAdapterBytes;
+		// Losing this domain loses all virtual ships; never commit it as a partial capture.
+		if (Record.AdapterBytes.IsEmpty()) return !bPool && Record.AdapterType.IsNone() && Record.AdapterVersion == 0;
 		if (Record.AdapterType != TEXT("Domains") || Record.AdapterVersion != 1) return false;
 		FSWRoomDomainPayload Payload;
 		if (!FSWRoomStructCodec::Read(Record.AdapterBytes, Payload) || Payload.Parts.IsEmpty()) return false;
 		uint8 PreviousDomain = 0;
+		bool bHasPoolDomain = false;
 		for (const FSWRoomDomainPart& Part : Payload.Parts)
 		{
 			const uint8 Domain = static_cast<uint8>(Part.Domain);
-			if (Domain <= PreviousDomain || Domain > static_cast<uint8>(ESWRoomDomain::Boss)
-				|| Part.Version <= 0 || Part.Bytes.IsEmpty() || Part.Bytes.Num() > MaxRecordBytes) return false;
+			if (Domain <= PreviousDomain || Domain > static_cast<uint8>(ESWRoomDomain::EnemyShipPool)
+				|| Part.Version <= 0 || Part.Bytes.IsEmpty()
+				|| Part.Bytes.Num() > (bPool && Part.Domain == ESWRoomDomain::EnemyShipPool ? MaxEnemyShipPoolAdapterBytes : MaxRecordBytes)) return false;
+			bHasPoolDomain |= Part.Domain == ESWRoomDomain::EnemyShipPool;
 			PreviousDomain = Domain;
 		}
-		return true;
+		return !bPool || bHasPoolDomain;
 	};
 	auto ActorFailure = [&ValidMotion, &ValidAdapter, &ActorIds](const FSWRoomActorRecord& Record)
 	{
@@ -90,7 +102,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		if (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0)) Reasons.Add(TEXT("InvalidRuntimeCreator"));
 		if (Record.ContractVersion <= 0) Reasons.Add(TEXT("InvalidContractVersion"));
 		if (Record.SaveGameBytes.Num() > MaxRecordBytes) Reasons.Add(TEXT("ActorPayloadTooLarge"));
-		if (Record.AdapterBytes.Num() > MaxRecordBytes) Reasons.Add(TEXT("AdapterPayloadTooLarge"));
+		if (Record.AdapterBytes.Num() > AdapterByteLimit(Record)) Reasons.Add(TEXT("AdapterPayloadTooLarge"));
 		if (!ValidAdapter(Record)) Reasons.Add(TEXT("InvalidAdapterPayload"));
 		if (ActorIds.Contains(Record.StableId)) Reasons.Add(TEXT("DuplicateActorId"));
 		return FString::Join(Reasons, TEXT(","));
@@ -115,7 +127,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			|| !ValidMotion(Record.MotionState)
 			|| (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0))
 			|| Record.ContractVersion <= 0
-			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > MaxRecordBytes
+			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > AdapterByteLimit(Record)
 			|| !ValidAdapter(Record)
 			|| ActorIds.Contains(Record.StableId))
 		{
@@ -152,7 +164,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			|| ActorIds.Contains(Record.StableId)
 			|| (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0))
 			|| Record.ContractVersion <= 0
-			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > MaxRecordBytes
+			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > AdapterByteLimit(Record)
 			|| !ValidAdapter(Record))
 		{
 			TraceActorFailure(Record, TEXT("Unloaded"), ActorFailure(Record));
@@ -341,6 +353,13 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		}
 		GuestNames.Add(Guest.DisplayName);
 	}
+	if (Room->SharedProgress.ShipUpgradeNodeIds.Num() > 4096) return Fail(TEXT("SharedNodeCount"));
+	TSet<FName> SharedNodeIds;
+	for (const FName NodeId : Room->SharedProgress.ShipUpgradeNodeIds)
+	{
+		if (NodeId.IsNone() || SharedNodeIds.Contains(NodeId)) return Fail(TEXT("InvalidOrDuplicateSharedNode"));
+		SharedNodeIds.Add(NodeId);
+	}
 	TSet<FString> StorageKeys;
 	for (const FSWRoomStorageProgress& Storage : Room->SharedProgress.Storage)
 	{
@@ -403,15 +422,20 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 {
 	if (Path.IsEmpty()) return nullptr;
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.LoadPath"));
+	auto FailRead = [&Path, bHeaderOnly](const TCHAR* Reason) -> USWRoomSaveGame*
+	{
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileRead Result=Unavailable Path=%s HeaderOnly=%d Reason=%s"), *Path, bHeaderOnly, Reason);
+		return nullptr;
+	};
 	TArray<uint8> Bytes;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	const int64 Size = Files.FileSize(*Path);
-	if (Size <= 0 || Size > MaxRoomFileBytes) return nullptr;
+	if (Size <= 0 || Size > MaxRoomFileBytes) return FailRead(TEXT("MissingEmptyOrOversized"));
 	{
 		SWRoomLoadDiagnostics::FScopedPhase ReadScope(TEXT("SaveStore.DiskRead"));
-		if (!FFileHelper::LoadFileToArray(Bytes, *Path)) return nullptr;
+		if (!FFileHelper::LoadFileToArray(Bytes, *Path)) return FailRead(TEXT("DiskRead"));
 	}
-	if (Bytes.Num() < HeaderBytes) return nullptr;
+	if (Bytes.Num() < HeaderBytes) return FailRead(TEXT("TruncatedHeader"));
 	uint32 Magic = 0;
 	uint64 PayloadSize = 0;
 	uint32 Checksum = 0;
@@ -419,7 +443,7 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 	FMemory::Memcpy(&PayloadSize, Bytes.GetData() + sizeof(Magic), sizeof(PayloadSize));
 	FMemory::Memcpy(&Checksum, Bytes.GetData() + sizeof(Magic) + sizeof(PayloadSize), sizeof(Checksum));
 	if (Magic != RoomMagic || PayloadSize != static_cast<uint64>(Bytes.Num() - HeaderBytes)
-		|| FCrc::MemCrc32(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize)) != Checksum) return nullptr;
+		|| FCrc::MemCrc32(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize)) != Checksum) return FailRead(TEXT("MagicSizeOrChecksum"));
 	TArray<uint8> Payload;
 	Payload.Append(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize));
 	USWRoomSaveGame* Room;
@@ -429,9 +453,21 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 	}
 	{
 		SWRoomLoadDiagnostics::FScopedPhase ValidateScope(TEXT("SaveStore.ValidateReadback"));
-		if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return nullptr;
+		if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return FailRead(TEXT("DeserializeOrValidation"));
 	}
 	if (Outer && Room) Room->Rename(nullptr, Outer);
+	// Menu/header polling can repeatedly read the same file. Journal each revision once.
+	static TMap<FString, uint32> AuditedReadChecksums;
+	const uint32* PreviousChecksum = AuditedReadChecksums.Find(Path);
+	if (!PreviousChecksum || *PreviousChecksum != Checksum)
+	{
+		SWRoomLoadDiagnostics::LogRoom(TEXT("DiskRead"), Room);
+		AuditedReadChecksums.Add(Path, Checksum);
+	}
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
+		TEXT("Flow=FileRead Result=Validated RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d Bytes=%d Checksum=%u Actors=%d Unloaded=%d Systems=%d Guests=%d"),
+		*Room->RoomId.ToString(), Room->CaptureSequence, *Path, bHeaderOnly, Bytes.Num(), Checksum,
+		Room->WorldSnapshot.Actors.Num(), Room->WorldSnapshot.UnloadedActors.Num(), Room->WorldSnapshot.Systems.Num(), Room->Guests.Num());
 	return Room;
 }
 
@@ -465,6 +501,8 @@ bool FSWRoomSaveStore::HasLegacyRoomFile()
 bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString& Path, bool bHeaderOnly)
 {
 	if (Path.IsEmpty()) return false;
+	SWRoomSaveAudit::FScopedContext Audit(TEXT("FileWrite"), Room ? Room->RoomId : FGuid(), Room ? Room->CaptureSequence : 0, Path);
+	SWRoomSaveAudit::RecordObject(TEXT("BeforeWrite"), Room);
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.WriteVerified"));
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Begin RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d"),
 		Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->CaptureSequence : 0, *Path, bHeaderOnly);
@@ -506,19 +544,21 @@ bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString&
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Written Path=%s Bytes=%d Checksum=%u"),
 		*Path, FileBytes.Num(), Checksum);
 	USWRoomSaveGame* Checked = LoadPath(GetTransientPackage(), Path, bHeaderOnly);
-	const bool bVerified = Checked && Checked->RoomId == Room->RoomId && Checked->SaveVersion == Room->SaveVersion
+	const bool bHeadersMatch = Checked && Checked->RoomId == Room->RoomId && Checked->SaveVersion == Room->SaveVersion
 		&& Checked->CaptureSequence == Room->CaptureSequence && Checked->MapPath == Room->MapPath;
+	const bool bVerified = bHeadersMatch && SWRoomSaveAudit::ComparePersistedObjects(Room, Checked);
 	if (bVerified)
 	{
-		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Result=Verified Phase=Readback RoomId=%s Sequence=%llu Path=%s"),
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Result=Verified Phase=Readback Fields=AllSaveGame RoomId=%s Sequence=%llu Path=%s"),
 			*Room->RoomId.ToString(), Room->CaptureSequence, *Path);
 	}
 	else
 	{
 		UE_LOG(LogSWRoomSave, Error,
-			TEXT("Flow=FileWrite Result=Failed Phase=Readback RoomId=%s Sequence=%llu Path=%s Loaded=%d LoadedRoomId=%s LoadedSequence=%llu"),
+			TEXT("Flow=FileWrite Result=Failed Phase=Readback RoomId=%s Sequence=%llu Path=%s Loaded=%d LoadedRoomId=%s LoadedSequence=%llu Reason=%s"),
 			*Room->RoomId.ToString(), Room->CaptureSequence, *Path, Checked != nullptr,
-			Checked ? *Checked->RoomId.ToString() : TEXT("None"), Checked ? Checked->CaptureSequence : 0);
+			Checked ? *Checked->RoomId.ToString() : TEXT("None"), Checked ? Checked->CaptureSequence : 0,
+			bHeadersMatch ? TEXT("PersistedFieldMismatch") : TEXT("UnreadableOrHeaderMismatch"));
 	}
 	return bVerified;
 }

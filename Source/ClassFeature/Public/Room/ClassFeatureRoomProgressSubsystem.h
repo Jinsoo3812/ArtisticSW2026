@@ -42,11 +42,13 @@ private:
 	UFUNCTION() void HandleGameOverRestart();
 	void HandlePostLoadMap(UWorld* World);
 	bool TickRestore(float DeltaTime);
+	bool RecoverWorld(UWorld* World, const FString& Reason);
 	FDelegateHandle PostLoadHandle;
 	FTSTicker::FDelegateHandle RestoreTickerHandle;
 	TWeakObjectPtr<UWorld> PendingWorld;
 	double RestoreDeadline = 0.0;
 	double DiagnosticLastRestoreLogAt = 0.0;
+	FString LastSharedRestoreFailure;
 	bool bReturning = false;
 	enum class ERoomTransitionReason : uint8 { Return, FinalDeparture, GameOverRetry };
 	ERoomTransitionReason TransitionReason = ERoomTransitionReason::Return;
@@ -59,7 +61,6 @@ private:
 	bool bFinalDepartureSharedRestored = false;
 	bool bReturnShipPlaced = false;
 	bool bReturnEntryReady = false;
-	bool bShipSafetyFallbackUsed = false;
 	double ShipSafetyCheckAt = 0.0;
 	double ShipPlacementRealTime = 0.0;
 	double ShipPlacementWorldTime = 0.0;

@@ -121,6 +121,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	bool HandleFinalDepartureRequested(AActor* Requester);
+	void HandleBossQuestAccepted(AActor* Requester);
 	virtual void PostInitializeComponents() override;
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 

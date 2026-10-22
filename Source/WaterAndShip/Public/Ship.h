@@ -15,6 +15,18 @@
 #include "Ship.generated.h"
 
 USTRUCT()
+struct FSWRoomHelmPointState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FTransform RelativeTransform;
+	UPROPERTY(SaveGame) FName ParentComponent;
+	UPROPERTY(SaveGame) FName Socket;
+	UPROPERTY(SaveGame) bool bAbsoluteLocation = false;
+	UPROPERTY(SaveGame) bool bAbsoluteRotation = false;
+	UPROPERTY(SaveGame) bool bAbsoluteScale = false;
+};
+
+USTRUCT()
 struct FSWRoomShipState
 {
 	GENERATED_BODY()
@@ -29,6 +41,9 @@ struct FSWRoomShipState
 	UPROPERTY(SaveGame) bool bLeakTimerPending = false;
 	UPROPERTY(SaveGame) float LeakNextTickRemaining = 0.f;
 	UPROPERTY(SaveGame) TArray<FSWRoomGameplayEffectState> ActiveEffects;
+	UPROPERTY(SaveGame) bool bHasHelmPoints = false;
+	UPROPERTY(SaveGame) FSWRoomHelmPointState HelmSeat;
+	UPROPERTY(SaveGame) FSWRoomHelmPointState HelmExit;
 };
 
 class USWBuoyancyComponent;
@@ -536,8 +551,7 @@ public:
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
-		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
-	{ return FSWRoomStructCodec::Compare<FSWRoomShipState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override;
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void PostLoad() override;
@@ -616,6 +630,7 @@ public:
 	 * async callback, which SetSimulatePhysics alone does not do for this ship.
 	 */
 	void SetShipRuntimePhysicsEnabled(bool bEnabled);
+	void ResetFreshEncounterControlState();
 	bool IsShipRuntimePhysicsEnabled() const { return bShipRuntimePhysicsEnabled; }
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */

@@ -35,7 +35,7 @@ public:
 	static ASharedShipUpgradeState* Find(const UObject* WorldContextObject);
 
 	/** Server-only: points shared progression at a newly spawned physical ship. */
-	void RegisterPlayerShip(AShip* Ship);
+	void RegisterPlayerShip(AShip* Ship, bool bRefillHealth = true);
 	void UnregisterPlayerShip(AShip* Ship);
 
 private:

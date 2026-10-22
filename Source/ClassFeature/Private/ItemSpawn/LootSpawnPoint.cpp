@@ -9,6 +9,7 @@
 #include "Balance/FixedChestDropData.h"
 #include "Ship.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageChestPool.h"
 #include "StoryConditionalSpawner.h"
 #include "ItemSpawn/GlobalLootSpawnManager.h"
 #include "EngineUtils.h"
@@ -232,7 +233,7 @@ void AChestSpawnPoint::ApplyAuthoringSettings(
 	const FChestSpawnPointChestSettings& ChestSettings,
 	const FChestSpawnPointLootSettings& LootSettings)
 {
-	bIsBossChest = ChestSettings.bIsBossChest;
+	bIsBossChest = ChestSettings.OwningShip ? BossGuard.IsValid() : ChestSettings.bIsBossChest;
 	RequiredBossTag = ChestSettings.RequiredBossTag;
 	GuaranteedBossQuestItemTag = ChestSettings.GuaranteedBossQuestItemTag;
 	GuaranteedBossQuestItemCount = FMath::Max(1, ChestSettings.GuaranteedBossQuestItemCount);
@@ -254,6 +255,13 @@ void AChestSpawnPoint::ApplyAuthoringSettings(
 	GroundClearance = FMath::Max(0.f, LootSettings.GroundClearance);
 	GroundTraceUpDistance = FMath::Max(0.f, LootSettings.GroundTraceUpDistance);
 	GroundTraceDownDistance = FMath::Max(0.f, LootSettings.GroundTraceDownDistance);
+	if (IsValid(ActiveChestInstance))
+	{
+		TArray<ABaseCharacter*> ActiveGuards;
+		for (ABaseCharacter* Guard : GuardCharacters) ActiveGuards.Add(Guard);
+		ActiveChestInstance->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, ActiveGuards, OwningShip);
+		if (ABaseCharacter* Boss = BossGuard.Get()) ActiveChestInstance->AddBossGuardCharacter(Boss);
+	}
 }
 
 void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
@@ -318,6 +326,88 @@ bool AChestSpawnPoint::HasMatchingBossGuard() const
 	}
 
 	return false;
+}
+
+void AChestSpawnPoint::SetPooledChestActor(AStorageChest* Chest)
+{
+	SpawnedActor = Chest;
+	ActiveChestInstance = Chest;
+}
+
+void AChestSpawnPoint::ResetSpawnPoint(bool bDestroySpawnedActor)
+{
+	if (GetWorld())
+		if (auto* Subsystem = GetWorld()->GetSubsystem<UStorageChestPoolSubsystem>())
+			if (auto* Pool = Subsystem->GetPool()) Pool->ForgetPoint(this);
+	PooledChest = FStorageChestPoolPlacement();
+	ActiveChestInstance = nullptr;
+	Super::ResetSpawnPoint(bDestroySpawnedActor);
+}
+
+void AChestSpawnPoint::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	Super::CaptureRoomDomains(OutParts, OutIssues);
+	if (!PooledChest.StableId.IsValid()) return;
+	FSWRoomDomainPart* Part = OutParts.FindByPredicate([](const FSWRoomDomainPart& Value) { return Value.Domain == ESWRoomDomain::Loot; });
+	FSWRoomLootPointState State;
+	if (!Part || !FSWRoomStructCodec::Read(Part->Bytes, State)) return;
+	State.PooledChest = PooledChest;
+	// Active chests retain their normal Actor record; only dormant chests live in this domain.
+	if (State.PooledChest.bDormant) State.SpawnedActorId.Invalidate();
+	else if (AStorageChest* Chest = Cast<AStorageChest>(SpawnedActor))
+	{
+		FString Error;
+		if (!AStorageChestPool::CaptureChest(*Chest, State.PooledChest, Error))
+		{
+			auto& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Loot");
+			Issue.FieldKey = TEXT("PooledChest");
+			Issue.Reason = Error;
+			return;
+		}
+		// Live slots/timers are authoritative in the chest's normal domain, where
+		// time comparisons use the existing tolerance instead of nested raw bytes.
+		State.PooledChest.ChestState = FSWRoomDomainPart();
+	}
+	if (!FSWRoomStructCodec::Write(State, Part->Bytes))
+	{
+		auto& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Loot");
+		Issue.FieldKey = TEXT("PooledChest");
+		Issue.Reason = TEXT("Dormant chest serialization failed");
+	}
+}
+
+bool AChestSpawnPoint::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (!Super::RestoreRoomDomain(Part, OutError)) return false;
+	const auto& Saved = PendingRoomState.PooledChest;
+	if (Saved.StableId.IsValid() && (!PendingRoomState.bActivated
+		|| (Saved.bDormant ? PendingRoomState.SpawnedActorId.IsValid() : PendingRoomState.SpawnedActorId != Saved.StableId)
+		|| Saved.ClassPath.IsNull() || Saved.Transform.ContainsNaN() || !FMath::IsFinite(Saved.ActivationRange)
+		|| Saved.ActivationRange < 0.f || (Saved.bDormant && (Saved.ChestState.Domain != ESWRoomDomain::Chest || Saved.ChestState.Bytes.IsEmpty()))
+		|| SpawnMode != EChestSpawnMode::Random || Environment == EChestEnvironment::ShipDeck || HasAuthoredGuards()))
+	{
+		OutError = TEXT("Invalid dormant random chest placement");
+		return false;
+	}
+	PooledChest = Saved;
+	ActiveChestInstance = nullptr;
+	return true;
+}
+
+bool AChestSpawnPoint::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!Super::FinalizeRoomRestore(RegisteredActors, OutError)) return false;
+	ActiveChestInstance = Cast<AStorageChest>(SpawnedActor);
+	if (PooledChest.StableId.IsValid() && !PooledChest.bDormant)
+	{
+		if (!ActiveChestInstance || !AStorageChestPool::RestoreChestConfiguration(*ActiveChestInstance, PooledChest, OutError)) return false;
+		ActiveChestInstance->SetOwner(this);
+		ActiveChestInstance->SetDistanceOptimizationEnabled(false);
+		ActiveChestInstance->SetPoolAssignment(PooledChest.StableId, ActiveChestInstance->GetActorTransform());
+	}
+	return true;
 }
 
 AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed)
@@ -561,6 +651,7 @@ void AChestSpawnPoint::RegisterBossGuard(ABaseCharacter* Boss)
 {
 	if (!HasAuthority() || !IsValid(Boss)) return;
 	BossGuard = Boss;
+	bIsBossChest = true;
 	if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddBossGuardCharacter(Boss);
 	int32 ManagerCount = 0;
 	AGlobalLootSpawnManager* Manager = nullptr;

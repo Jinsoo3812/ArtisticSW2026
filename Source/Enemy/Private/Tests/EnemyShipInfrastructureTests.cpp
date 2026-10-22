@@ -436,7 +436,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipAnchorIntegrationTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("Recipe_DecipherCipher"), EAutomationExpectedErrorFlags::Contains, 3);
+	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
@@ -501,11 +501,11 @@ bool FEnemyShipAnchorIntegrationTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEnemyShipCrewGatedAnchorTest,
-	"ArtisticSW.Enemy.Ship.Anchor.CrewGating",
+	FEnemyShipCrewIndependentAnchorTest,
+	"ArtisticSW.Enemy.Ship.Anchor.CrewIndependent",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
+bool FEnemyShipCrewIndependentAnchorTest::RunTest(const FString& Parameters)
 {
 	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
@@ -522,20 +522,26 @@ bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
 	// Initially without crew
 	TestFalse(TEXT("Initially no living crew"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 0"), Ship->GetLivingCrewCount(), 0);
-	TestFalse(TEXT("Anchor control remains locked before a crew encounter"), Ship->AllowsPlayerAnchorControl());
+	TestTrue(TEXT("Anchor control allowed before a crew encounter"), Ship->AllowsPlayerAnchorControl());
 	TestFalse(TEXT("Helm control remains locked before a crew encounter"), Ship->AllowsPlayerHelmControl());
+	Ship->HandleAnchorInteracted(nullptr);
+	TestTrue(TEXT("Anchor drops before a crew encounter"), Ship->IsAnchorDropped());
+	Ship->HandleAnchorInteracted(nullptr);
+	TestFalse(TEXT("Anchor raises before a crew encounter"), Ship->IsAnchorDropped());
 
 	// Register crew member
+	CrewMember->SetOwner(Ship);
 	Ship->RegisterCrewEnemy(CrewMember);
 	TestTrue(TEXT("Has living crew after registration"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 1"), Ship->GetLivingCrewCount(), 1);
-	TestFalse(TEXT("Anchor control blocked while crew alive"), Ship->AllowsPlayerAnchorControl());
+	TestTrue(TEXT("Anchor control allowed while crew alive"), Ship->AllowsPlayerAnchorControl());
 	TestFalse(TEXT("Helm control blocked while crew alive"), Ship->AllowsPlayerHelmControl());
 
-	// Attempt anchor interaction while crew alive
-	AddExpectedError(TEXT("Anchor control rejected on"), EAutomationExpectedErrorFlags::Contains, 1);
+	// Anchor interaction succeeds while crew alive.
 	Ship->HandleAnchorInteracted(nullptr);
-	TestFalse(TEXT("Anchor remains raised while crew alive"), Ship->IsAnchorDropped());
+	TestTrue(TEXT("Anchor drops while crew alive"), Ship->IsAnchorDropped());
+	Ship->HandleAnchorInteracted(nullptr);
+	TestFalse(TEXT("Anchor raises while crew alive"), Ship->IsAnchorDropped());
 
 	// Unregister or eliminate crew
 	Ship->UnregisterCrewEnemy(CrewMember);

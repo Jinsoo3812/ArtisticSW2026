@@ -135,6 +135,7 @@ void AEnemyShipTorpedo::LogPostBeginPlayVisualDiagnostics()
 
 void AEnemyShipTorpedo::LogVisualDiagnostics(const TCHAR* Phase) const
 {
+	/*
 	const UStaticMesh* MeshAsset = CannonballMesh ? CannonballMesh->GetStaticMesh() : nullptr;
 	FString ComponentMaterials;
 	if (CannonballMesh)
@@ -203,6 +204,7 @@ void AEnemyShipTorpedo::LogVisualDiagnostics(const TCHAR* Phase) const
 		FuseBurstComponent ? *FuseBurstComponent->GetAttachSocketName().ToString() : TEXT("None"),
 		FuseBurstComponent ? *FuseBurstComponent->GetRelativeScale3D().ToCompactString() : TEXT("None"),
 		CannonballMesh && CannonballMesh->DoesSocketExist(FuseSocketName) ? TEXT("true") : TEXT("false"));
+	*/
 }
 
 void AEnemyShipTorpedo::Tick(float DeltaSeconds)
@@ -401,6 +403,7 @@ void AEnemyShipTorpedo::ProcessShipHit(AShip* HitShip, const FVector& ImpactPoin
 	}
 
 	const FVector ExplosionLocation = SafeImpactPoint;
+	/*
 	UE_LOG(
 		LogEnemyShipTorpedoVisual,
 		Warning,
@@ -412,6 +415,7 @@ void AEnemyShipTorpedo::ProcessShipHit(AShip* HitShip, const FVector& ImpactPoin
 		ExplosionEffectScale,
 		ExplosionEffectLifetimeScale,
 		ExplosionEffectPlaybackSpeed);
+	*/
 	SpawnNiagaraEffectForAll(
 		ExplosionEffect,
 		ExplosionLocation,

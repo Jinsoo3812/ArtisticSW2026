@@ -44,18 +44,18 @@ void UShipUpgradeComponent::BeginPlay()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ShipUpgradeComponent: No upgrade tree is configured on %s."), *GetNameSafe(GetOwner()));
+/* 		UE_LOG(LogTemp, Warning, TEXT("ShipUpgradeComponent: No upgrade tree is configured on %s."), *GetNameSafe(GetOwner())) */;
 	}
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ShipUpgradePipeline][ComponentBeginPlay] Component=%s Owner=%s Authority=%s NetMode=%d Tree=%s Nodes=%d ActiveNodes=%d BaseHealth=%.2f"),
-		*GetNameSafe(this),
-		*GetNameSafe(GetOwner()),
-		GetOwner() && GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
-		static_cast<int32>(GetNetMode()),
-		*GetNameSafe(UpgradeTree.Get()),
-		UpgradeTree ? UpgradeTree->Nodes.Num() : -1,
-		ActiveNodeIds.Num(),
-		PreviewBaseStats.MaxHealth);
+// 	UE_LOG(LogTemp, Warning,
+// 		TEXT("[ShipUpgradePipeline][ComponentBeginPlay] Component=%s Owner=%s Authority=%s NetMode=%d Tree=%s Nodes=%d ActiveNodes=%d BaseHealth=%.2f"),
+// 		*GetNameSafe(this),
+// 		*GetNameSafe(GetOwner()),
+// 		GetOwner() && GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
+// 		static_cast<int32>(GetNetMode()),
+// 		*GetNameSafe(UpgradeTree.Get()),
+// 		UpgradeTree ? UpgradeTree->Nodes.Num() : -1,
+// 		ActiveNodeIds.Num(),
+// 		PreviewBaseStats.MaxHealth);
 	if (GetOwner() && GetOwner()->HasAuthority() && bAutoLoadAndSaveLocalProgress && GetNetMode() != NM_DedicatedServer)
 	{
 		LoadProgress();
@@ -86,22 +86,22 @@ void UShipUpgradeComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 
 void UShipUpgradeComponent::OnRep_TestMaterialBypass()
 {
-	UE_LOG(LogTemp, Warning,
+/* 	UE_LOG(LogTemp, Warning,
 		TEXT("[ShipUpgradeTrace][TestBypassReplicated] Component=%s Owner=%s IgnoreMaterialCosts=%s"),
 		*GetNameSafe(this),
 		*GetNameSafe(GetOwner()),
-		bIgnoreMaterialCostsForTesting ? TEXT("true") : TEXT("false"));
+		bIgnoreMaterialCostsForTesting ? TEXT("true") : TEXT("false")) */;
 	OnUpgradeDataChanged.Broadcast();
 }
 
 void UShipUpgradeComponent::OnRep_UpgradeTree()
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ShipUpgradePipeline][TreeReplicated] Component=%s Owner=%s Tree=%s Nodes=%d"),
-		*GetNameSafe(this),
-		*GetNameSafe(GetOwner()),
-		*GetNameSafe(UpgradeTree.Get()),
-		UpgradeTree ? UpgradeTree->Nodes.Num() : -1);
+// 	UE_LOG(LogTemp, Warning,
+// 		TEXT("[ShipUpgradePipeline][TreeReplicated] Component=%s Owner=%s Tree=%s Nodes=%d"),
+// 		*GetNameSafe(this),
+// 		*GetNameSafe(GetOwner()),
+// 		*GetNameSafe(UpgradeTree.Get()),
+// 		UpgradeTree ? UpgradeTree->Nodes.Num() : -1);
 	OnUpgradeDataReady.Broadcast();
 	OnUpgradeDataChanged.Broadcast();
 	OnShipStatsChanged.Broadcast(GetCurrentShipStats());
@@ -331,20 +331,20 @@ bool UShipUpgradeComponent::HasRequiredMaterials(FName NodeId, FText& OutReason)
 void UShipUpgradeComponent::RefreshUpgradeData()
 {
 	IShipUpgradeInventoryProvider* Provider = ResolveInventoryProvider();
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ShipUpgradePipeline][RefreshData] Component=%s Owner=%s Tree=%s Nodes=%d ActiveNodes=%d InventoryProvider=%s"),
-		*GetNameSafe(this),
-		*GetNameSafe(GetOwner()),
-		*GetNameSafe(UpgradeTree.Get()),
-		UpgradeTree ? UpgradeTree->Nodes.Num() : -1,
-		ActiveNodeIds.Num(),
-		Provider ? TEXT("found") : TEXT("none"));
+// 	UE_LOG(LogTemp, Warning,
+// 		TEXT("[ShipUpgradePipeline][RefreshData] Component=%s Owner=%s Tree=%s Nodes=%d ActiveNodes=%d InventoryProvider=%s"),
+// 		*GetNameSafe(this),
+// 		*GetNameSafe(GetOwner()),
+// 		*GetNameSafe(UpgradeTree.Get()),
+// 		UpgradeTree ? UpgradeTree->Nodes.Num() : -1,
+// 		ActiveNodeIds.Num(),
+// 		Provider ? TEXT("found") : TEXT("none"));
 	OnUpgradeDataChanged.Broadcast();
 }
 
 void UShipUpgradeComponent::RequestActivateNode(FName NodeId)
 {
-	UE_LOG(LogTemp, Warning,
+/* 	UE_LOG(LogTemp, Warning,
 		TEXT("[ShipUpgradeTrace][Request] Node=%s Component=%s Owner=%s OwnerOwner=%s Authority=%s NetMode=%d ActiveNodes=%d"),
 		*NodeId.ToString(),
 		*GetNameSafe(this),
@@ -352,16 +352,16 @@ void UShipUpgradeComponent::RequestActivateNode(FName NodeId)
 		*GetNameSafe(GetOwner() ? GetOwner()->GetOwner() : nullptr),
 		GetOwner() && GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
 		static_cast<int32>(GetNetMode()),
-		ActiveNodeIds.Num());
+		ActiveNodeIds.Num()) */;
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ShipUpgradeTrace][RequestPath] Node=%s Path=DirectAuthority"), *NodeId.ToString());
+/* 		UE_LOG(LogTemp, Warning, TEXT("[ShipUpgradeTrace][RequestPath] Node=%s Path=DirectAuthority"), *NodeId.ToString()) */;
 		const EShipUpgradeActivationResult Result = ActivateNodeInternal(NodeId, true);
 		ClientReceiveActivationResult(NodeId, Result, GetActivationMessage(NodeId, Result));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ShipUpgradeTrace][RequestPath] Node=%s Path=ServerRPC"), *NodeId.ToString());
+/* 		UE_LOG(LogTemp, Warning, TEXT("[ShipUpgradeTrace][RequestPath] Node=%s Path=ServerRPC"), *NodeId.ToString()) */;
 		ServerRequestActivateNode(NodeId);
 	}
 }
@@ -462,30 +462,30 @@ void UShipUpgradeComponent::OnRep_ActiveNodeIds(const TArray<FName>& PreviousNod
 
 void UShipUpgradeComponent::ServerRequestActivateNode_Implementation(FName NodeId)
 {
-	UE_LOG(LogTemp, Warning,
+/* 	UE_LOG(LogTemp, Warning,
 		TEXT("[ShipUpgradeTrace][ServerRPCReceived] Node=%s Component=%s Owner=%s OwnerOwner=%s Authority=%s ActiveNodes=%d"),
 		*NodeId.ToString(),
 		*GetNameSafe(this),
 		*GetNameSafe(GetOwner()),
 		*GetNameSafe(GetOwner() ? GetOwner()->GetOwner() : nullptr),
 		GetOwner() && GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
-		ActiveNodeIds.Num());
+		ActiveNodeIds.Num()) */;
 	const EShipUpgradeActivationResult Result = ActivateNodeInternal(NodeId, true);
-	UE_LOG(LogTemp, Warning,
+/* 	UE_LOG(LogTemp, Warning,
 		TEXT("[ShipUpgradeTrace][ServerRPCResult] Node=%s Result=%d ActiveNodes=%d"),
-		*NodeId.ToString(), static_cast<int32>(Result), ActiveNodeIds.Num());
+		*NodeId.ToString(), static_cast<int32>(Result), ActiveNodeIds.Num()) */;
 	ClientReceiveActivationResult(NodeId, Result, GetActivationMessage(NodeId, Result));
 }
 
 void UShipUpgradeComponent::ClientReceiveActivationResult_Implementation(FName NodeId, EShipUpgradeActivationResult Result, const FText& Message)
 {
-	UE_LOG(LogTemp, Warning,
+/* 	UE_LOG(LogTemp, Warning,
 		TEXT("[ShipUpgradeTrace][ClientRPCReceived] Node=%s Result=%d Message=%s Owner=%s ActiveNodes=%d"),
 		*NodeId.ToString(),
 		static_cast<int32>(Result),
 		*Message.ToString(),
 		*GetNameSafe(GetOwner()),
-		ActiveNodeIds.Num());
+		ActiveNodeIds.Num()) */;
 	OnNodeActivationResult.Broadcast(NodeId, Result, Message);
 }
 
@@ -497,14 +497,14 @@ EShipUpgradeActivationResult UShipUpgradeComponent::ActivateNodeInternal(
 {
 	auto TraceResult = [this, NodeId](EShipUpgradeActivationResult Result, const TCHAR* Stage)
 	{
-		UE_LOG(LogTemp, Warning,
+/* 		UE_LOG(LogTemp, Warning,
 			TEXT("[ShipUpgradeTrace][Activate] Node=%s Stage=%s Result=%d Owner=%s Authority=%s ActiveNodes=%d"),
 			*NodeId.ToString(),
 			Stage,
 			static_cast<int32>(Result),
 			*GetNameSafe(GetOwner()),
 			GetOwner() && GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
-			ActiveNodeIds.Num());
+			ActiveNodeIds.Num()) */;
 		return Result;
 	};
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return TraceResult(EShipUpgradeActivationResult::NotAuthority, TEXT("AuthorityCheck"));
@@ -521,13 +521,13 @@ EShipUpgradeActivationResult UShipUpgradeComponent::ActivateNodeInternal(
 	IShipUpgradeInventoryProvider* Provider = bConsumeMaterialCosts
 		? (InventoryProviderOverride ? InventoryProviderOverride : ResolveInventoryProvider())
 		: nullptr;
-	UE_LOG(LogTemp, Warning,
+/* 	UE_LOG(LogTemp, Warning,
 		TEXT("[ShipUpgradeTrace][Inventory] Node=%s CostStacks=%d Consume=%s ProviderFound=%s ProviderComponent=%s"),
 		*NodeId.ToString(),
 		Costs.Num(),
 		bConsumeMaterialCosts ? TEXT("true") : TEXT("false"),
 		Provider ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(BoundInventoryComponent.Get()));
+		*GetNameSafe(BoundInventoryComponent.Get())) */;
 	if (bConsumeMaterialCosts && (!Provider || !Provider->RemoveShipUpgradeItemsAtomically(Costs)))
 	{
 		return TraceResult(EShipUpgradeActivationResult::MissingMaterials, Provider ? TEXT("MaterialRemoval") : TEXT("InventoryProvider"));
@@ -539,7 +539,7 @@ EShipUpgradeActivationResult UShipUpgradeComponent::ActivateNodeInternal(
 		ActiveNodeIds = Previous;
 		if (Provider && !Provider->AddShipUpgradeItemsAtomically(Costs))
 		{
-			UE_LOG(LogTemp, Error, TEXT("Ship upgrade material rollback failed for %s."), *GetNameSafe(GetOwner()));
+/* 			UE_LOG(LogTemp, Error, TEXT("Ship upgrade material rollback failed for %s."), *GetNameSafe(GetOwner())) */;
 		}
 		return TraceResult(EShipUpgradeActivationResult::SaveFailed, TEXT("SaveProgress"));
 	}

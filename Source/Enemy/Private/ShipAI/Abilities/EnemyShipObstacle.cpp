@@ -211,6 +211,7 @@ void AEnemyShipObstacle::OnObstacleOverlap(
 	bHasEnteredWater = true;
 	ForceNetUpdate();
 	const float Delay = FMath::Max(0.0f, BuoyancyActivationDelaySeconds);
+	/*
 	if (bLogInitialBuoyancyDiagnostics)
 	{
 		const float PontoonRadius = SWBuoyancyComponent && !SWBuoyancyComponent->GetPontoons().IsEmpty()
@@ -229,6 +230,7 @@ void AEnemyShipObstacle::OnObstacleOverlap(
 			ObstacleCollision->GetScaledSphereRadius(),
 			PontoonRadius);
 	}
+	*/
 	if (Delay <= KINDA_SMALL_NUMBER)
 	{
 		EnableBuoyancy();
@@ -297,6 +299,7 @@ void AEnemyShipObstacle::EnableBuoyancy()
 	SWBuoyancyComponent->Activate();
 	SWBuoyancyComponent->SetComponentTickEnabled(true);
 	bBuoyancyEnabled = true;
+	/*
 	if (bLogInitialBuoyancyDiagnostics && GetWorld())
 	{
 		UE_LOG(LogTemp, Warning,
@@ -307,6 +310,7 @@ void AEnemyShipObstacle::EnableBuoyancy()
 			*ObstacleCollision->GetPhysicsLinearVelocity().ToCompactString(),
 			ObstacleCollision->GetMass());
 	}
+	*/
 	ForceNetUpdate();
 }
 

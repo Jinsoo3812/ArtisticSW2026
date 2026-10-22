@@ -1,4 +1,5 @@
 #include "DeckAI/DeckRangedEnemy.h"
+#include "ShipAI/EnemyShipDiagnostics.h"
 
 #include "AbilitySystemComponent.h"
 #include "AI/BaseAIController.h"
@@ -155,6 +156,8 @@ void ADeckEnemy::BeginPlay()
 
 void ADeckEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority())
+		if (AEnemyShip* Host = GetDeckHostShip()) Host->NotifyCrewEnemyDeactivated(this);
 	if (auto* Host = BoundRuntimeHost.Get())
 		(HasAuthority() ? Host->OnRuntimeStateChanged : Host->OnRuntimePresentationChanged).Remove(RuntimeHostHandle);
 	if (DeckTargetResolver) DeckTargetResolver->Reset();
@@ -203,6 +206,8 @@ bool ADeckEnemy::PreparePoolActivation(
 	int32 RandomSeed,
 	const FTransform* ReservedTransform)
 {
+	// Dedicated-server pooling fix: resolve and apply the authoritative deck start before publishing
+	// activation. Movement-base setup alone must not enable AI/collision or reveal an old pool pose.
 	if (!HasAuthority() || bPoolActive || bPoolActivationPrepared || !IsValid(InHostShip) || !InHostShip->CanDeployDeckEnemies()
 		|| !InHostShip->GetShipDeckMesh()
 		|| !InHostShip->GetDeckWaypoint(InitialWaypointId))
@@ -297,6 +302,7 @@ void ADeckEnemy::DeactivateToPool()
 	if (AEnemyShip* Host = GetDeckHostShip())
 	{
 		Host->ReleaseAllDeckPointsFor(this);
+		Host->NotifyCrewEnemyDeactivated(this);
 	}
 
 	if (AAIController* OwningAIController = Cast<AAIController>(GetController()))
@@ -494,6 +500,10 @@ void ADeckEnemy::HandleReplicatedHostShipChanged()
 
 void ADeckEnemy::ReconcileClientPoolState()
 {
+	// Packaged multiplayer note: activation and the replicated host may arrive separately.
+	// Keep presentation/movement gated on host readiness; server activation alone is insufficient.
+	// Remaining limit: host-reference retries below are bounded to 50 x 0.1s. A later host update
+	// must re-enter reconciliation if replication takes longer; do not show an unbound crew Actor.
 	if (HasAuthority() || !HasActorBegunPlay()) return;
 	BindRuntimeHost();
 	const bool bHostReady = PoolNetState.ActivationGeneration == 0 || (GetDeckHostShip() && GetDeckHostShip()->GetShipDeckMesh());
@@ -510,13 +520,35 @@ void ADeckEnemy::ReconcileClientPoolState()
 		if (bDeathHandled) ApplyLocalDeathRagdoll();
 	}
 	ApplyPoolPresentationState();
+	if (EnemyShipDiagnostics::CrewEnabled())
+	{
+		uint32 Key = HashCombine(GetTypeHash(PoolNetState.ActivationGeneration), GetTypeHash(GetDeckHostShip()));
+		Key = HashCombine(Key, GetTypeHash(bPoolActive)); Key = HashCombine(Key, GetTypeHash(bHostReady));
+		Key = HashCombine(Key, GetTypeHash(bDeathHandled)); Key = HashCombine(Key, GetTypeHash(IsHidden()));
+		Key = HashCombine(Key, GetTypeHash(GetActorEnableCollision()));
+		if (!bHasCrewDiagnosticKey || LastCrewDiagnosticKey != Key)
+		{
+			bHasCrewDiagnosticKey = true; LastCrewDiagnosticKey = Key;
+			if (EnemyShipDiagnostics::AdmitCrewEvent(CrewDiagnosticWindow, CrewDiagnosticCount, SuppressedCrewDiagnostics))
+			{
+				/* Diagnostics muted after pooling/crew verification.
+				UE_LOG(LogEnemyCrew, Display, TEXT("Event=ClientPresentation Enemy=%s Host=%s Generation=%u Revision=%u Point=%d Active=%d Dead=%d HostReady=%d HostHidden=%d Hidden=%d MeshVisible=%d MeshHidden=%d Collision=%d Position=%s Suppressed=%u"),
+					*GetName(), *GetNameSafe(GetDeckHostShip()), PoolNetState.ActivationGeneration, PoolNetState.Revision, InitialSpawnPointId,
+					bPoolActive, bDeathHandled, bHostReady, GetDeckHostShip() && GetDeckHostShip()->IsHidden(), IsHidden(),
+					GetMesh() && GetMesh()->IsVisible(), GetMesh() && GetMesh()->bHiddenInGame, GetActorEnableCollision(), *GetActorLocation().ToString(), SuppressedCrewDiagnostics); */ {}
+				SuppressedCrewDiagnostics = 0;
+			}
+		}
+	}
+
 	if (bPoolActive && bHostReady && !bLocalDeathRagdollApplied) RestoreDeckMovementState();
 	else StopDeckMovement();
 	if (bPoolActive && !bHostReady && PoolPresentationRetries < 50)
 	{
 		++PoolPresentationRetries;
 		GetWorldTimerManager().SetTimer(PoolPresentationRetryHandle, this, &ADeckEnemy::ReconcileClientPoolState, 0.1f, false);
-		if (PoolPresentationRetries == 50) UE_LOG(LogTemp, Warning, TEXT("[DeckEnemyPool] Enemy=%s Generation=%u Reason=HostReferencePending"), *GetName(), PoolNetState.ActivationGeneration);
+		if (PoolPresentationRetries == 50) /* Diagnostics muted after pooling/crew verification.
+UE_LOG(LogTemp, Warning, TEXT("[DeckEnemyPool] Enemy=%s Generation=%u Reason=HostReferencePending"), *GetName(), PoolNetState.ActivationGeneration); */ {}
 	}
 }
 

@@ -188,7 +188,8 @@ void AMultiGameMode::MarkHostedRoomWorldReady()
 	if (!Room || Room->HasStartupError()) return;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	const FString TempPath = RoomReadyPath + TEXT(".tmp");
-	const FString Contents = FString::Printf(TEXT("%s\n%u\n7777\n"), *RoomRunId.ToString(EGuidFormats::DigitsWithHyphens), FPlatformProcess::GetCurrentProcessId());
+	const FString Contents = FString::Printf(TEXT("%s\n%u\n7777\n%s"), *RoomRunId.ToString(EGuidFormats::DigitsWithHyphens),
+		FPlatformProcess::GetCurrentProcessId(), Room->WasWorldRecovered() ? TEXT("WorldRecovered\n") : TEXT(""));
 	if (FFileHelper::SaveStringToFile(Contents, *TempPath) && Files.MoveFile(*RoomReadyPath, *TempPath))
 	{
 		bHostedWorldReady = true;

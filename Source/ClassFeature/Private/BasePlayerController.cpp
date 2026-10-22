@@ -61,6 +61,14 @@ ABasePlayerController::ABasePlayerController()
 #include "Network/Lobby/SWRoomSubsystem.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/IConsoleManager.h"
+#include "StoryFacadeSubsystem.h"
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+static TAutoConsoleVariable<int32> CVarMiddleBossAndReturn(
+	TEXT("sw.Campaign.MiddleBossAndReturn"), 0,
+	TEXT("One-shot: 1/2/3 replaces campaign progress with that middle-boss quest stage and requests return. Inventory is unchanged. Resets to 0 after consumption."),
+	ECVF_Cheat);
+#endif
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 static TAutoConsoleVariable<int32> CVarSWShipMotionDiag(
@@ -142,17 +150,17 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 	if (!SharedState)
 	{
 		SharedState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
-			*GetNameSafe(this), *GetNameSafe(SharedState));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
+// 			*GetNameSafe(this), *GetNameSafe(SharedState));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
-			*GetNameSafe(this),
-			*GetNameSafe(SharedState),
-			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
+// 			*GetNameSafe(this),
+// 			*GetNameSafe(SharedState),
+// 			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
 	}
 
 	// Preserve the designer-authored tree configured on BP_BasePlayerState. The
@@ -173,12 +181,12 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 				SharedUpgrade->PreviewBaseStats,
 				false);
 			SharedState->ForceNetUpdate();
-			UE_LOG(LogTemp, Warning,
-				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
-				*GetNameSafe(SharedState),
-				*GetNameSafe(ConfiguredUpgrade),
-				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
-				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
+// 			UE_LOG(LogTemp, Warning,
+// 				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
+// 				*GetNameSafe(SharedState),
+// 				*GetNameSafe(ConfiguredUpgrade),
+// 				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
+// 				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
 		}
 		if (SharedUpgrade)
 		{
@@ -204,9 +212,9 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 		{
 			SharedState->RegisterPlayerShip(FoundPlayerShip);
 		}
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
-			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
+// 			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
 	}
 
 	/* UE_LOG(LogTemp, Log,
@@ -378,10 +386,10 @@ void ABasePlayerController::ServerRequestActivateSharedShipUpgrade_Implementatio
 	if (SharedUpgrade && Inventory)
 	{
 		const bool bIgnoreCosts = RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest();
-		UE_LOG(LogTemp, Warning,
+/* 		UE_LOG(LogTemp, Warning,
 			TEXT("[ShipUpgradeTrace][SharedRequestOptions] Player=%s IgnoreMaterialCosts=%s"),
 			*GetNameSafe(RequestingPlayer),
-			bIgnoreCosts ? TEXT("true") : TEXT("false"));
+			bIgnoreCosts ? TEXT("true") : TEXT("false")) */;
 		Result = SharedUpgrade->ActivateNodeWithInventoryProvider(NodeId, Inventory, bIgnoreCosts);
 		SharedState->ForceNetUpdate();
 		if (AShip* Ship = SharedState->GetCurrentPlayerShip())
@@ -718,6 +726,7 @@ void ABasePlayerController::RequestRoomSave()
 void ABasePlayerController::RequestRoomSaveAndExit()
 {
 	if (!IsLocalController()) return;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=Requested PendingSave=%d RequestId=%llu"), bRoomSavePending, PendingRoomSaveRequestId);
 	bExitAfterRoomSave = true;
 	if (!bRoomSavePending) RequestRoomSave();
 }
@@ -787,7 +796,12 @@ void ABasePlayerController::ServerRequestRoomSave_Implementation(uint64 RequestI
 
 void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId, bool bSuccess, const FString& Message)
 {
-	if (!bRoomSavePending || RequestId != PendingRoomSaveRequestId) return;
+	if (!bRoomSavePending || RequestId != PendingRoomSaveRequestId)
+	{
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=SaveAndExit Phase=ResultIgnored RequestId=%llu PendingId=%llu PendingSave=%d ExitAfterSave=%d"),
+			RequestId, PendingRoomSaveRequestId, bRoomSavePending, bExitAfterRoomSave);
+		return;
+	}
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=ManualSave Side=Client Result=%s RequestId=%llu Message=%s"), bSuccess ? TEXT("Success") : TEXT("Failed"), RequestId, *Message);
 	GetWorldTimerManager().ClearTimer(RoomSaveTimeoutHandle);
 	bRoomSavePending = false;
@@ -796,9 +810,11 @@ void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId
 	if (!bSuccess) { bExitAfterRoomSave = false; return; }
 	if (bExitAfterRoomSave)
 	{
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=LeaveRoom RequestId=%llu"), RequestId);
 		bExitAfterRoomSave = false;
 		if (USWRoomSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr)
 			Room->LeaveRoom();
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=ProcessExitRequested RequestId=%llu"), RequestId);
 		FPlatformMisc::RequestExit(false);
 	}
 }
@@ -834,6 +850,23 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 	StartStorageSearch(StorageChest);
 	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Sending ClientOpenStorage. Chest=%s"), *GetNameSafe(StorageChest));
 	ClientOpenStorage(StorageChest);
+}
+
+void ABasePlayerController::HandleChestPoolAssignment(AStorageChest* Chest, const FGuid& PreviousId, const FGuid& NextId)
+{
+	if (PreviousId == NextId) return;
+	if (PreviousId.IsValid())
+		if (const FStorageRevealState* State = StorageRevealStates.Find(Chest)) PooledStorageRevealStates.Add(PreviousId, *State);
+	// The first registration adopts any search progress made before discovery.
+	if (!PreviousId.IsValid() && NextId.IsValid() && StorageRevealStates.Contains(Chest)) return;
+	if (ActiveStorageChest == Chest)
+	{
+		if (HasAuthority()) CloseStorageFromServer(Chest);
+		else CloseStorage(false);
+	}
+	StorageRevealStates.Remove(Chest);
+	if (NextId.IsValid())
+		if (const FStorageRevealState* State = PooledStorageRevealStates.Find(NextId)) StorageRevealStates.Add(Chest, *State);
 }
 
 void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
@@ -1404,6 +1437,8 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	SyncYiSunSinDialogueTestMode();
+	ConsumeMiddleBossReturnRequest();
 	TickDeathFlow(DeltaTime);
 	TickShipMotionDiagnostics();
 	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
@@ -1421,6 +1456,69 @@ void ABasePlayerController::Tick(float DeltaTime)
 			}
 		}
 	}
+}
+
+void ABasePlayerController::SyncYiSunSinDialogueTestMode()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (!IsLocalController() || HasAuthority()) return;
+	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
+	if (!Toggle) return;
+	const int32 Value = Toggle->GetInt() != 0 ? 1 : 0;
+	if (Value == LastYiSunSinDialogueTestValue) return;
+	const bool bInitialDefault = LastYiSunSinDialogueTestValue == INDEX_NONE && Value == 0
+		&& (Toggle->GetFlags() & ECVF_SetByMask) == ECVF_SetByConstructor;
+	LastYiSunSinDialogueTestValue = Value;
+	if (!bInitialDefault) ServerSetYiSunSinDialogueTestMode(Value != 0);
+#endif
+}
+
+void ABasePlayerController::ServerSetYiSunSinDialogueTestMode_Implementation(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
+	if (!HasAuthority() || !PlayerState || !Toggle) return;
+	Toggle->Set(bEnabled ? 1 : 0, ECVF_SetByConsole);
+	UE_LOG(LogTemp, Display, TEXT("[YiDialogueTest] Server toggle=%d requested by %s"), bEnabled, *GetNameSafe(PlayerState));
+#endif
+}
+
+void ABasePlayerController::ConsumeMiddleBossReturnRequest()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if ((!IsLocalController() && !HasAuthority()) || !PlayerState || !GetLifeCharacter()) return;
+	const int32 BossNumber = CVarMiddleBossAndReturn.GetValueOnGameThread();
+	if (BossNumber == 0) return;
+	CVarMiddleBossAndReturn.AsVariable()->Set(0, ECVF_SetByConsole);
+	if (BossNumber < 1 || BossNumber > 3)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[CampaignTest] Invalid middle boss %d; expected 1/2/3"), BossNumber);
+		return;
+	}
+	ServerRequestMiddleBossAndReturn(BossNumber);
+#endif
+}
+
+void ABasePlayerController::ServerRequestMiddleBossAndReturn_Implementation(int32 BossNumber)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	UWorld* World = GetWorld();
+	AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	UGameInstance* Instance = GetGameInstance();
+	UStoryFacadeSubsystem* Story = Instance ? Instance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+	UClassFeatureRoomProgressSubsystem* Progress = Instance ? Instance->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr;
+	ABasePlayer* Requester = GetLifeCharacter();
+	if (!HasAuthority() || !PlayerState || BossNumber < 1 || BossNumber > 3
+		|| !Mode || !Mode->CanMutateGameplay(this) || !Requester || !Story || !Progress)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[CampaignTest] MiddleBossAndReturn rejected Boss=%d Controller=%s"), BossNumber, *GetName());
+		return;
+	}
+	const bool bStageSet = Story->ActivateDevelopmentMiddleBoss(BossNumber);
+	const bool bReturnAccepted = bStageSet && Progress->TryReturn(World, Requester);
+	UE_LOG(LogTemp, Display, TEXT("[CampaignTest] MiddleBossAndReturn Boss=%d StageSet=%d ReturnAccepted=%d"), BossNumber, bStageSet, bReturnAccepted);
+	if (!bReturnAccepted) ClientMessage(TEXT("Campaign test: stage/return failed; see server log."));
+#endif
 }
 
 void ABasePlayerController::TickShipMotionDiagnostics()
@@ -1513,7 +1611,7 @@ void ABasePlayerController::TickShipMotionDiagnostics()
 bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
 {
 	if (!CanMutateGameplay()) return false;
-	if (!IsValid(Chest) || Chest->IsLocked()) return false;
+	if (!IsValid(Chest) || Chest->IsLocked() || Chest->IsPoolIdle()) return false;
 	const ASharedStorageChest* Shared = Cast<ASharedStorageChest>(Chest);
 	return !Shared || Shared->CanPlayerAccess(GetPawn());
 }

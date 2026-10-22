@@ -109,12 +109,12 @@ enum class EDeckEnemySpawnRequestState : uint8
 };
 
 /**
- * Server-authoritative owner of an EnemyShip's deck spawn lifecycle and point claims.
- *
- * Waypoint components and reservations are not replicated. The server commits a claim
- * before exposing replicated enemy point IDs, so clients only receive actor movement,
- * movement-base state, pool activity, and the committed IDs carried by each enemy.
- */
+	* Server-authoritative owner of an EnemyShip's deck spawn lifecycle and point claims.
+	*
+	* Waypoint components and reservations are not replicated. The server commits a claim
+	* before exposing replicated enemy point IDs, so clients only receive actor movement,
+	* movement-base state, pool activity, and the committed IDs carried by each enemy.
+	*/
 UCLASS(ClassGroup = (Enemy), meta = (BlueprintSpawnableComponent))
 class ENEMY_API UDeckEnemySpawnerComponent : public UActorComponent
 {
@@ -137,9 +137,19 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void InitializeWaypoints();
+	void ReportSightObservation(AShip* PlayerShip, bool bSensed, float StimulusAge);
 	void InitializePool();
+	void BeginQueuedPoolInitialization();
+	bool StepQueuedPoolInitialization();
+	bool StepClearPoolForIdle();
+	/** Reconcile crew classes/stats/slots after a common ship receives a placement profile. */
+	void ReconcileBundleProfile();
+	/** Despawn crew and controllers without treating an Idle return as defeat. */
+	void ClearPoolForIdle();
+	bool AuditBundleCrew(bool bRequireCompletePool, FString& Error) const;
 	void CancelDeployment();
 	void ResetForNewEncounter();
+	void RestartSpawnStartDelay();
 	void Shutdown();
 
 	bool RequestDeployment(AShip* TriggeringPlayerShip, AActor* InitialCombatTarget = nullptr);
@@ -242,6 +252,10 @@ protected:
 	int32 RandomSeed = 1337;
 
 private:
+	void EmitCrewDiagnostic(const TCHAR* Event, const FString& Details = FString(), const AShip* ObservedShip = nullptr);
+	double CrewLogWindow = 0.0;
+	int32 CrewLogCount = 0;
+	uint32 SuppressedCrewLogs = 0;
 	struct FDeckEnemyDeploymentSlot
 	{
 		TSubclassOf<ADeckEnemy> EnemyClass;
@@ -305,6 +319,9 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ADeckEnemy>> EnemyPool;
+	FString AllocatedPlanSignature;
+	TArray<FDeckEnemyDeploymentSlot> QueuedPoolPlan;
+	int32 QueuedPoolIndex = 0;
 
 	TMap<int32, FDeckPointRuntimeState> PointRuntimeStates;
 	TArray<FDeckEnemyDeploymentSlot> DeploymentQueue;

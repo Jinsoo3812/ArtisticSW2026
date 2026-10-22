@@ -11,6 +11,7 @@
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
 #include "Engine/DataTable.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageChestPool.h"
 #include "ItemSpawn/BossChestGuaranteedLootData.h"
 #include "BaseCharacter.h"
 #include "Room/SWRoomSnapshotComponent.h"
@@ -450,6 +451,8 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		UE_LOG(LogTemp, Error, TEXT("Chest progression requires Balance, ItemAssetRegistry and CraftingRecipeDataTable."));
 		return false;
 	}
+	if (auto* Subsystem = GetWorld()->GetSubsystem<UStorageChestPoolSubsystem>())
+		if (auto* Pool = Subsystem->GetPool(); Pool && !Pool->MaterializeForLootRebalance()) return false;
 	const USettings_Item* ItemSettings = GetDefault<USettings_Item>();
 	const UFixedChestDropData* FixedDrops = ItemSettings
 		? ItemSettings->FixedChestDropData.LoadSynchronous() : nullptr;
@@ -529,6 +532,20 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		FString::Printf(TEXT("FinalGuardedChests=%d TotalSpawnedChests=%d"),
 			FinalGuardedChestCount, SpawnedPoints.Num()));
 	return true;
+}
+
+void AGlobalLootSpawnManager::RefillPooledGuardedChest(AChestSpawnPoint* Point, int32 Seed)
+{
+	if (!HasAuthority() || !Point || !bProgressionFinalized) return;
+	AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor());
+	const USettings_Item* Settings = GetDefault<USettings_Item>();
+	const UItemData* Items = Settings ? Settings->ItemAssetRegistry.LoadSynchronous() : nullptr;
+	const int32 ZoneIndex = static_cast<int32>(Point->GetProgressionZone());
+	if (!Chest || !Items || ZoneIndex < 0 || ZoneIndex >= 4) return;
+	Chest->ReplaceProgressionLoot(LastZoneDrops[ZoneIndex], Items, Seed);
+	const UFixedChestDropData* FixedDrops = Settings ? Settings->FixedChestDropData.LoadSynchronous() : nullptr;
+	if (FixedDrops) Point->ApplyFixedChanceDrops(FixedDrops, Seed);
+	EnsureBossGuaranteedLoot(Point);
 }
 
 void AGlobalLootSpawnManager::EnsureBossGuaranteedLoot(AChestSpawnPoint* Point)
