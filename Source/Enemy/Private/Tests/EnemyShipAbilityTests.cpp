@@ -137,16 +137,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipChargeEndpointAndTelegraphTest::RunTest(const FString& Parameters)
 {
-	// Existing ItemSubsystem fixture validation logs these project-data errors while a test World starts.
-	// They are unrelated to this actor contract and are covered by the item-data validation suite.
-	AddExpectedError(
-		TEXT("QuestItem has an invalid ResultItemTag"),
-		EAutomationExpectedErrorFlags::Contains,
-		1);
-	AddExpectedError(
-		TEXT("QuestItem contains an invalid ingredient"),
-		EAutomationExpectedErrorFlags::Contains,
-		2);
 
 	TestFalse(TEXT("Charge remains active before its endpoint"),
 		UGA_EnemyShipCharge::HasReachedChargeEndpoint(
@@ -278,14 +268,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(
-		TEXT("QuestItem has an invalid ResultItemTag"),
-		EAutomationExpectedErrorFlags::Contains,
-		1);
-	AddExpectedError(
-		TEXT("QuestItem contains an invalid ingredient"),
-		EAutomationExpectedErrorFlags::Contains,
-		2);
 
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>();
@@ -407,15 +389,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 {
-	// The shared test world loads known-invalid quest fixture data during subsystem startup.
-	AddExpectedError(
-		TEXT("QuestItem has an invalid ResultItemTag"),
-		EAutomationExpectedErrorFlags::Contains,
-		1);
-	AddExpectedError(
-		TEXT("QuestItem contains an invalid ingredient"),
-		EAutomationExpectedErrorFlags::Contains,
-		2);
 
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipTimeStopProjectile* Projectile =
@@ -669,14 +642,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(
-		TEXT("QuestItem has an invalid ResultItemTag"),
-		EAutomationExpectedErrorFlags::Contains,
-		1);
-	AddExpectedError(
-		TEXT("QuestItem contains an invalid ingredient"),
-		EAutomationExpectedErrorFlags::Contains,
-		2);
 
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>(
@@ -770,14 +735,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(
-		TEXT("QuestItem has an invalid ResultItemTag"),
-		EAutomationExpectedErrorFlags::Contains,
-		1);
-	AddExpectedError(
-		TEXT("QuestItem contains an invalid ingredient"),
-		EAutomationExpectedErrorFlags::Contains,
-		2);
 
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>(

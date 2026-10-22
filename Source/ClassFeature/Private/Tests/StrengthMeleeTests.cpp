@@ -9,8 +9,11 @@
 #include "Components/CapsuleComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "UObject/UObjectGlobals.h"
 #include "GASCombatLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
+#include "Effects/StatusGameplayEffect.h"
+#include "Components/StatusComponent.h"
 #include "Item/Weapons/SwordItem.h"
 #include "WeaponFeedback/WeaponFeedbackComponent.h"
 
@@ -34,6 +37,8 @@ namespace StrengthMeleeTests
 		{
 			if (World)
 			{
+				// Deferred cue callbacks must finish while their target world is valid.
+				FlushAsyncLoading();
 				World->DestroyWorld(false);
 				GEngine->DestroyWorldContext(World);
 			}
@@ -92,16 +97,16 @@ bool FStrengthMeleePayloadTest::RunTest(const FString& Parameters)
 	TargetAttributes->InitMaxHealth(100.0f);
 	TargetAttributes->InitHealth(100.0f);
 
+	TargetCharacter->StatusComponent->InitializeWithAbilitySystem(TargetASC);
 	Sword->SetOwner(SourceCharacter);
 	Sword->SetInstigator(SourceCharacter);
 	Sword->StatusEffectClasses = {
-		UGASDamageInstantGameplayEffect::StaticClass(),
-		UGASDamageInstantGameplayEffect::StaticClass()
+		UPoisonStatusGameplayEffect::StaticClass(),
+		UBurnStatusGameplayEffect::StaticClass()
 	};
 
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
-
 
 	DamageRequest.AttackCoefficient = 1.0f;
 	DamageRequest.InstigatorActor = SourceCharacter;
@@ -126,9 +131,10 @@ bool FStrengthMeleePayloadTest::RunTest(const FString& Parameters)
 	const float HealthBefore = TargetAttributes->GetHealth();
 	const FHitResult HitResult(TargetCharacter, TargetCharacter->GetCapsuleComponent(), TargetCharacter->GetActorLocation(), FVector::UpVector);
 	Sword->HandleHit(HitResult);
-	TestEqual(TEXT("Melee direct damage is followed by both status payloads"), TargetAttributes->GetHealth(), HealthBefore - 15.0f);
+	TestTrue(TEXT("Melee delivers both supported status identities"), TargetASC->HasMatchingGameplayTag(State_Status_Poison) && TargetASC->HasMatchingGameplayTag(State_Status_Burn));
+	TestEqual(TEXT("Melee direct damage is separate from delayed status ticks"), TargetAttributes->GetHealth(), HealthBefore - 10.0f);
 	Sword->HandleHit(HitResult);
-	TestEqual(TEXT("One melee attack does not apply twice to the same target"), TargetAttributes->GetHealth(), HealthBefore - 15.0f);
+	TestEqual(TEXT("One melee attack does not apply twice to the same target"), TargetAttributes->GetHealth(), HealthBefore - 10.0f);
 	Sword->HitScanEnd();
 	return true;
 }
@@ -140,8 +146,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FStrengthAuthoredSwordQueryTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
-		EAutomationExpectedErrorFlags::Contains, 0);
+
 	StrengthMeleeTests::FScopedTestWorld Scope;
 	if (!TestNotNull(TEXT("Query world exists"), Scope.World)) return false;
 	ABaseCharacter* Source = Scope.World->SpawnActor<ABaseCharacter>();

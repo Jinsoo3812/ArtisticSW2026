@@ -940,6 +940,18 @@ bool AMultiGameMode::CanMutateGameplay(AController* Controller) const
   && !FinishedDeadPlayers.Contains(Controller) && !IndividualRespawnInProgress.Contains(Controller)
   && (!IsHostedRoom() || (RoomReadyState && RoomReadyState->bWorldReady));
 }
+bool AMultiGameMode::CanChangeDevelopmentCampaignState(AController* Controller) const
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ return HasAuthority() && Controller && Controller->HasAuthority() && Controller->PlayerState
+  && CanMutateGameplay(Controller)
+  && (IsHostController(Controller) || GetNetMode() == NM_Standalone
+   || (GetNetMode() == NM_ListenServer && Controller->IsLocalController()));
+#else
+ return false;
+#endif
+}
+
 bool AMultiGameMode::CanHostRequestGameOverRetry(AController* Controller) const
 {
  return HasAuthority() && IsHostController(Controller) && SessionLifePhase == ESWSessionLifePhase::GameOver && !bLevelRestartRequested;

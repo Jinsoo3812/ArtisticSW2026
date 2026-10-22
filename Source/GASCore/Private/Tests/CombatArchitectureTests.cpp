@@ -49,8 +49,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAnimatedCombatHurtboxPolicyTest,
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FAnimatedCombatHurtboxPolicyTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
-		EAutomationExpectedErrorFlags::Contains, 0);
+
 	CombatArchitectureTests::FWorldScope Scope;
 	ABaseCharacter* Target = Scope.World->SpawnActor<ABaseCharacter>();
 	if (!TestNotNull(TEXT("Target character is created"), Target)) return false;
@@ -227,6 +226,7 @@ bool FStrengthArrowLaunchTest::RunTest(const FString& Parameters)
    Movement->IsActive() && Movement->bSimulationEnabled && Movement->UpdatedComponent == Arrow->GetCollisionComp());
   TestTrue(TEXT("Launch retains authoritative world velocity"), Movement->Velocity.Equals(Velocity));
   const FVector Before = Arrow->GetActorLocation();
+  ++GFrameCounter; // Movement deliberately skips the release frame.
   Movement->TickComponent(0.02f, LEVELTICK_All, nullptr);
   TestTrue(TEXT("Projectile actually moves forward"), Arrow->GetActorLocation().X > Before.X + 1.f);
   Arrow->SetRole(ROLE_SimulatedProxy);

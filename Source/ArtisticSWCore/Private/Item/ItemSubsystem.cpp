@@ -8,6 +8,17 @@
 #include "BaseGameplayTags.h"
 #include "Engine/World.h"
 
+namespace
+{
+	// Inventory identities span equipment/materials and the campaign's quest items.
+	// Category/state tags under Item are not inventory identities.
+	bool IsCraftingItemTag(const FGameplayTag& Tag)
+	{
+		return Tag.IsValid() && (Tag.MatchesTag(Item_Id)
+			|| (Tag.MatchesTag(Item_Quest) && Tag != Item_Quest));
+	}
+}
+
 void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -342,7 +353,7 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		{
 			OutErrors.Add(TEXT("A crafting recipe has an empty RowName."));
 		}
-		if (!Recipe.ResultItemTag.IsValid() || !Recipe.ResultItemTag.MatchesTag(Item_Id))
+		if (!IsCraftingItemTag(Recipe.ResultItemTag))
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s has an invalid ResultItemTag: %s"), *RecipeId.ToString(), *Recipe.ResultItemTag.ToString()));
 		}
@@ -369,7 +380,7 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 				SkillRecipeByResult.Add(Recipe.ResultItemTag, RecipeId);
 			}
 		}
-		if (Recipe.RequiredRecipeItemTag.IsValid() && !Recipe.RequiredRecipeItemTag.MatchesTag(Item_Id))
+		if (Recipe.RequiredRecipeItemTag.IsValid() && !IsCraftingItemTag(Recipe.RequiredRecipeItemTag))
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s has an invalid RequiredRecipeItemTag."), *RecipeId.ToString()));
 		}
@@ -389,7 +400,7 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		TSet<FGameplayTag> SeenIngredients;
 		for (const FCraftingItemStack& Ingredient : Recipe.Ingredients)
 		{
-			if (!Ingredient.ItemTag.IsValid() || !Ingredient.ItemTag.MatchesTag(Item_Id) || Ingredient.Quantity <= 0)
+			if (!IsCraftingItemTag(Ingredient.ItemTag) || Ingredient.Quantity <= 0)
 			{
 				OutErrors.Add(FString::Printf(TEXT("%s contains an invalid ingredient."), *RecipeId.ToString()));
 				continue;

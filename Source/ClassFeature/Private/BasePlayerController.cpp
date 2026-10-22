@@ -1458,6 +1458,17 @@ void ABasePlayerController::Tick(float DeltaTime)
 	}
 }
 
+bool ABasePlayerController::CanChangeDevelopmentCampaignState()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	const UWorld* World = GetWorld();
+	const AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	return Mode && Mode->CanChangeDevelopmentCampaignState(this);
+#else
+	return false;
+#endif
+}
+
 void ABasePlayerController::SyncYiSunSinDialogueTestMode()
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
@@ -1477,7 +1488,7 @@ void ABasePlayerController::ServerSetYiSunSinDialogueTestMode_Implementation(boo
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
-	if (!HasAuthority() || !PlayerState || !Toggle) return;
+	if (!CanChangeDevelopmentCampaignState() || !Toggle) return;
 	Toggle->Set(bEnabled ? 1 : 0, ECVF_SetByConsole);
 	UE_LOG(LogTemp, Display, TEXT("[YiDialogueTest] Server toggle=%d requested by %s"), bEnabled, *GetNameSafe(PlayerState));
 #endif
@@ -1487,6 +1498,8 @@ void ABasePlayerController::ConsumeMiddleBossReturnRequest()
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if ((!IsLocalController() && !HasAuthority()) || !PlayerState || !GetLifeCharacter()) return;
+	// A remote guest must not consume the server console's one-shot request.
+	if (HasAuthority() && !CanChangeDevelopmentCampaignState()) return;
 	const int32 BossNumber = CVarMiddleBossAndReturn.GetValueOnGameThread();
 	if (BossNumber == 0) return;
 	CVarMiddleBossAndReturn.AsVariable()->Set(0, ECVF_SetByConsole);
@@ -1502,20 +1515,18 @@ void ABasePlayerController::ConsumeMiddleBossReturnRequest()
 void ABasePlayerController::ServerRequestMiddleBossAndReturn_Implementation(int32 BossNumber)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	UWorld* World = GetWorld();
-	AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
 	UGameInstance* Instance = GetGameInstance();
 	UStoryFacadeSubsystem* Story = Instance ? Instance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
 	UClassFeatureRoomProgressSubsystem* Progress = Instance ? Instance->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr;
 	ABasePlayer* Requester = GetLifeCharacter();
-	if (!HasAuthority() || !PlayerState || BossNumber < 1 || BossNumber > 3
-		|| !Mode || !Mode->CanMutateGameplay(this) || !Requester || !Story || !Progress)
+	if (!CanChangeDevelopmentCampaignState() || BossNumber < 1 || BossNumber > 3
+		|| !Requester || !Story || !Progress)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[CampaignTest] MiddleBossAndReturn rejected Boss=%d Controller=%s"), BossNumber, *GetName());
 		return;
 	}
 	const bool bStageSet = Story->ActivateDevelopmentMiddleBoss(BossNumber);
-	const bool bReturnAccepted = bStageSet && Progress->TryReturn(World, Requester);
+	const bool bReturnAccepted = bStageSet && Progress->TryReturn(GetWorld(), Requester);
 	UE_LOG(LogTemp, Display, TEXT("[CampaignTest] MiddleBossAndReturn Boss=%d StageSet=%d ReturnAccepted=%d"), BossNumber, bStageSet, bReturnAccepted);
 	if (!bReturnAccepted) ClientMessage(TEXT("Campaign test: stage/return failed; see server log."));
 #endif

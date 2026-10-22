@@ -61,8 +61,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	ChestSystemTests::FTestWorld TestWorld(TEXT("DataDrivenChestSpawnTestWorld"));
 	UWorld* World = TestWorld.World;
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
@@ -180,8 +179,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FGuardedChestUnlockTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	ChestSystemTests::FTestWorld TestWorld(TEXT("GuardedChestUnlockTestWorld"));
 	UWorld* World = TestWorld.World;
 	if (!TestNotNull(TEXT("Transient game world is created"), World))

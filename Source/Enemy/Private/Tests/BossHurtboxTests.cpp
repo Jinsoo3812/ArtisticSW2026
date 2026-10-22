@@ -28,8 +28,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBossAnimatedHurtboxRegressionTest,
 bool FBossAnimatedHurtboxRegressionTest::RunTest(const FString& Parameters)
 {
 	FEditorScriptExecutionGuard ScriptExecutionGuard;
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
-		EAutomationExpectedErrorFlags::Contains, 0);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
 	UClass* BossClass = LoadClass<AShipBossEnemy>(nullptr,
@@ -139,6 +138,7 @@ bool FBossAnimatedHurtboxRegressionTest::RunTest(const FString& Parameters)
 		SourceASC->RegisterComponent();
 		SourceASC->InitAbilityActorInfo(Source, Source);
 		SourceASC->AddAttributeSetSubobject(NewObject<UBaseAttributeSet>(Source));
+		SourceASC->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), 10.f);
 		UAbilitySystemComponent* TargetASC = Boss->GetAbilitySystemComponent();
 		TargetASC->InitAbilityActorInfo(Boss, Boss);
 		TargetASC->AddAttributeSetSubobject(CastChecked<UBaseAttributeSet>(Boss->GetDefaultSubobjectByName(TEXT("BasicAttributeSet"))));
@@ -149,19 +149,20 @@ bool FBossAnimatedHurtboxRegressionTest::RunTest(const FString& Parameters)
 		const FDelegateHandle Confirmation = Boss->GetHealthComponent()->OnConfirmedDamage.AddLambda(
 			[&ConfirmedHits](float, const FGameplayEffectContextHandle&, bool) { ++ConfirmedHits; });
 		AArrowProjectile* Arrow = World->SpawnActor<AArrowProjectile>();
+		Arrow->DispatchBeginPlay();
 		FStrengthDamageRequest Request;
 		Request.SourceASC = SourceASC;
 		Request.InstigatorActor = Source;
 		Request.EffectCauser = Arrow;
 		TestTrue(TEXT("Arrow initializes Strength damage"), Arrow->InitializeStrengthDamage(
 			SourceASC, Source, UGASCombatLibrary::MakeStrengthDamageEffectSpec(Request)));
-		Arrow->GetCollisionComp()->OnComponentHit.Broadcast(Arrow->GetCollisionComp(), Boss, Capsule, FVector::ZeroVector, CapsuleHit);
+		Arrow->HandleFlightImpact(CapsuleHit);
 		TestEqual(TEXT("Capsule arrow hit does not change health"), TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), 100.f);
 		TestEqual(TEXT("Capsule arrow hit emits no confirmed feedback"), ConfirmedHits, 0);
 		TestFalse(TEXT("Capsule hit does not consume arrow"), Arrow->IsActorBeingDestroyed());
 		if (LastBodyHit.GetComponent())
 		{
-			Arrow->GetCollisionComp()->OnComponentHit.Broadcast(Arrow->GetCollisionComp(), Boss, Mesh, FVector::ZeroVector, LastBodyHit);
+			Arrow->HandleFlightImpact(LastBodyHit);
 			TestTrue(TEXT("PhysicsAsset arrow hit reduces health"), TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()) < 100.f);
 			TestEqual(TEXT("PhysicsAsset arrow hit confirms feedback once"), ConfirmedHits, 1);
 			TestTrue(TEXT("Confirmed body hit consumes arrow"), Arrow->IsActorBeingDestroyed());
