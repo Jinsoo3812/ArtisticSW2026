@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Storage/StorageComponent.h"
 #include "Room/SWRoomStateAdapter.h"
+#include "Storage/StorageChestPoolTypes.h"
 #include "StorageChest.generated.h"
 
 USTRUCT()
@@ -29,6 +30,7 @@ struct FSWRoomChestState
 	UPROPERTY(SaveGame) bool bGuardFailed = false;
 	UPROPERTY(SaveGame) bool bRequiresGuardClear = false;
 	UPROPERTY(SaveGame) bool bBossEncounterReserved = false;
+	UPROPERTY(SaveGame) bool bIsBossChest = false;
 	UPROPERTY(SaveGame) bool bEnablePhysicsAndBuoyancy = false;
 	UPROPERTY(SaveGame) int32 LootSeed = 0;
 	UPROPERTY(SaveGame) FSoftObjectPath ChestDefinitionPath;
@@ -81,6 +83,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
 	bool HasBossGuard() const { return BossGuardCharacter != nullptr; }
 	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
+	bool IsBossChest() const { return bIsBossChest; }
+	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
 	bool IsBossGuardAlive() const;
 	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
 	bool IsBossEncounterReserved() const { return bBossEncounterReserved; }
@@ -90,6 +94,11 @@ public:
 	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
 	AShip* GetOwningShip() const { return OwningShip; }
 	void SetStoryGateDormant(bool bDormant);
+	float GetDistanceOptimizationRange() const { return DistanceOptimizationRange; }
+	bool IsPoolIdle() const { return PoolAssignment.bManaged && !PoolAssignment.StableId.IsValid(); }
+	const FStorageChestPoolAssignment& GetPoolAssignment() const { return PoolAssignment; }
+	void SetPoolAssignment(const FGuid& Id, const FTransform& Transform);
+	bool CanReturnToPool() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
 	void ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems);
@@ -104,6 +113,7 @@ public:
 	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed, float ExpectedValueRatio = 1.f);
 	/** Prevents a chest BP's legacy default definition from injecting snapshot loot. */
 	void ClearLegacyChestDefinition();
+	void ResetForNewEncounter();
 	void ReplaceProgressionLoot(const TArray<FProgressionComputedDrop>& Drops, const UItemData* Definitions, int32 Seed);
 
 	/** Appends independent rare drops after progression replacement without changing its rolls. */
@@ -132,6 +142,9 @@ public:
 	void HandleEmptyDestroyTimeout();
 
 protected:
+	UPROPERTY(ReplicatedUsing=OnRep_PoolAssignment) FStorageChestPoolAssignment PoolAssignment;
+	FGuid PreviousPoolAssignmentId;
+	UFUNCTION() void OnRep_PoolAssignment();
 	/**
 	 * Compatibility child for existing Blueprint assets that were authored when
 	 * SceneRoot was the native root. ChestMesh remains the physics/replication root.
@@ -208,6 +221,8 @@ protected:
 	TArray<TObjectPtr<ABaseCharacter>> GuardCharacters;
 	UPROPERTY(Transient)
 	TObjectPtr<ABaseCharacter> BossGuardCharacter;
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Guarding")
+	bool bIsBossChest = false;
 	UPROPERTY(Transient)
 	bool bBossEncounterReserved = false;
 	UPROPERTY(Transient)
@@ -256,6 +271,9 @@ protected:
 
 	UFUNCTION()
 	void HandleOwningShipDestroyed(AActor* DestroyedActor);
+
+	UFUNCTION()
+	void HandleGuardDestroyed(AActor* DestroyedActor);
 
 	UFUNCTION()
 	void HandleStorageChanged();

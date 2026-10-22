@@ -100,8 +100,9 @@ bool UDeckCombatTargetResolverComponent::Resolve(AActor* Target, FDeckTargetAnch
 	else if (UnresolvedSince < 0.) UnresolvedSince = Now;
 	Next.ActualWorldLocation = Target->GetActorLocation(); CachedAnchor = Next; LastSampleTime = Now; Out = Next;
 	if (PreviousSource != Next.Source || PreviousReason != Next.FailureReason)
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogDeckTargetTracking, Verbose, TEXT("Observer=%s Ship=%s Target=%s Source=%d Surface=%s Reason=%s"),
-			*GetNameSafe(GetOwner()), *GetNameSafe(Ship), *GetNameSafe(Target), int32(Next.Source), *Next.SurfaceId.ToString(), *Next.FailureReason.ToString());
+			*GetNameSafe(GetOwner()), *GetNameSafe(Ship), *GetNameSafe(Target), int32(Next.Source), *Next.SurfaceId.ToString(), *Next.FailureReason.ToString()); */ {}
 	if (bDrawTrackingDebug && Next.IsValid())
 	{
 		const FVector Center = Area->ToWorld(Next.LocalCenter);

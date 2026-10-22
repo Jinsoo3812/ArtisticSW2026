@@ -81,7 +81,8 @@ void USWPackagingAssetManager::ModifyCook(TConstArrayView<const ITargetPlatform*
 	}
 	const TArray<FString> Folders = {
 		TEXT("/Game/StylizedWeather/Material/Sky"), TEXT("/Game/StylizedWeather/Curve/Color"),
-		TEXT("/Game/StylizedWeather/Curve/Float"), TEXT("/Game/StylizedWeather/Texture"), TEXT("/Game/GameplayCues")
+		TEXT("/Game/StylizedWeather/Curve/Float"), TEXT("/Game/StylizedWeather/Texture"), TEXT("/Game/GameplayCues"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Materials/ISM")
 	};
 	Registry.ScanPathsSynchronous(Folders, false, true);
 	const FTopLevelAssetPath RedirectorClass(TEXT("/Script/CoreUObject"), TEXT("ObjectRedirector"));

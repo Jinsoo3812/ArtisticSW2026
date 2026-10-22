@@ -14,6 +14,7 @@ class WATERANDSHIP_API USWShipWakeEmitterComponent : public UActorComponent
 public:
 	USWShipWakeEmitterComponent();
 	virtual void BeginPlay() override;
+	void ResetSamplingForTeleport();
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 		FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -115,6 +116,7 @@ private:
 	FVector2D LastSamplePosition = FVector2D::ZeroVector;
 	FVector2D LastSampleForward = FVector2D(1.0, 0.0);
 	double LastSampleServerTime = 0.0;
+	float LastSampleAmplitudeCm = 0.0f;
 	bool bHasSample = false;
 	bool bLastReversing = false;
 };

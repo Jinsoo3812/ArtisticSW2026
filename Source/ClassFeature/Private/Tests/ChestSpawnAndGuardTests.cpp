@@ -222,6 +222,28 @@ bool FGuardedChestUnlockTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("The last guard death unlocks the island chest"), IslandChest->IsLocked());
 	TestEqual(TEXT("No living guards remain"), IslandChest->GetAliveGuardCount(), 0);
 
+	AStorageChest* NotificationChest = World->SpawnActor<AStorageChest>();
+	NotificationChest->ConfigureGuarding(true, {}, nullptr);
+	TestFalse(TEXT("No registered guards leaves the chest open"), NotificationChest->IsLocked());
+	TestFalse(TEXT("A guardless chest is not a boss chest"), NotificationChest->IsBossChest());
+	ABaseCharacter* LateGuard = World->SpawnActor<ABaseCharacter>();
+	ChestSystemTests::AddHealthComponent(LateGuard, TEXT("LateGuardHealth"));
+	NotificationChest->AddGuardCharacter(LateGuard);
+	NotificationChest->AddGuardCharacter(LateGuard);
+	TestTrue(TEXT("An actual late guard locks the chest"), NotificationChest->IsLocked());
+	TestEqual(TEXT("Repeated guard notification is idempotent"), NotificationChest->GetAliveGuardCount(), 1);
+	LateGuard->Destroy();
+	TestFalse(TEXT("Destroying the last guard unlocks the chest"), NotificationChest->IsLocked());
+	ABaseCharacter* LateBoss = World->SpawnActor<ABaseCharacter>();
+	ChestSystemTests::AddHealthComponent(LateBoss, TEXT("LateBossHealth"));
+	NotificationChest->AddBossGuardCharacter(LateBoss);
+	TestTrue(TEXT("Actual boss registration marks the chest as boss guarded"), NotificationChest->HasBossGuard());
+	TestTrue(TEXT("Actual boss registration marks the reward as a boss chest"), NotificationChest->IsBossChest());
+	TestTrue(TEXT("Actual boss registration locks the chest"), NotificationChest->IsLocked());
+	LateBoss->Destroy();
+	TestFalse(TEXT("Destroying the last boss unlocks the chest"), NotificationChest->IsLocked());
+	TestTrue(TEXT("The boss reward classification survives the boss's removal"), NotificationChest->IsBossChest());
+
 	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
 	TestNotNull(TEXT("Storage toggle controller spawns"), PlayerController);
 	if (PlayerController)

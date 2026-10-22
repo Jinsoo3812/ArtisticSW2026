@@ -76,6 +76,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
 	bool IsEncounterEnabled() const { return bEncounterEnabled; }
 
+	bool IsCampaignGateOpen() const;
+
 	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
 	EBossEncounterTrigger GetEncounterTrigger() const { return EncounterTrigger; }
 
@@ -96,6 +98,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
 	bool TryStartEncounter(AActor* TriggerActor);
 	void RefreshChestReservations() { UpdateBossReservation(); }
+	void ResetForNewEncounter();
 
 	UPROPERTY(BlueprintAssignable, Category = "Boss|Encounter")
 	FOnBossEncounterStateChangedSignature OnEncounterStateChanged;
@@ -127,7 +130,6 @@ protected:
 	void BindItemBox();
 	void UnbindItemBox();
 	void SetEncounterState(EBossEncounterState NewState);
-	bool IsCampaignGateOpen() const;
 	void UpdateBossReservation();
 	AChestSpawnPoint* ResolveTriggerChestPoint() const;
 

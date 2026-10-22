@@ -49,6 +49,7 @@ void UGA_EnemyShipLaunchTorpedo::ActivateAbility(
 	Ship->RefreshMountedCannons();
 
 	const int32 RequestedCount = FMath::Max(1, TorpedoCount);
+	/*
 	UE_LOG(
 		LogTemp,
 		Warning,
@@ -58,6 +59,7 @@ void UGA_EnemyShipLaunchTorpedo::ActivateAbility(
 		RequestedCount,
 		FMath::Max(0.0f, VolleyDurationSeconds),
 		FMath::Clamp(TargetLineAlpha, 0.0f, 1.0f));
+	*/
 	if (!FireSingleTorpedo())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);

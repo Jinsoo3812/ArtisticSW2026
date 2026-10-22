@@ -158,7 +158,7 @@ void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FSWKelvinWakeAtlas::Get().Initialize();
 	if (IsRunningDedicatedServer()) return;
 
-	EventTexture = UTexture2D::CreateTransient(MaxWakeCapacity, 4, PF_A32B32G32R32F,
+	EventTexture = UTexture2D::CreateTransient(MaxWakeCapacity, 5, PF_A32B32G32R32F,
 		TEXT("SWShipWakeM7Events"));
 	if (EventTexture)
 	{
@@ -345,6 +345,19 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 
 		UpdateEventTexture();
 		DispatchWakeComputeShader(ServerTime);
+		TArray<FSWShipWakeEvent> DiagnosticEvents;
+		if (FSWShipWakeRenderingDiagnostics::IsEnabled())
+		{
+			GetEventsSnapshot(DiagnosticEvents);
+			FSWShipWakeRenderingDiagnostics::FilterRenderingEvents(DiagnosticEvents);
+			DiagnosticEvents.Sort([](const FSWShipWakeEvent& A, const FSWShipWakeEvent& B)
+			{
+				return A.StartServerTime < B.StartServerTime;
+			});
+			DiagnosticEvents.SetNum(FMath::Min(DiagnosticEvents.Num(), GetMaxCapacity()), EAllowShrinking::No);
+			for (FSWShipWakeEvent& Event : DiagnosticEvents) Event.FroudeProfile = GetActiveFroudeProfile();
+		}
+		RenderingDiagnostics.Update(World, ServerTime, CurrentGridCenter, DiagnosticEvents, GetActiveFroudeProfile());
 
 		BindToWaterMaterials(ServerTime);
 	}
@@ -413,6 +426,9 @@ void USWShipWakeSubsystem::RegisterReplicator(ASWShipWakeReplicator* InReplicato
 
 void USWShipWakeSubsystem::AddOrUpdateCapped(const FSWShipWakeEvent& Event)
 {
+	bool bUpdated = false;
+	int32 EvictedId = 0;
+	bool bEvicted = false;
 	{
 		FWriteScopeLock Lock(EventsLock);
 		const int32 FoundIndex = Events.IndexOfByPredicate([Id = Event.EventId](const FSWShipWakeEvent& E)
@@ -421,6 +437,7 @@ void USWShipWakeSubsystem::AddOrUpdateCapped(const FSWShipWakeEvent& Event)
 		});
 		if (FoundIndex != INDEX_NONE)
 		{
+			bUpdated = true;
 			Events[FoundIndex] = Event;
 		}
 		else
@@ -428,12 +445,25 @@ void USWShipWakeSubsystem::AddOrUpdateCapped(const FSWShipWakeEvent& Event)
 			const int32 MaxCap = GetMaxCapacity();
 			if (Events.Num() >= MaxCap)
 			{
+				bEvicted = true;
+				EvictedId = Events[0].EventId;
 				Events.RemoveAt(0, 1, EAllowShrinking::No);
 			}
 			Events.Add(Event);
 		}
 	}
 	++Revision;
+	if (FSWShipWakeRenderingDiagnostics::IsEnabled())
+	{
+		const double Now = GetServerTime();
+		UE_LOG(LogSWShipWake, Log,
+			TEXT("[KelvinDiag:1:Store] World=%s Net=%d T=%.6f E%d Kind=%s Updated=%d Evicted=%d EvictedId=%d Segment=[%.6f,%.6f] EndLag=%.4f Amp=%.3f EndAmp=%.3f P0=(%.1f,%.1f) P1=(%.1f,%.1f)"),
+			*GetNameSafe(GetWorld()), GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1,
+			Now, Event.EventId, Event.EventId < 0 ? TEXT("Predicted") : TEXT("Authoritative"),
+			bUpdated, bEvicted, EvictedId, Event.StartServerTime, Event.EndServerTime,
+			Now - Event.EndServerTime, Event.InitialAmplitudeCm, Event.GetEndAmplitudeCm(), Event.Origin.X, Event.Origin.Y,
+			Event.EndOrigin.X, Event.EndOrigin.Y);
+	}
 }
 
 void USWShipWakeSubsystem::GetEventsSnapshot(TArray<FSWShipWakeEvent>& OutEvents) const
@@ -482,6 +512,37 @@ FVector2D USWShipWakeSubsystem::GetWakeGradient(
 	return FSWShipWakeEvaluator::EvaluateGradient(FVector2D(WorldPosition), ServerTime, Active);
 }
 
+void USWShipWakeSubsystem::GetActiveAuthoritativeEventsSnapshot(
+	const double ServerTime, TArray<FSWShipWakeEvent>& OutEvents) const
+{
+	OutEvents.Reset();
+	FReadScopeLock Lock(EventsLock);
+	OutEvents.Reserve(FMath::Min(Events.Num(), 128));
+	for (const FSWShipWakeEvent& Event : Events)
+	{
+		// SubmitPredictedEvent reserves negative IDs; zero is the authority fallback before replicator registration.
+		if (Event.EventId >= 0 && Event.IsActiveAt(ServerTime)) OutEvents.Add(Event);
+	}
+}
+
+float USWShipWakeSubsystem::GetAuthoritativeWakeHeight(
+	const FVector& WorldPosition, const double ServerTime) const
+{
+	if (CVarEnable.GetValueOnAnyThread() == 0) return 0.0f;
+	TArray<FSWShipWakeEvent> Active;
+	GetActiveAuthoritativeEventsSnapshot(ServerTime, Active);
+	return FSWShipWakeEvaluator::EvaluateHeight(FVector2D(WorldPosition), ServerTime, Active);
+}
+
+FVector2D USWShipWakeSubsystem::GetAuthoritativeWakeGradient(
+	const FVector& WorldPosition, const double ServerTime) const
+{
+	if (CVarEnable.GetValueOnAnyThread() == 0) return FVector2D::ZeroVector;
+	TArray<FSWShipWakeEvent> Active;
+	GetActiveAuthoritativeEventsSnapshot(ServerTime, Active);
+	return FSWShipWakeEvaluator::EvaluateGradient(FVector2D(WorldPosition), ServerTime, Active);
+}
+
 double USWShipWakeSubsystem::GetServerTime() const
 {
 	if (!GetWorld()) return 0.0;
@@ -515,17 +576,20 @@ void USWShipWakeSubsystem::RemoveExpiredEvents(const double ServerTime)
 void USWShipWakeSubsystem::UpdateEventTexture()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Wake_Upload);
-	if (!EventTexture || UploadedRevision == Revision.Load()) return;
+	const int32 RenderMode = FSWShipWakeRenderingDiagnostics::GetRenderEventMode();
+	const int32 MaxCap = GetMaxCapacity();
+	if (!EventTexture || (UploadedRevision == Revision.Load()
+		&& LastUploadedRenderMode == RenderMode && LastUploadedCapacity == MaxCap)) return;
 	TArray<FSWShipWakeEvent> Snapshot;
 	GetEventsSnapshot(Snapshot);
+	FSWShipWakeRenderingDiagnostics::FilterRenderingEvents(Snapshot);
 	Snapshot.Sort([](const FSWShipWakeEvent& A, const FSWShipWakeEvent& B)
 	{
 		return A.StartServerTime < B.StartServerTime;
 	});
-	const int32 MaxCap = GetMaxCapacity();
 	const int32 Count = FMath::Min(Snapshot.Num(), MaxCap);
 	TArray<FLinearColor> Pixels;
-	Pixels.SetNumZeroed(MaxWakeCapacity * 4);
+	Pixels.SetNumZeroed(MaxWakeCapacity * 5);
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		const FSWShipWakeEvent& E = Snapshot[Index];
@@ -548,6 +612,8 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 			E.WakeHalfWidthCm, E.DecayRate);
 		Pixels[Index + MaxWakeCapacity * 3] = FLinearColor(
 			Yaw0, Yaw1, E.FadeInSeconds, E.LengthCutRatio);
+		// 5번째 행 R에 종료 진폭을 전달한다. 시작 진폭(2번째 행 B)과 셰이더에서 보간한다.
+		Pixels[Index + MaxWakeCapacity * 4] = FLinearColor(E.GetEndAmplitudeCm(), 0.0f, 0.0f, 0.0f);
 	}
 	const int32 UploadCount = FMath::Clamp(Count, 1, MaxWakeCapacity);
 	if (FTexture2DResource* Resource = static_cast<FTexture2DResource*>(EventTexture->GetResource()))
@@ -555,12 +621,14 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 		ENQUEUE_RENDER_COMMAND(UpdateSWShipWakeM7Events)(
 			[Resource, Data = MoveTemp(Pixels), UploadCount](FRHICommandListImmediate& RHICmdList)
 			{
-				const FUpdateTextureRegion2D Region(0, 0, 0, 0, UploadCount, 4);
+				const FUpdateTextureRegion2D Region(0, 0, 0, 0, UploadCount, 5);
 				RHICmdList.UpdateTexture2D(Resource->GetTexture2DRHI(), 0, Region,
 					MaxWakeCapacity * sizeof(FLinearColor), reinterpret_cast<const uint8*>(Data.GetData()));
 			});
 	}
 	LastUploadedCount = Count;
+	LastUploadedRenderMode = RenderMode;
+	LastUploadedCapacity = MaxCap;
 	UploadedRevision = Revision.Load();
 }
 
