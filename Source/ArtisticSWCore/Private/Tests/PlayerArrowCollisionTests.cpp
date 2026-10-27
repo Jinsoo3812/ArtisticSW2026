@@ -42,9 +42,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerArrowIgnoresShooterTest,
 
 bool FPlayerArrowIgnoresShooterTest::RunTest(const FString& Parameters)
 {
-	// World initialization loads the existing crafting table, which has unrelated invalid quest rows.
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
-		EAutomationExpectedErrorFlags::Contains, 0);
+
 	PlayerArrowCollisionTests::FWorldScope Scope;
 	APawn* Shooter = Scope.World->SpawnActor<APawn>();
 	AActor* Wall = Scope.World->SpawnActor<AActor>();
@@ -91,8 +89,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FArrowIgnoresPCGBoundsTest,
 
 bool FArrowIgnoresPCGBoundsTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
-		EAutomationExpectedErrorFlags::Contains, 0);
+
 	PlayerArrowCollisionTests::FWorldScope Scope;
 	APCGVolume* Volume = Scope.World->SpawnActor<APCGVolume>();
 	AActor* ProfileBounds = Scope.World->SpawnActor<AActor>();

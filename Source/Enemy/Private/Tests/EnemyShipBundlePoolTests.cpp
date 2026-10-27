@@ -12,9 +12,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyShipBundleBudgetTest,
 
 bool FEnemyShipBundleBudgetTest::RunTest(const FString& Parameters)
 {
-	// Existing quest recipe validation runs when the first disposable world loads item data.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 0);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	// No BeginPlay: exercise real Actor allocation/destruction without combat or level authoring.
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("EnemyShipBundleBudgetWorld"));
 	FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);

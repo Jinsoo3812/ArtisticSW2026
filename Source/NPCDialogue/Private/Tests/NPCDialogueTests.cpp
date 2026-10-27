@@ -193,7 +193,7 @@ bool FNPCDialogueAuthoredTestAssetTest::RunTest(const FString& Parameters)
 {
 	UNPCDialogueData* Data = LoadObject<UNPCDialogueData>(
 		nullptr,
-		TEXT("/Game/New/NPC/Data/DA_TestNPCDialogue.DA_TestNPCDialogue"));
+		TEXT("/Game/Blueprints/NPC/Data/DA_TestNPCDialogue.DA_TestNPCDialogue"));
 	if (!TestNotNull(TEXT("DA_TestNPCDialogue loads"), Data))
 	{
 		return false;
