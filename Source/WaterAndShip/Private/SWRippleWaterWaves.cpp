@@ -75,8 +75,8 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 
 		if (USWShipWakeSubsystem* WakeSubsystem = World->GetSubsystem<USWShipWakeSubsystem>())
 		{
-			Height += WakeSubsystem->GetWakeHeight(InPosition, static_cast<double>(SyncTime));
-			const FVector2D WakeGradient = WakeSubsystem->GetWakeGradient(InPosition, static_cast<double>(SyncTime));
+			Height += WakeSubsystem->GetAuthoritativeWakeHeight(InPosition, static_cast<double>(SyncTime));
+			const FVector2D WakeGradient = WakeSubsystem->GetAuthoritativeWakeGradient(InPosition, static_cast<double>(SyncTime));
 			OutNormal = FVector(
 				OutNormal.X - WakeGradient.X,
 				OutNormal.Y - WakeGradient.Y,
@@ -109,7 +109,7 @@ float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPositi
 		}
 		if (USWShipWakeSubsystem* WakeSubsystem = World->GetSubsystem<USWShipWakeSubsystem>())
 		{
-			Height += WakeSubsystem->GetWakeHeight(InPosition, static_cast<double>(SyncTime));
+			Height += WakeSubsystem->GetAuthoritativeWakeHeight(InPosition, static_cast<double>(SyncTime));
 		}
 	}
 

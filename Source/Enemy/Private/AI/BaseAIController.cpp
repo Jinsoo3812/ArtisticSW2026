@@ -1,4 +1,5 @@
 #include "AI/BaseAIController.h"
+#include "BossAI/SamuraiDashRecoveryComponent.h"
 
 #include "AI/EnemyBehaviorSet.h"
 #include "AI/EnemyAlarmComponent.h"
@@ -237,6 +238,9 @@ bool ABaseAIController::SetEnemyState(EEnemyAIState NewState)
 			Deck->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
 		}
 	}
+	if (NewState != EEnemyAIState::Combat && OldState == EEnemyAIState::Combat)
+		if (APawn* StatePawn = GetPawn())
+			if (auto* Policy = StatePawn->FindComponentByClass<USamuraiDashRecoveryComponent>()) Policy->ResetPolicy();
 	BlackboardComponent->SetValueAsEnum(StateKeyName, static_cast<uint8>(NewState));
 	if (NewState != EEnemyAIState::Combat)
 	{

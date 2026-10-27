@@ -41,6 +41,10 @@ public:
 	bool IsNewRoomPending() const { return bNewRoomPending; }
 	bool IsNewRoomCommitted() const { return bNewRoomCommitted; }
 	bool HasStartupError() const { return bStartupError; }
+	bool BeginWorldRecovery();
+	bool IsWorldRecoveryPending() const { return bWorldRecoveryPending; }
+	bool WasWorldRecovered() const { return bWorldRecoveryAttempted; }
+	void CompleteWorldRecovery() { bWorldRecoveryPending = false; }
 	FGuid GetHostKey() const { return HostKey; }
 	int32 AdvanceRestoreGeneration() { return ++RestoreGeneration; }
 	int32 GetRestoreGeneration() const { return RestoreGeneration; }
@@ -54,6 +58,7 @@ public:
 	void ClearGameOverTravelPending() { bGameOverTravelPending = false; }
 	bool IsGameOverTravelPending() const { return bGameOverTravelPending; }
 private:
+	friend class FRoomWorldRecoveryPolicyTest;
 	TWeakObjectPtr<UWorld> DevelopmentSessionWorld;
 	TWeakObjectPtr<UWorld> DevelopmentEncounterWorld;
 	bool bDevelopmentSessionEnabled = false;
@@ -63,6 +68,8 @@ private:
 	FGuid HostKey;
 	bool bHostedRoom = false;
 	bool bStartupError = false;
+	bool bWorldRecoveryPending = false;
+	bool bWorldRecoveryAttempted = false;
 	bool bReturnTravelPending = false;
 	bool bFinalDepartureTravelPending = false;
 	bool bGameOverTravelPending = false;

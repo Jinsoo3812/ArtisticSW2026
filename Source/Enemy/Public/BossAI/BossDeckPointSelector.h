@@ -65,6 +65,10 @@ struct ENEMY_API FBossDestinationSelectionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "0.0", Units = "cm"))
 	float IdealWalkRange = 500.0f;
 
+	/** Optional Walk lower bound. Zero preserves every existing Walk/Vanish/Dash caller. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point|Walk", meta = (ClampMin = "0.0", Units = "cm"))
+	float MinimumWalkTravelDistance = 0.0f;
+
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point")
 	bool bCheckDashObstacles = true;

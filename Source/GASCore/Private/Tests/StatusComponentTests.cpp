@@ -11,6 +11,7 @@
 #include "Effects/AreaSlowGameplayEffect.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "UObject/UObjectGlobals.h"
 #include "StatusEffectLibrary.h"
 #include "Abilities/BaseDeathGameplayAbility.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
@@ -21,7 +22,7 @@ namespace StatusTests
 	{
 		UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("StatusTests"));
 		FWorld() { GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World); }
-		~FWorld() { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); }
+		~FWorld() { FlushAsyncLoading(); World->DestroyWorld(false); GEngine->DestroyWorldContext(World); }
 		ABaseCharacter* Character()
 		{
 			FActorSpawnParameters Params;
@@ -41,8 +42,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FStatusFixedLifetimeTest, "ArtisticSW.GAS.Statu
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FStatusFixedLifetimeTest::RunTest(const FString& Parameters)
 {
-	// Unrelated malformed crafting data is loaded by every transient world.
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	StatusTests::FWorld Test;
 	ABaseCharacter* Target = Test.Character();
 	UAbilitySystemComponent* ASC = Target->AbilitySystemComponent;
@@ -71,7 +71,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FStatusReceptionTest, "ArtisticSW.GAS.Status.Re
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FStatusReceptionTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	StatusTests::FWorld Test;
 	ABaseCharacter* Target = Test.Character();
 	UAbilitySystemComponent* ASC = Target->AbilitySystemComponent;

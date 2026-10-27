@@ -188,7 +188,8 @@ void AMultiGameMode::MarkHostedRoomWorldReady()
 	if (!Room || Room->HasStartupError()) return;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	const FString TempPath = RoomReadyPath + TEXT(".tmp");
-	const FString Contents = FString::Printf(TEXT("%s\n%u\n7777\n"), *RoomRunId.ToString(EGuidFormats::DigitsWithHyphens), FPlatformProcess::GetCurrentProcessId());
+	const FString Contents = FString::Printf(TEXT("%s\n%u\n7777\n%s"), *RoomRunId.ToString(EGuidFormats::DigitsWithHyphens),
+		FPlatformProcess::GetCurrentProcessId(), Room->WasWorldRecovered() ? TEXT("WorldRecovered\n") : TEXT(""));
 	if (FFileHelper::SaveStringToFile(Contents, *TempPath) && Files.MoveFile(*RoomReadyPath, *TempPath))
 	{
 		bHostedWorldReady = true;
@@ -939,6 +940,18 @@ bool AMultiGameMode::CanMutateGameplay(AController* Controller) const
   && !FinishedDeadPlayers.Contains(Controller) && !IndividualRespawnInProgress.Contains(Controller)
   && (!IsHostedRoom() || (RoomReadyState && RoomReadyState->bWorldReady));
 }
+bool AMultiGameMode::CanChangeDevelopmentCampaignState(AController* Controller) const
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ return HasAuthority() && Controller && Controller->HasAuthority() && Controller->PlayerState
+  && CanMutateGameplay(Controller)
+  && (IsHostController(Controller) || GetNetMode() == NM_Standalone
+   || (GetNetMode() == NM_ListenServer && Controller->IsLocalController()));
+#else
+ return false;
+#endif
+}
+
 bool AMultiGameMode::CanHostRequestGameOverRetry(AController* Controller) const
 {
  return HasAuthority() && IsHostController(Controller) && SessionLifePhase == ESWSessionLifePhase::GameOver && !bLevelRestartRequested;

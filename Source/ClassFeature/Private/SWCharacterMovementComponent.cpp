@@ -8,6 +8,7 @@
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "HAL/PlatformTime.h"
 
 namespace
 {
@@ -188,6 +189,10 @@ void FCharacterNetworkMoveData_SWCharacter::ClientFillNetworkMoveData(
 	const FSavedMove_SWCharacter& SWMove = static_cast<const FSavedMove_SWCharacter&>(ClientMove);
 	bHasSurfaceWaveServerTime = SWMove.bHasSurfaceWaveServerTime;
 	SurfaceWaveServerTimeSeconds = bHasSurfaceWaveServerTime ? SWMove.SurfaceWaveServerTimeSeconds : 0.0;
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && bHasSurfaceWaveServerTime
+		&& MoveType == ENetworkMoveType::NewMove && ClientMove.CharacterOwner && !MovementBase)
+		if (USwimmingComponent* Swim = ClientMove.CharacterOwner->FindComponentByClass<USwimmingComponent>())
+			Swim->LogPairedWaterProbe(TEXT("ClientSend"), TimeStamp, SurfaceWaveServerTimeSeconds, Location, ClientMove.DeltaTime, true);
 }
 
 bool FCharacterNetworkMoveData_SWCharacter::Serialize(
@@ -421,6 +426,63 @@ void USWCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations
 	}
 }
 
+bool USWCharacterMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
+{
+	UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	if (MovementMode != MOVE_Walking || !Base || !Base->GetOwner()->IsA<AShip>())
+	{
+		return Super::DoJump(bReplayingMoves, DeltaTime);
+	}
+
+	// A ship's heave must not increase the initial jump speed. Let CMC
+	// retain its normal jump checks, hold/count handling, and prediction.
+	const FVector PreviousVelocity = Velocity;
+	Velocity = FVector::VectorPlaneProject(Velocity, GetGravityDirection());
+	if (!Super::DoJump(bReplayingMoves, DeltaTime))
+	{
+		Velocity = PreviousVelocity;
+		return false;
+	}
+	return true;
+}
+
+FVector USWCharacterMovementComponent::GetImpartedMovementBaseVelocity() const
+{
+	const UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+	// Ship displacement is transported by based movement, not added to
+	// the player's velocity. This also avoids an impulse when leaving its edge.
+	if (Base && Base->GetOwner()->IsA<AShip>())
+	{
+		return FVector::ZeroVector;
+	}
+	return Super::GetImpartedMovementBaseVelocity();
+}
+
+void USWCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
+{
+	if (MovementMode == MOVE_Falling && PreviousMovementMode != MOVE_Falling)
+	{
+		UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+		bStayBasedInAir = PreviousMovementMode == MOVE_Walking && Base
+			&& Base->GetOwner()->IsA<AShip>() && !IsDeadPlayerMovement(CharacterOwner);
+		if (bStayBasedInAir)
+		{
+			// Keep the downward base query long enough to cover the jump apex.
+			const float GravityMagnitude = FMath::Abs(GetGravityZ());
+			if (GravityMagnitude > KINDA_SMALL_NUMBER)
+			{
+				StayBasedInAirHeight = FMath::Max(StayBasedInAirHeight,
+					FMath::Square(JumpZVelocity) / (2.0f * GravityMagnitude) + MaxStepHeight + 50.0f);
+			}
+		}
+	}
+	else if (MovementMode != MOVE_Falling)
+	{
+		bStayBasedInAir = false;
+	}
+	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+}
+
 FVector USWCharacterMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const
 {
 	return IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : Super::ConstrainInputAcceleration(InputAcceleration);
@@ -433,7 +495,23 @@ void USWCharacterMovementComponent::UpdateBasedMovement(float DeltaSeconds)
 	const FVector OldLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	// The engine already transports physics bodies when the base itself simulates.
 	const bool bEngineTransportsBodies = Base.IsValid() && Base->IsSimulatingPhysics();
+	const bool bFollowShipJump = IsFalling() && bStayBasedInAir && Base.IsValid()
+		&& Base->GetOwner()->IsA<AShip>();
+	const FQuat PreviousBaseRotation = OldBaseQuat;
 	Super::UpdateBasedMovement(DeltaSeconds);
+	if (bFollowShipJump && CharacterOwner->GetMovementBase() == Base.Get())
+	{
+		FVector BaseLocation;
+		FQuat BaseRotation;
+		if (MovementBaseUtility::GetMovementBaseTransform(Base.Get(),
+			CharacterOwner->GetBasedMovement().BoneName, BaseLocation, BaseRotation))
+		{
+			// Rotate player-controlled horizontal momentum with the deck while
+			// preserving the standard world-vertical jump/gravity trajectory.
+			const float YawDelta = (BaseRotation * PreviousBaseRotation.Inverse()).Rotator().Yaw;
+			Velocity = FRotator(0.0f, YawDelta, 0.0f).RotateVector(Velocity);
+		}
+	}
 	if (Mesh && !bEngineTransportsBodies && UpdatedComponent && Base.IsValid()
 		&& CharacterOwner->GetMovementBase() == Base.Get())
 	{
@@ -448,6 +526,20 @@ void USWCharacterMovementComponent::SmoothCorrection(const FVector& OldLocation,
 	USkeletalMeshComponent* Mesh = GetShipDeathRagdoll(CharacterOwner);
 	const FVector BeforeCorrection = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	Super::SmoothCorrection(OldLocation, OldRotation, NewLocation, NewRotation);
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner)
+	{
+		if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>(); Swim && Swim->IsCustomSwimming())
+		{
+			++SwimCorrectionDiagnosticCount;
+			Swim->LogNetworkDiagnostic(TEXT("Correction"), 0.0f, FString::Printf(
+				TEXT("Count=%u Old=%s New=%s Error=%s ErrorCm=%.3f Before=%s After=%s RotationDeg=%.3f MeshOffset=%s"),
+				SwimCorrectionDiagnosticCount, *OldLocation.ToCompactString(), *NewLocation.ToCompactString(),
+				*(NewLocation - OldLocation).ToCompactString(), FVector::Dist(NewLocation, OldLocation),
+				*BeforeCorrection.ToCompactString(), UpdatedComponent ? *UpdatedComponent->GetComponentLocation().ToCompactString() : TEXT("None"),
+				FMath::RadiansToDegrees(OldRotation.AngularDistance(NewRotation)),
+				ClientPredictionData ? *ClientPredictionData->MeshTranslationOffset.ToCompactString() : TEXT("None")));
+		}
+	}
 	if (Mesh && UpdatedComponent)
 	{
 		const FVector Delta = UpdatedComponent->GetComponentLocation() - BeforeCorrection;
@@ -552,6 +644,26 @@ void USWCharacterMovementComponent::MoveAutonomous(
 		}
 	}
 
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner && SWData && SWData->bHasSurfaceWaveServerTime)
+	{
+		if (CharacterOwner->HasAuthority() && SWMoveDataContainer.IsNewMoveData(CurrentData) && !SWData->MovementBase)
+			if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>())
+				Swim->LogPairedWaterProbe(TEXT("ServerReceive"), ClientTimeStamp, SWData->SurfaceWaveServerTimeSeconds,
+					SWData->Location, DeltaTime, bHasActiveSurfaceWaveServerTime);
+		const double Now = FPlatformTime::Seconds();
+		if (bForceSurfaceWaveCorrectionForCurrentMove || USwimmingComponent::GetNetworkDiagnosticLevel() > 1
+			|| Now - LastSwimMoveDiagnosticTime >= 0.1)
+		{
+			LastSwimMoveDiagnosticTime = Now;
+			if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>())
+				Swim->LogNetworkDiagnostic(TEXT("MoveTime"), DeltaTime, FString::Printf(
+					TEXT("ClientStamp=%.6f Flags=%u SentWaveT=%.6f ActiveWaveT=%.6f AnchorWaveT=%.6f AnchorStamp=%.6f Accepted=%d ForceCorrection=%d OldMove=%d NewMove=%d InputAccel=%s"),
+					ClientTimeStamp, uint32(CompressedFlags), SWData->SurfaceWaveServerTimeSeconds, ActiveSurfaceWaveServerTimeSeconds,
+					LastAcceptedSurfaceWaveServerTimeSeconds, LastAcceptedSurfaceWaveClientTimeStamp, bHasActiveSurfaceWaveServerTime,
+					bForceSurfaceWaveCorrectionForCurrentMove, SWMoveDataContainer.IsOldMoveData(CurrentData),
+					SWMoveDataContainer.IsNewMoveData(CurrentData), *NewAccel.ToCompactString()));
+		}
+	}
 	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags,
 		IsDeadPlayerMovement(CharacterOwner) ? FVector::ZeroVector : NewAccel);
 }
@@ -563,6 +675,33 @@ void USWCharacterMovementComponent::OnClientTimeStampResetDetected()
 	{
 		LastAcceptedSurfaceWaveClientTimeStamp -= MinTimeBetweenTimeStampResets;
 	}
+}
+
+void USWCharacterMovementComponent::ResetPredictionData_Client()
+{
+	Super::ResetPredictionData_Client();
+	ResetSurfaceWavePrediction(TEXT("ClientPredictionReset"));
+}
+
+void USWCharacterMovementComponent::ResetPredictionData_Server()
+{
+	Super::ResetPredictionData_Server();
+	ResetSurfaceWavePrediction(TEXT("ServerPredictionReset"));
+}
+
+void USWCharacterMovementComponent::ResetSurfaceWavePrediction(const TCHAR* Reason)
+{
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && bHasAcceptedSurfaceWaveTimeAnchor)
+		UE_LOG(LogTemp, Display, TEXT("[SwimNetReset] Reason=%s Pawn=%s Role=%d PreviousWaveT=%.9f PreviousStamp=%.9f"),
+			Reason, *GetNameSafe(CharacterOwner), CharacterOwner ? int32(CharacterOwner->GetLocalRole()) : -1,
+			LastAcceptedSurfaceWaveServerTimeSeconds, LastAcceptedSurfaceWaveClientTimeStamp);
+	// Possession changes reset CMC timestamps; anchors from the old prediction session cannot validate new moves.
+	ClearActiveSurfaceWaveServerTime();
+	bHasAcceptedSurfaceWaveTimeAnchor = false;
+	LastAcceptedSurfaceWaveServerTimeSeconds = 0.0;
+	LastAcceptedSurfaceWaveClientTimeStamp = 0.0f;
+	bForceSurfaceWaveCorrectionForCurrentMove = false;
+	LastSwimMoveDiagnosticTime = -1.0;
 }
 
 void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
@@ -603,6 +742,9 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 {
 	if (bForceSurfaceWaveCorrectionForCurrentMove)
 	{
+		if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner)
+			if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>())
+				Swim->LogNetworkDiagnostic(TEXT("ServerError"), DeltaTime, TEXT("Reason=InvalidWaveTime ForceCorrection=1"));
 		return true;
 	}
 	const bool bExceedsDefaultTolerance = Super::ServerExceedsAllowablePositionError(
@@ -614,14 +756,15 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 		ClientMovementBase,
 		ClientBaseBoneName,
 		ClientMovementMode);
+	if (USwimmingComponent::GetNetworkDiagnosticLevel() > 0 && CharacterOwner)
+		if (USwimmingComponent* Swim = CharacterOwner->FindComponentByClass<USwimmingComponent>(); Swim && Swim->IsCustomSwimming() && bExceedsDefaultTolerance)
+			Swim->LogNetworkDiagnostic(TEXT("ServerError"), DeltaTime, FString::Printf(
+				TEXT("Reason=Position ClientStamp=%.6f ClientPos=%s ServerPos=%s ErrorCm=%.3f ClientMode=%u ServerMode=%u ClientBase=%s ServerBase=%s"),
+				ClientTimeStamp, *ClientWorldLocation.ToCompactString(), *CharacterOwner->GetActorLocation().ToCompactString(),
+				FVector::Dist(ClientWorldLocation, CharacterOwner->GetActorLocation()), uint32(ClientMovementMode), uint32(PackNetworkMovementMode()),
+				*GetNameSafe(ClientMovementBase), *GetNameSafe(CharacterOwner->GetMovementBase())));
 
 	if (!bExceedsDefaultTolerance)
-	{
-		return false;
-	}
-
-	// 배 위에서 점프/낙하 중(MOVE_Falling)일 때, 네트워크 물리 시뮬레이션 지연으로 인한 월드 좌표 오차를 수용하여 클라이언트 보정 스냅 방지
-	if (LastStandingShip.IsValid() && (MovementMode == MOVE_Falling || ClientMovementMode == MOVE_Falling))
 	{
 		return false;
 	}
@@ -688,7 +831,7 @@ bool USWCharacterMovementComponent::CanUseShipBasedClientPosition(
 	if (ShipBasedClientAuthorityMaxError <= 0.0f
 		|| !CharacterOwner
 		|| !UpdatedComponent
-		|| MovementMode != MOVE_Walking
+		|| !(MovementMode == MOVE_Walking || (MovementMode == MOVE_Falling && bStayBasedInAir))
 		|| PackNetworkMovementMode() != ClientMovementMode
 		|| !ClientMovementBase)
 	{

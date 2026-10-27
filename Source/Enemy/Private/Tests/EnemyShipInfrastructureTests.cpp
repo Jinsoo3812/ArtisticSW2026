@@ -100,8 +100,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipSkillRuntimeOneShotTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
 	AShip* Target = TestWorld.World->SpawnActor<AShip>();
@@ -144,8 +142,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
 	if (!TestNotNull(TEXT("Enemy Ship spawned"), Ship))
@@ -197,8 +193,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipSquadOrbitDistanceTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	UShipSwarmSubsystem* Swarm = TestWorld.World->GetSubsystem<UShipSwarmSubsystem>();
 	if (!TestNotNull(TEXT("Swarm subsystem exists"), Swarm))
@@ -290,8 +284,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	UShipSwarmSubsystem* Swarm = TestWorld.World->GetSubsystem<UShipSwarmSubsystem>();
 	AEnemyShip* First = TestWorld.World->SpawnActor<AEnemyShip>();
@@ -318,16 +310,8 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 	Swarm->UnregisterShip(Second);
 	First->SquadID = TEXT("AvoidanceTest");
 	Second->SquadID = TEXT("AvoidanceTest");
-	First->GetNavigationComponent()->SetTargetShip(Target);
-	Second->GetNavigationComponent()->SetTargetShip(Target);
-	FEnemyShipNavigationProfile CombatProfile = First->GetNavigationComponent()->GetNavigationProfile();
-	CombatProfile.ReturnTriggerDistance = 50000.0f;
-	First->GetNavigationComponent()->SetNavigationProfile(CombatProfile);
-	Second->GetNavigationComponent()->SetNavigationProfile(CombatProfile);
-	First->GetNavigationComponent()->SetNavigationEnabled(true);
-	Second->GetNavigationComponent()->SetNavigationEnabled(true);
-	First->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
-	Second->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	// Exercise collision presentation before starting the combat fixture. Idle
+	// notifications intentionally retire the encounter and clear its target.
 	UBoxComponent* TestHull = NewObject<UBoxComponent>(First, TEXT("TestShipHull"));
 	TestHull->SetCollisionProfileName(TEXT("ShipHullPhysics"));
 	TestHull->RegisterComponent();
@@ -351,6 +335,18 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 		TestHull->GetCollisionResponseToChannel(ECC_EnemyShipObstacle), ECR_Ignore);
 	First->GetNavigationComponent()->OnNavigationStateChanged.Broadcast(
 		ENavalCombatState::Return, ENavalCombatState::Approach);
+	First->GetNavigationComponent()->SetTargetShip(Target);
+	Second->GetNavigationComponent()->SetTargetShip(Target);
+	FEnemyShipNavigationProfile CombatProfile = First->GetNavigationComponent()->GetNavigationProfile();
+	CombatProfile.ReturnTriggerDistance = 50000.0f;
+	First->GetNavigationComponent()->SetNavigationProfile(CombatProfile);
+	Second->GetNavigationComponent()->SetNavigationProfile(CombatProfile);
+	First->GetNavigationComponent()->SetNavigationEnabled(true);
+	Second->GetNavigationComponent()->SetNavigationEnabled(true);
+	First->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	Second->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	TestEqual(TEXT("Combat fixture has reacquired the first ship's target"), First->GetNavigationComponent()->GetTargetShip(), Target);
+	TestEqual(TEXT("Combat fixture has reacquired the second ship's target"), Second->GetNavigationComponent()->GetTargetShip(), Target);
 	Swarm->RegisterShip(First);
 	Swarm->RegisterShip(Second);
 
@@ -364,6 +360,12 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 		YieldingShip->GetNavigationComponent()->AcquireOverride(YieldingShip, 100, ChargeLikeRequest);
 	TestTrue(TEXT("Movement override receives absolute right of way"), Swarm->EvaluateAvoidance(PriorityShip).bShouldYield);
 	YieldingShip->GetNavigationComponent()->ReleaseOverride(ChargeLikeHandle);
+	First->SetBundleAuthoredName(TEXT("Avoidance_Z"));
+	Second->SetBundleAuthoredName(TEXT("Avoidance_A"));
+	TestTrue(TEXT("Reused bundle yields by logical identity rather than allocation name"), Swarm->EvaluateAvoidance(First).bShouldYield);
+	TestFalse(TEXT("Logical priority still prevents reciprocal yield"), Swarm->EvaluateAvoidance(Second).bShouldYield);
+	First->SetBundleAuthoredName(NAME_None);
+	Second->SetBundleAuthoredName(NAME_None);
 
 	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>();
 	if (TestNotNull(TEXT("Skill obstacle spawned"), Obstacle))
@@ -436,7 +438,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipAnchorIntegrationTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("Recipe_DecipherCipher"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
@@ -501,13 +502,12 @@ bool FEnemyShipAnchorIntegrationTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEnemyShipCrewGatedAnchorTest,
-	"ArtisticSW.Enemy.Ship.Anchor.CrewGating",
+	FEnemyShipCrewIndependentAnchorTest,
+	"ArtisticSW.Enemy.Ship.Anchor.CrewIndependent",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
+bool FEnemyShipCrewIndependentAnchorTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
@@ -522,20 +522,26 @@ bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
 	// Initially without crew
 	TestFalse(TEXT("Initially no living crew"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 0"), Ship->GetLivingCrewCount(), 0);
-	TestFalse(TEXT("Anchor control remains locked before a crew encounter"), Ship->AllowsPlayerAnchorControl());
+	TestTrue(TEXT("Anchor control allowed before a crew encounter"), Ship->AllowsPlayerAnchorControl());
 	TestFalse(TEXT("Helm control remains locked before a crew encounter"), Ship->AllowsPlayerHelmControl());
+	Ship->HandleAnchorInteracted(nullptr);
+	TestTrue(TEXT("Anchor drops before a crew encounter"), Ship->IsAnchorDropped());
+	Ship->HandleAnchorInteracted(nullptr);
+	TestFalse(TEXT("Anchor raises before a crew encounter"), Ship->IsAnchorDropped());
 
 	// Register crew member
+	CrewMember->SetOwner(Ship);
 	Ship->RegisterCrewEnemy(CrewMember);
 	TestTrue(TEXT("Has living crew after registration"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 1"), Ship->GetLivingCrewCount(), 1);
-	TestFalse(TEXT("Anchor control blocked while crew alive"), Ship->AllowsPlayerAnchorControl());
+	TestTrue(TEXT("Anchor control allowed while crew alive"), Ship->AllowsPlayerAnchorControl());
 	TestFalse(TEXT("Helm control blocked while crew alive"), Ship->AllowsPlayerHelmControl());
 
-	// Attempt anchor interaction while crew alive
-	AddExpectedError(TEXT("Anchor control rejected on"), EAutomationExpectedErrorFlags::Contains, 1);
+	// Anchor interaction succeeds while crew alive.
 	Ship->HandleAnchorInteracted(nullptr);
-	TestFalse(TEXT("Anchor remains raised while crew alive"), Ship->IsAnchorDropped());
+	TestTrue(TEXT("Anchor drops while crew alive"), Ship->IsAnchorDropped());
+	Ship->HandleAnchorInteracted(nullptr);
+	TestFalse(TEXT("Anchor raises while crew alive"), Ship->IsAnchorDropped());
 
 	// Unregister or eliminate crew
 	Ship->UnregisterCrewEnemy(CrewMember);
@@ -558,7 +564,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipCrewDefeatedDamageTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
+
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
 	ARangedEnemy* Crew = TestWorld.World->SpawnActor<ARangedEnemy>();
@@ -568,7 +574,9 @@ bool FEnemyShipCrewDefeatedDamageTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Ship ASC exists"), ASC)) return false;
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), 100.0f);
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 100.0f);
+	Crew->SetOwner(Ship);
 	Ship->RegisterCrewEnemy(Crew);
+	TestEqual(TEXT("Owned living crew registers before the damage test"), Ship->GetLivingCrewCount(), 1);
 	const auto ApplyDamage = [ASC]()
 	{
 		FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(

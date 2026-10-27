@@ -115,6 +115,10 @@ struct FReplicatedLocomotionState
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     int32 EventSequence = 0;
 
+    /** Server timestamp of the existing semantic event, not the periodically refreshed snapshot. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    float EventServerTimeSeconds = -1.f;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     EReplicatedLocomotionEvent LastLocomotionEvent = EReplicatedLocomotionEvent::None;
 
@@ -134,6 +138,7 @@ struct FReplicatedLocomotionState
                FMath::IsNearlyEqual(LandStartGroundSpeed, Other.LandStartGroundSpeed) &&
                FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
                EventSequence == Other.EventSequence &&
+               EventServerTimeSeconds == Other.EventServerTimeSeconds &&
                LastLocomotionEvent == Other.LastLocomotionEvent &&
                bShouldTurnInPlace == Other.bShouldTurnInPlace &&
                FMath::IsNearlyEqual(DesiredFacingDeltaYaw, Other.DesiredFacingDeltaYaw, 1.0f);
@@ -260,7 +265,7 @@ protected:
     void AlignActorYawToControlYawForStartIfNeeded();
     void StartFallOffStart();
     void StopFallOffStart();
-    void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
+    void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent, float FoleyAgeSeconds = 0.f);
     void FinishLanding();
     void FinishLandingRequest();
     void CompleteLandingFromSelectedAnimation(const TCHAR* CompletionSource);

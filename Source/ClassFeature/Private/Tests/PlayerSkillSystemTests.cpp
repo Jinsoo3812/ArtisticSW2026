@@ -5,11 +5,12 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
+#include "BaseAttributeSet.h"
 #include "Crafting/CraftingAccessComponent.h"
 #include "Crafting/CraftingComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
+#include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 #include "Item/ItemData.h"
 #include "Item/ItemSubsystem.h"
@@ -61,9 +62,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 {
-	// The shared ItemSubsystem currently reports three unrelated QuestItem
-	// authoring errors whenever a project game world is created.
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("PlayerSkillSystemWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
@@ -80,7 +78,7 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 	};
 
 	ABasePlayerState* PlayerState = World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
 	if (!TestNotNull(TEXT("PlayerState is spawned"), PlayerState)
 		|| !TestNotNull(TEXT("PlayerController is spawned"), PlayerController)
@@ -90,7 +88,9 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
+	PlayerController->PlayerState = PlayerState;
 	PlayerController->Possess(Player);
 
 	UPlayerSkillComponent* SkillComponent = PlayerState->GetPlayerSkillComponent();
@@ -166,9 +166,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 {
-	// The shared ItemSubsystem currently reports three unrelated QuestItem
-	// authoring errors whenever a project game world is created.
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("PlayerSkillCraftingWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
@@ -189,7 +186,7 @@ bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 
 	UItemSubsystem* Items = World->GetSubsystem<UItemSubsystem>();
 	ABasePlayerState* PlayerState = World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
 	AActor* Facility = World->SpawnActor<AActor>();
 	if (!TestNotNull(TEXT("Item subsystem exists"), Items)
@@ -202,7 +199,9 @@ bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Items->ClearCraftingRecipesForTesting();
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
+	PlayerController->PlayerState = PlayerState;
 	PlayerController->Possess(Player);
 	UCraftingAccessComponent* Access = NewObject<UCraftingAccessComponent>(Facility, TEXT("SkillCraftingAccess"));
 	Facility->AddInstanceComponent(Access);

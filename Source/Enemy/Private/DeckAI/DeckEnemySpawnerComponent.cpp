@@ -1,4 +1,7 @@
 #include "DeckAI/DeckEnemySpawnerComponent.h"
+#include "ShipAI/EnemyShipDiagnostics.h"
+#include "HAL/PlatformTime.h"
+#include "Perception/AISenseConfig_Sight.h"
 
 #include "AI/BaseAIController.h"
 #include "Components/CapsuleComponent.h"
@@ -70,14 +73,38 @@ void UDeckEnemySpawnerComponent::SetWaitReason(FName Reason)
 {
 	if (LastSpawnReason == Reason) return;
 	LastSpawnReason = Reason;
+	/* EmitCrewDiagnostic(TEXT("Readiness"), TEXT("Reason=") + Reason.ToString()); */ {}
+}
+
+void UDeckEnemySpawnerComponent::EmitCrewDiagnostic(const TCHAR* Event, const FString& Details, const AShip* ObservedShip)
+{
 	const auto* Host = GetHostShip();
-	const auto* Id = Host ? Host->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr;
-	const auto* Area = Host ? Host->GetDeckWalkAreaComponent() : nullptr;
-	UE_LOG(LogTemp, Log, TEXT("[DeckEnemySpawner] Ship=%s Label=%s HostId=%s Generation=%u Request=%u Epoch=%u State=%d WalkRevision=%d Slot=%d PointId=%d Reason=%s"),
-		*GetNameSafe(Host), Host ? *Host->GetActorNameOrLabel() : TEXT("None"), Id ? *Id->StableId.ToString() : TEXT("None"),
-		EncounterGeneration, RequestId, ExecutionEpoch, Host ? static_cast<int32>(Host->GetRuntimeStateSnapshot().Phase) : INDEX_NONE,
-		Area ? Area->GetRevision() : INDEX_NONE, DeploymentQueueIndex,
-		DeploymentQueue.IsValidIndex(DeploymentQueueIndex) ? DeploymentQueue[DeploymentQueueIndex].SpawnPointId : INDEX_NONE, *Reason.ToString());
+	if (!Host || !Host->HasAuthority() || !EnemyShipDiagnostics::AdmitCrewEvent(CrewLogWindow, CrewLogCount, SuppressedCrewLogs)) return;
+	const auto* Identity = Host->FindComponentByClass<USWRoomSnapshotComponent>();
+	const auto* Area = Host->GetDeckWalkAreaComponent();
+	const auto* NavalController = Cast<ANavalAIController>(Host->GetController());
+	const AShip* Sighted = NavalController ? NavalController->FindSightedPlayerShip(DeploymentTriggerShip.Get()) : nullptr;
+	const AShip* Target = ObservedShip ? ObservedShip : DeploymentTriggerShip.Get();
+	const float Distance = Target ? FVector::Dist2D(Host->GetActorLocation(), Target->GetActorLocation()) : -1.f;
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.;
+	const int32 PointId = DeploymentQueue.IsValidIndex(DeploymentQueueIndex) ? DeploymentQueue[DeploymentQueueIndex].SpawnPointId : INDEX_NONE;
+	/* Diagnostics muted after pooling/crew verification.
+	UE_LOG(LogEnemyCrew, Display, TEXT("Event=%s Host=%s Placement=%s HostId=%s Generation=%u Request=%u Epoch=%u RequestState=%d DeploymentState=%d Enabled=%d Pool=%d Alive=%d Plan=%d Slot=%d Point=%d HostActive=%d PoolIdle=%d DistanceDormant=%d StoryDormant=%d CrewDefeated=%d WalkReady=%d WalkRevision=%d Target=%s Sighted=%s DistanceCM=%.1f SightRadiusCM=%.1f SpawnDelayLeft=%.3f SightDeadlineLeft=%.3f ReactionLeft=%.3f Suppressed=%u %s"),
+		Event, *GetNameSafe(Host), *Host->GetBundleAuthoredName().ToString(), Identity ? *Identity->StableId.ToString() : TEXT("None"),
+		EncounterGeneration, RequestId, ExecutionEpoch, static_cast<int32>(SpawnRequestState), static_cast<int32>(DeploymentState), IsEnabled(),
+		EnemyPool.Num(), AliveDeployedEnemies.Num(), SpawnPlan.Num(), DeploymentQueueIndex, PointId,
+		Host->CanDeployDeckEnemies(), Host->IsBundlePoolIdle(), Host->IsDistanceOptimizationDormant(), Host->IsStoryGateDormant(), Host->IsCrewDefeated(),
+		Area && Area->IsReady(), Area ? Area->GetRevision() : INDEX_NONE, *GetNameSafe(Target), *GetNameSafe(Sighted), Distance,
+		NavalController ? NavalController->GetConfiguredSightRadius() : -1.f,
+		GetRemainingSpawnStartDelay(), PendingSightExpiry > 0. ? PendingSightExpiry - Now : -1., ReactionReadyTime > 0. ? ReactionReadyTime - Now : -1.,
+		SuppressedCrewLogs, *Details); */ {}
+	SuppressedCrewLogs = 0;
+}
+
+void UDeckEnemySpawnerComponent::ReportSightObservation(AShip* PlayerShip, bool bSensed, float StimulusAge)
+{
+	if (!EnemyShipDiagnostics::CrewEnabled()) return;
+	/* EmitCrewDiagnostic(bSensed ? TEXT("SightAcquired") : TEXT("SightLost"), FString::Printf(TEXT("StimulusAge=%.3f"), StimulusAge), PlayerShip); */ {}
 }
 
 FString UDeckEnemySpawnerComponent::GetPlanSignature() const
@@ -95,15 +122,9 @@ FString UDeckEnemySpawnerComponent::GetPlanSignature() const
 
 bool UDeckEnemySpawnerComponent::CanSuspendForDistanceOptimization() const
 {
-	if (bActivationInProgress || SpawnRequestState == EDeckEnemySpawnRequestState::Running
-		|| GetAliveDeployedEnemyCount() > 0) return false;
-	if (SpawnRequestState == EDeckEnemySpawnRequestState::PendingReadiness && GetWorld()
-		&& GetWorld()->GetTimeSeconds() < PendingSightExpiry) return false;
-	for (const auto& Point : PointRuntimeStates) if (Point.Value.ReservedBy.IsValid()) return false;
-	for (const ADeckEnemy* Enemy : EnemyPool)
-		if (IsValid(Enemy) && Enemy->IsPoolActive() && !Enemy->IsPoolDeathHandled()) return false;
-	const auto* Controller = GetHostShip() ? Cast<ANavalAIController>(GetHostShip()->GetController()) : nullptr;
-	return !Controller || !Controller->FindSightedPlayerShip();
+	// The ship's Idle/home/distance policy owns retirement. Crew state must not
+	// keep a remote Idle hull allocated. Only defer an in-flight activation transaction.
+	return !bActivationInProgress;
 }
 
 void UDeckEnemySpawnerComponent::RequestReadinessEvaluation()
@@ -142,14 +163,18 @@ void UDeckEnemySpawnerComponent::PauseDeployment(FName Reason)
 
 void UDeckEnemySpawnerComponent::ScheduleDeployment(float Delay, bool bBegin)
 {
+	// Pooling fix (2026-10-13): preserve epoch/generation checks across retirement and save restore.
+	// Never ClearTimer(Handle) inside this callback: it can destroy the delegate currently executing.
+	// Direct readiness evaluation also stalls because IsTimerActive includes the Executing timer.
+	// Queue a separate evaluation after the one-shot callback returns instead.
 	FTimerHandle& Handle = bBegin ? SightDelayTimerHandle : DeploymentTimerHandle;
 	const uint32 Epoch = ExecutionEpoch, Generation = EncounterGeneration;
 	CreateDeploymentTicket(Delay);
-	GetWorld()->GetTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [this, Epoch, Generation, bBegin]
+	GetWorld()->GetTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [this, Epoch, Generation]
 	{
 		if (Epoch != ExecutionEpoch || Generation != EncounterGeneration || bShuttingDown) return;
-		GetWorld()->GetTimerManager().ClearTimer(bBegin ? SightDelayTimerHandle : DeploymentTimerHandle);
-		EvaluateDeploymentReadiness();
+		// Executing one-shot timers are still active. Recheck after this timer has expired.
+		RequestReadinessEvaluation();
 	}), FMath::Max(0.001f, Delay), false);
 }
 
@@ -404,6 +429,7 @@ bool UDeckEnemySpawnerComponent::RestoreRoomState(const FSWRoomDeckSpawnerState&
 bool UDeckEnemySpawnerComponent::FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
 {
 	if (!bHasPendingRoomState) return true;
+	AllocatedPlanSignature = GetPlanSignature();
 	auto Find = [&RegisteredActors](const FGuid& Id) -> AActor*
 	{
 		AActor* const* Found = RegisteredActors.Find(Id); return Found ? *Found : nullptr;
@@ -471,10 +497,11 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 	{
 		if (bLogErrors)
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Error,
 				TEXT("[DeckEnemySpawner] Invalid explicit spawn slot. Ship=%s Slot=%d Reason=%s"),
 				*GetNameSafe(Host), SlotIndex,
-				AuthoredSlot.EnemyClass ? TEXT("MissingHost") : TEXT("MissingEnemyClass"));
+				AuthoredSlot.EnemyClass ? TEXT("MissingHost") : TEXT("MissingEnemyClass")); */ {}
 		}
 		return false;
 	}
@@ -485,16 +512,18 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 	{
 		if (bLogErrors)
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Error,
 				TEXT("[DeckEnemySpawner] Invalid explicit spawn slot. Ship=%s Slot=%d Class=%s SpawnPointId=%d Reason=UnknownSpawnPointId"),
-				*GetNameSafe(Host), SlotIndex, *GetNameSafe(AuthoredSlot.EnemyClass.Get()), PointId);
+				*GetNameSafe(Host), SlotIndex, *GetNameSafe(AuthoredSlot.EnemyClass.Get()), PointId); */ {}
 		}
 		return false;
 	}
 
 	if (!Waypoint->CanSpawnEnemy())
 	{
-		if (bLogErrors) UE_LOG(LogTemp, Error, TEXT("[DeckEnemySpawner] Ship=%s Slot=%d PointId=%d Reason=SpawnDisabled"), *GetNameSafe(Host), SlotIndex, PointId);
+		if (bLogErrors) /* Diagnostics muted after pooling/crew verification.
+UE_LOG(LogTemp, Error, TEXT("[DeckEnemySpawner] Ship=%s Slot=%d PointId=%d Reason=SpawnDisabled"), *GetNameSafe(Host), SlotIndex, PointId); */ {}
 		return false;
 	}
 	const auto* CDO = AuthoredSlot.EnemyClass->GetDefaultObject<ADeckEnemy>();
@@ -505,7 +534,8 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 		const auto* Combat = Row && !Row->CombatSettings.IsNull() ? Row->CombatSettings.GetRow<FEnemyCombatBalanceRow>(TEXT("Deck combat plan")) : nullptr;
 		if (!Row || !Row->IsValid() || (!Row->CombatSettings.IsNull() && (!Combat || !Combat->IsValid())))
 		{
-			if (bLogErrors) UE_LOG(LogTemp, Error, TEXT("[DeckEnemySpawner] Ship=%s Slot=%d Reason=InvalidStatsRow"), *GetNameSafe(Host), SlotIndex);
+			if (bLogErrors) /* Diagnostics muted after pooling/crew verification.
+UE_LOG(LogTemp, Error, TEXT("[DeckEnemySpawner] Ship=%s Slot=%d Reason=InvalidStatsRow"), *GetNameSafe(Host), SlotIndex); */ {}
 			return false;
 		}
 	}
@@ -525,8 +555,9 @@ bool UDeckEnemySpawnerComponent::BuildDeploymentPlan(
 	{
 		if (bLogErrors)
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Warning,
-				TEXT("[DeckEnemySpawner] SpawnPlan is disabled or empty. Ship=%s"), *GetNameSafe(GetHostShip()));
+				TEXT("[DeckEnemySpawner] SpawnPlan is disabled or empty. Ship=%s"), *GetNameSafe(GetHostShip())); */ {}
 		}
 		return false;
 	}
@@ -535,9 +566,10 @@ bool UDeckEnemySpawnerComponent::BuildDeploymentPlan(
 	{
 		if (bLogErrors)
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Error,
 				TEXT("[DeckEnemySpawner] SpawnPlan exceeds the 32-enemy limit. Ship=%s Count=%d"),
-				*GetNameSafe(GetHostShip()), SpawnPlan.Num());
+				*GetNameSafe(GetHostShip()), SpawnPlan.Num()); */ {}
 		}
 		return false;
 	}
@@ -558,9 +590,10 @@ bool UDeckEnemySpawnerComponent::BuildDeploymentPlan(
 			bPlanIsValid = false;
 			if (bLogErrors)
 			{
+				/* Diagnostics muted after pooling/crew verification.
 				UE_LOG(LogTemp, Error,
 					TEXT("[DeckEnemySpawner] Duplicate SpawnPointId in SpawnPlan. Ship=%s Slot=%d PointId=%d"),
-					*GetNameSafe(GetHostShip()), SlotIndex, DeploymentSlot.SpawnPointId);
+					*GetNameSafe(GetHostShip()), SlotIndex, DeploymentSlot.SpawnPointId); */ {}
 			}
 			continue;
 		}
@@ -600,17 +633,19 @@ void UDeckEnemySpawnerComponent::InitializeWaypoints()
 		const int32 WaypointId = Waypoint->GetWaypointId();
 		if (WaypointsById.Contains(WaypointId))
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Error,
 				TEXT("[DeckEnemySpawner] Duplicate WaypointId. Ship=%s WaypointId=%d Component=%s"),
-				*GetNameSafe(Host), WaypointId, *GetNameSafe(Waypoint));
+				*GetNameSafe(Host), WaypointId, *GetNameSafe(Waypoint)); */ {}
 			continue;
 		}
 
 		if (Host->GetShipDeckMesh() && !Waypoint->IsAttachedTo(Host->GetShipDeckMesh()))
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Warning,
 				TEXT("[DeckEnemySpawner] Waypoint is not attached below ShipDeckMesh. Ship=%s Waypoint=%s"),
-				*GetNameSafe(Host), *GetNameSafe(Waypoint));
+				*GetNameSafe(Host), *GetNameSafe(Waypoint)); */ {}
 		}
 
 		WaypointsById.Add(WaypointId, Waypoint);
@@ -627,27 +662,40 @@ void UDeckEnemySpawnerComponent::InitializeWaypoints()
 
 }
 
-void UDeckEnemySpawnerComponent::InitializePool()
+void UDeckEnemySpawnerComponent::BeginQueuedPoolInitialization()
 {
+	const double InitStart = FPlatformTime::Seconds();
+	const TCHAR* InitResult = TEXT("SkippedHostDisabledExistingPoolOrRestore");
+	ON_SCOPE_EXIT
+	{
+		if (EnemyShipDiagnostics::CrewEnabled()) /* EmitCrewDiagnostic(TEXT("PoolInit"), FString::Printf(TEXT("Result=%s PlannedSlots=%d SpawnWaypoints=%d DurationMs=%.3f"),
+			InitResult, QueuedPoolPlan.Num(), SpawnWaypoints.Num(), (FPlatformTime::Seconds() - InitStart) * 1000.)); */ {}
+	};
+	QueuedPoolPlan.Reset();
+	QueuedPoolIndex = 0;
 	AEnemyShip* Host = GetHostShip();
 	if (!Host || !Host->HasAuthority() || !IsEnabled() || !EnemyPool.IsEmpty()
 		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		return;
 	}
-	if (!Host->GetDeckWalkAreaComponent() || !Host->GetDeckWalkAreaComponent()->IsReady()) return;
+	if (!Host->GetDeckWalkAreaComponent() || !Host->GetDeckWalkAreaComponent()->IsReady()) { InitResult = TEXT("WalkNotReady"); return; }
 	if (SpawnWaypoints.IsEmpty())
 	{
+		InitResult = TEXT("NoSpawnWaypoints");
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogTemp, Warning,
-			TEXT("[DeckEnemySpawner] No spawn waypoint exists. Ship=%s"), *GetNameSafe(Host));
+			TEXT("[DeckEnemySpawner] No spawn waypoint exists. Ship=%s"), *GetNameSafe(Host)); */ {}
 		return;
 	}
 
-	TArray<FDeckEnemyDeploymentSlot> ResolvedPlan;
+	auto& ResolvedPlan = QueuedPoolPlan;
 	if (!BuildDeploymentPlan(ResolvedPlan, true))
 	{
+		InitResult = TEXT("InvalidPlan");
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogTemp, Warning,
-			TEXT("[DeckEnemySpawner] Spawn plan could not be resolved. Ship=%s"), *GetNameSafe(Host));
+			TEXT("[DeckEnemySpawner] Spawn plan could not be resolved. Ship=%s"), *GetNameSafe(Host)); */ {}
 		return;
 	}
 
@@ -656,10 +704,32 @@ void UDeckEnemySpawnerComponent::InitializePool()
 	{
 		return;
 	}
+	AllocatedPlanSignature = GetPlanSignature();
+	InitResult = TEXT("PlanReady");
 
-	for (int32 SlotIndex = 0; SlotIndex < ResolvedPlan.Num(); ++SlotIndex)
+}
+
+bool UDeckEnemySpawnerComponent::StepQueuedPoolInitialization()
+{
+	// Pooling fix: one crew allocation per queue step; this still includes an indivisible FinishSpawning.
+	// Copy the slot before construction callbacks, which may reset/reallocate QueuedPoolPlan.
+	AEnemyShip* Host = GetHostShip();
+	UWorld* World = GetWorld();
+	if (!Host || !World || QueuedPoolIndex >= QueuedPoolPlan.Num()) { QueuedPoolPlan.Reset(); return true; }
+	const int32 SlotIndex = QueuedPoolIndex++;
+	const FDeckEnemyDeploymentSlot Slot = QueuedPoolPlan[SlotIndex];
+	const double SlotStart = FPlatformTime::Seconds();
+	double ShellMs = 0.0, PrepareMs = 0.0, FinishMs = 0.0;
+	ADeckEnemy* CreatedEnemy = nullptr;
+	const TCHAR* SlotResult = TEXT("InvalidSpawnTransform");
+	ON_SCOPE_EXIT
 	{
-		const FDeckEnemyDeploymentSlot& Slot = ResolvedPlan[SlotIndex];
+		if (EnemyShipDiagnostics::CrewEnabled()) /* EmitCrewDiagnostic(TEXT("PoolSlot"), FString::Printf(
+			TEXT("Result=%s SlotIndex=%d SpawnPoint=%d Class=%s Enemy=%s Active=%d Hidden=%d Collision=%d Tick=%d TotalMs=%.3f ShellMs=%.3f PrepareBalanceMs=%.3f FinishSpawnMs=%.3f"),
+			SlotResult, SlotIndex, Slot.SpawnPointId, *GetNameSafe(Slot.EnemyClass.Get()), *GetNameSafe(CreatedEnemy),
+			IsValid(CreatedEnemy) && CreatedEnemy->IsPoolActive(), IsValid(CreatedEnemy) && CreatedEnemy->IsHidden(), IsValid(CreatedEnemy) && CreatedEnemy->GetActorEnableCollision(),
+			IsValid(CreatedEnemy) && CreatedEnemy->IsActorTickEnabled(), (FPlatformTime::Seconds() - SlotStart) * 1000., ShellMs, PrepareMs, FinishMs)); */ {}
+	};
 		UDeckWaypointComponent* InitialWaypoint = GetWaypoint(Slot.SpawnPointId);
 		const ADeckEnemy* EnemyCDO = Slot.EnemyClass
 			? Slot.EnemyClass->GetDefaultObject<ADeckEnemy>()
@@ -668,35 +738,55 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		if (!InitialWaypoint || !EnemyCDO
 			|| !ResolveEnemySpawnTransform(InitialWaypoint, *EnemyCDO, InitialTransform))
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Warning,
 				TEXT("[DeckEnemySpawner] No valid initial transform. Ship=%s Class=%s Slot=%d PointId=%d"),
-				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex, Slot.SpawnPointId);
-			continue;
+				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex, Slot.SpawnPointId); */ {}
+			return QueuedPoolIndex >= QueuedPoolPlan.Num();
 		}
 
+		const double ShellStart = FPlatformTime::Seconds();
 		ADeckEnemy* PooledEnemy = World->SpawnActorDeferred<ADeckEnemy>(
 			Slot.EnemyClass,
 			InitialTransform,
 			Host,
 			nullptr,
 			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		ShellMs = (FPlatformTime::Seconds() - ShellStart) * 1000.;
+		CreatedEnemy = PooledEnemy;
+		SlotResult = TEXT("AllocationFailed");
 		if (!PooledEnemy)
 		{
+			/* Diagnostics muted after pooling/crew verification.
 			UE_LOG(LogTemp, Error,
 				TEXT("[DeckEnemySpawner] Failed to allocate pool actor. Ship=%s Class=%s Slot=%d"),
-				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex);
-			continue;
+				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex); */ {}
+			return QueuedPoolIndex >= QueuedPoolPlan.Num();
 		}
 
+		const double PrepareStart = FPlatformTime::Seconds();
 		PooledEnemy->PrepareForPool();
 		PooledEnemy->ConfigureSpawnBalance(Slot.StatsRow);
+		PrepareMs = (FPlatformTime::Seconds() - PrepareStart) * 1000.;
+		const double FinishStart = FPlatformTime::Seconds();
 		PooledEnemy->FinishSpawning(InitialTransform);
-		if (!IsValid(PooledEnemy)) continue;
+		FinishMs = (FPlatformTime::Seconds() - FinishStart) * 1000.;
+		SlotResult = TEXT("DestroyedDuringConstruction");
+		if (!IsValid(PooledEnemy)) return QueuedPoolIndex >= QueuedPoolPlan.Num();
 		PooledEnemy->SetHostShip(Host);
 		PooledEnemy->DeactivateToPool();
 		EnemyPool.Add(PooledEnemy);
 		Host->RegisterCrewEnemy(PooledEnemy);
-	}
+		SlotResult = TEXT("ReadyInactive");
+	return QueuedPoolIndex >= QueuedPoolPlan.Num();
+}
+
+void UDeckEnemySpawnerComponent::InitializePool()
+{
+	// Remaining cost risk: this fallback drains all slots synchronously. Pool wake uses the step API;
+	// callers outside that queue can still construct several crew Actors in one frame.
+	BeginQueuedPoolInitialization();
+	while (!StepQueuedPoolInitialization()) {}
 }
 
 void UDeckEnemySpawnerComponent::GetPooledEnemies(TArray<ADeckEnemy*>& OutEnemies) const
@@ -706,6 +796,89 @@ void UDeckEnemySpawnerComponent::GetPooledEnemies(TArray<ADeckEnemy*>& OutEnemie
 	{
 		if (IsValid(Enemy)) OutEnemies.Add(Enemy);
 	}
+}
+
+bool UDeckEnemySpawnerComponent::AuditBundleCrew(bool bRequireCompletePool, FString& Error) const
+{
+	TArray<FDeckEnemyDeploymentSlot> Plan;
+	const bool bEnabled = IsEnabled();
+	const bool bPlanValid = !bEnabled || BuildDeploymentPlan(Plan, false);
+	int32 ClassMismatches = 0;
+	int32 StatsMismatches = 0;
+	for (int32 Index = 0; Index < EnemyPool.Num(); ++Index)
+	{
+		ADeckEnemy* Enemy = EnemyPool[Index];
+		const bool bClassMatch = IsValid(Enemy) && Plan.IsValidIndex(Index) && Enemy->GetClass() == Plan[Index].EnemyClass;
+		if (!bClassMatch) ++ClassMismatches;
+		const FDataTableRowHandle ActualRow = IsValid(Enemy) ? Enemy->GetEffectiveSpawnStatsRow() : FDataTableRowHandle();
+		const FDataTableRowHandle ExpectedRow = Plan.IsValidIndex(Index) && Plan[Index].EnemyClass
+			? (Plan[Index].StatsRow.IsNull() ? Plan[Index].EnemyClass->GetDefaultObject<ADeckEnemy>()->DefaultStatsRow : Plan[Index].StatsRow)
+			: FDataTableRowHandle();
+		const bool bStatsMatch = IsValid(Enemy) && Plan.IsValidIndex(Index)
+			&& ActualRow.DataTable == ExpectedRow.DataTable && ActualRow.RowName == ExpectedRow.RowName;
+		if (!bStatsMatch) ++StatsMismatches;
+		/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=CrewSlot Actor=%s Slot=%d ExpectedClass=%s ActualClass=%s StatsTable=%s StatsRow=%s ActualStatsTable=%s ActualStatsRow=%s Point=%d ClassMatch=%d StatsMatch=%d"),
+			*GetNameSafe(GetHostShip()), Index, Plan.IsValidIndex(Index) ? *GetPathNameSafe(Plan[Index].EnemyClass.Get()) : TEXT("None"),
+			IsValid(Enemy) ? *Enemy->GetClass()->GetPathName() : TEXT("None"),
+			*GetPathNameSafe(ExpectedRow.DataTable), *ExpectedRow.RowName.ToString(),
+			*GetPathNameSafe(ActualRow.DataTable), *ActualRow.RowName.ToString(),
+			Plan.IsValidIndex(Index) ? Plan[Index].SpawnPointId : INDEX_NONE, bClassMatch, bStatsMatch); */
+	}
+	const bool bComplete = bPlanValid && EnemyPool.Num() == Plan.Num() && ClassMismatches == 0 && StatsMismatches == 0;
+	/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=CrewReady Actor=%s Enabled=%d Planned=%d Actual=%d PlanValid=%d ClassMismatches=%d StatsMismatches=%d Complete=%d RequireComplete=%d"),
+		*GetNameSafe(GetHostShip()), bEnabled, Plan.Num(), EnemyPool.Num(), bPlanValid, ClassMismatches, StatsMismatches, bComplete, bRequireCompletePool); */
+	if (bRequireCompletePool && !bComplete) { Error = TEXT("Enemy ship crew pool does not match the assigned spawn plan"); return false; }
+	return true;
+}
+
+void UDeckEnemySpawnerComponent::ReconcileBundleProfile()
+{
+	AEnemyShip* Host = GetHostShip();
+	if (!Host || !Host->HasAuthority() || EnemyPool.IsEmpty()) return;
+	if (bEnableSpawning && AllocatedPlanSignature == GetPlanSignature()) return;
+	ClearPoolForIdle();
+	/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=CrewProfileChanged Actor=%s RemovedCrew=%d NewSlots=%d Enabled=%d"),
+		*Host->GetName(), PreviousCount, SpawnPlan.Num(), bEnableSpawning); */
+}
+
+bool UDeckEnemySpawnerComponent::StepClearPoolForIdle()
+{
+	// Save/restore fix: retire crew AND controllers from snapshot tracking before destruction.
+	// These belong to the old placement; retaining their stable IDs can restore obsolete crew later.
+	AEnemyShip* Host = GetHostShip();
+	if (!Host || !Host->HasAuthority()) return true;
+	CancelDeployment();
+	// const int32 PreviousCount = EnemyPool.Num();
+	QueuedPoolPlan.Reset();
+	if (!EnemyPool.IsEmpty())
+	{
+		ADeckEnemy* Enemy = EnemyPool.Pop(EAllowShrinking::No);
+		if (IsValid(Enemy))
+		{
+			Host->UnregisterCrewEnemy(Enemy);
+			ReleaseAllPointsFor(Enemy);
+			Enemy->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+			if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(Enemy);
+			if (AController* Controller = Enemy->GetController())
+			{
+				Controller->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+				if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(Controller);
+				Controller->Destroy();
+			}
+			Enemy->Destroy();
+		}
+		return false;
+	}
+	EnemyPool.Reset();
+	PointRuntimeStates.Reset();
+	AllocatedPlanSignature.Reset();
+	ResetForNewEncounter();
+	return true;
+}
+
+void UDeckEnemySpawnerComponent::ClearPoolForIdle()
+{
+	while (!StepClearPoolForIdle()) {}
 }
 
 void UDeckEnemySpawnerComponent::Shutdown()
@@ -732,6 +905,8 @@ void UDeckEnemySpawnerComponent::Shutdown()
 
 void UDeckEnemySpawnerComponent::CancelDeployment()
 {
+	if (SpawnRequestState == EDeckEnemySpawnRequestState::PendingReadiness || SpawnRequestState == EDeckEnemySpawnRequestState::Running)
+		/* EmitCrewDiagnostic(TEXT("RequestCancelled"), TEXT("LastReason=") + LastSpawnReason.ToString()); */ {}
 	++ExecutionEpoch;
 	DeploymentTicket = FSWRoomDeckDeploymentTicket();
 	if (UWorld* World = GetWorld())
@@ -762,8 +937,11 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(AShip* TriggeringPlayerShip, 
 		|| Host->IsCrewDefeated() || Host->IsStoryGateDormant() || !IsEnabled() || (Room && Room->IsRestoringSnapshot())
 		|| !IsValid(TriggeringPlayerShip) || TriggeringPlayerShip == Host || TriggeringPlayerShip->IsSinking()
 		|| TriggeringPlayerShip->IsEnemyShipForEffects() || !TriggeringPlayerShip->ActorHasTag(TEXT("Player"))
-		|| TriggeringPlayerShip->ActorHasTag(TEXT("Enemy")) || (InitialCombatTarget && !IsValid(InitialCombatTarget))) return false;
-	if (SpawnRequestState == EDeckEnemySpawnRequestState::Finished) return false;
+		|| TriggeringPlayerShip->ActorHasTag(TEXT("Enemy")) || (InitialCombatTarget && !IsValid(InitialCombatTarget)))
+	{
+		/* EmitCrewDiagnostic(TEXT("RequestRejected"), TEXT("Reason=HostTargetOrRestoreGate"), TriggeringPlayerShip); */ {} return false;
+	}
+	if (SpawnRequestState == EDeckEnemySpawnRequestState::Finished) { /* EmitCrewDiagnostic(TEXT("RequestRejected"), TEXT("Reason=AlreadyFinished"), TriggeringPlayerShip); */ {} return false; }
 	if (SpawnRequestState == EDeckEnemySpawnRequestState::PendingReadiness || SpawnRequestState == EDeckEnemySpawnRequestState::Running)
 	{
 		RequestReadinessEvaluation(); return false; // Merge without restarting deadlines or clearing deployed crew.
@@ -793,6 +971,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(AShip* TriggeringPlayerShip, 
 	ReadinessExpiry = Now + FMath::Max(FMath::Max(1.f, ReadinessTimeout), GetRemainingSpawnStartDelay() + SightActivationDelay + 1.f);
 	TargetWaitExpiry = 0.;
 	bDeploymentPaused = false;
+	/* EmitCrewDiagnostic(TEXT("RequestAccepted"), FString::Printf(TEXT("SpawnStartDelay=%.3f SightActivationDelay=%.3f PendingSightLifetime=%.3f"), SpawnStartDelay, SightActivationDelay, PendingSightLifetime), TriggeringPlayerShip); */ {}
 	RequestReadinessEvaluation();
 	return true;
 }
@@ -800,6 +979,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(AShip* TriggeringPlayerShip, 
 void UDeckEnemySpawnerComponent::BeginDeployment()
 {
 	if (!GetHostShip() || !GetHostShip()->CanDeployDeckEnemies()) { RequestReadinessEvaluation(); return; }
+	/* EmitCrewDiagnostic(TEXT("BeginDeployment")); */ {}
 	DeploymentState = EDeckEnemyDeploymentState::Deploying;
 	SpawnRequestState = EDeckEnemySpawnRequestState::Running;
 	ReadinessExpiry = 0.;
@@ -882,10 +1062,11 @@ void UDeckEnemySpawnerComponent::HandleDeploymentFailure(FName Reason, bool bRet
 	{
 		ScheduleDeployment(FMath::Max(0.05f, SpawnRetryInterval), false); return;
 	}
+	/* Diagnostics muted after pooling/crew verification.
 	UE_LOG(LogTemp, Warning, TEXT("[DeckEnemySpawner] Deployment entry abandoned. Ship=%s Generation=%u Request=%u Slot=%d PointId=%d Reason=%s Retryable=%d"),
 		*GetNameSafe(GetHostShip()), EncounterGeneration, RequestId, DeploymentQueueIndex,
 		DeploymentQueue.IsValidIndex(DeploymentQueueIndex) ? DeploymentQueue[DeploymentQueueIndex].SpawnPointId : INDEX_NONE,
-		*Reason.ToString(), bRetryable);
+		*Reason.ToString(), bRetryable); */ {}
 	if (SlotResults.IsValidIndex(DeploymentQueueIndex)) SlotResults[DeploymentQueueIndex] = 2;
 	++DeploymentFailureCount;
 	++DeploymentQueueIndex;
@@ -906,8 +1087,9 @@ void UDeckEnemySpawnerComponent::FinishDeployment()
 	const int32 SuccessfulCount = SlotResults.FilterByPredicate([](uint8 Result) { return Result == 1; }).Num();
 	DeploymentState = SuccessfulCount <= 0 ? EDeckEnemyDeploymentState::Failed
 		: DeploymentFailureCount > 0 ? EDeckEnemyDeploymentState::CompletedWithFailures : EDeckEnemyDeploymentState::Completed;
+	/* Diagnostics muted after pooling/crew verification.
 	UE_LOG(LogTemp, Log, TEXT("[DeckEnemySpawner] Ship=%s Generation=%u Request=%u Result=%d Activated=%d Failed=%d"),
-		*GetNameSafe(GetHostShip()), EncounterGeneration, RequestId, static_cast<int32>(DeploymentState), SuccessfulCount, DeploymentFailureCount);
+		*GetNameSafe(GetHostShip()), EncounterGeneration, RequestId, static_cast<int32>(DeploymentState), SuccessfulCount, DeploymentFailureCount); */ {}
 	EvaluateAllEnemiesDefeated();
 }
 
@@ -946,6 +1128,13 @@ void UDeckEnemySpawnerComponent::ResetForNewEncounter()
 	DeploymentQueueIndex = 0;
 	CurrentRetryCount = 0;
 	DeploymentFailureCount = 0;
+}
+
+void UDeckEnemySpawnerComponent::RestartSpawnStartDelay()
+{
+	if (!GetHostShip() || !GetHostShip()->HasAuthority()) return;
+	SpawnStartReadyTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.f, SpawnStartDelay);
+	RequestReadinessEvaluation();
 }
 
 int32 UDeckEnemySpawnerComponent::GetLivingPooledEnemyCount() const
@@ -1123,8 +1312,9 @@ bool UDeckEnemySpawnerComponent::TryReserveEnemySpawnPoint(
 	const bool bUseWalkArea = Area && Area->IsReady();
 	if (!bUseWalkArea)
 	{
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogTemp, Warning, TEXT("[DeckEnemySpawner] Ship=%s Requester=%s Reason=WalkAreaNotReady"),
-			*GetNameSafe(Host), *GetNameSafe(Requester));
+			*GetNameSafe(Host), *GetNameSafe(Requester)); */ {}
 		return false;
 	}
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
@@ -1357,14 +1547,19 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 	ADeckEnemy& Enemy, FDeckPointReservation& Reservation, AActor* InitialTarget, ADeckEnemy*& OutEnemy,
 	const FTransform* ReservedTransform, const FDataTableRowHandle& StatsRow, int32 AutomaticSlotIndex)
 {
+	// Pooling fix: prepare hidden/inactive, validate the encounter and deck revision, commit the
+	// point/alive/slot ledger, then publish collision and AI. Construction/activation callbacks may
+	// change the host encounter, so the post-prepare epoch/generation checks must remain.
 	OutEnemy = nullptr;
 	ActivationFailureReason = NAME_None;
 	bActivationFailureRetryable = false;
-	auto Reject = [this, &Reservation](FName Reason, bool bRetryable = false)
+	auto Reject = [this, &Reservation, &Enemy](FName Reason, bool bRetryable = false)
 	{
 		ActivationFailureReason = Reason;
 		bActivationFailureRetryable = bRetryable;
 		SetWaitReason(Reason);
+		if (EnemyShipDiagnostics::CrewEnabled()) /* EmitCrewDiagnostic(TEXT("ActivationRejected"), FString::Printf(TEXT("Enemy=%s Reason=%s Point=%d Retryable=%d"),
+			*Enemy.GetName(), *Reason.ToString(), Reservation.PointId, bRetryable)); */ {}
 		ReleasePointReservation(Reservation);
 		return false;
 	};
@@ -1430,5 +1625,7 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 		Enemy.DeactivateToPool(); return Reject(TEXT("ActivationCommitFailed"));
 	}
 	OutEnemy = &Enemy;
+	if (EnemyShipDiagnostics::CrewEnabled()) /* EmitCrewDiagnostic(TEXT("Activated"), FString::Printf(TEXT("Enemy=%s EnemyClass=%s Point=%d Active=%d Hidden=%d Collision=%d Tick=%d Position=%s"),
+		*Enemy.GetName(), *Enemy.GetClass()->GetName(), PointId, Enemy.IsPoolActive(), Enemy.IsHidden(), Enemy.GetActorEnableCollision(), Enemy.IsActorTickEnabled(), *Enemy.GetActorLocation().ToString())); */ {}
 	return true;
 }

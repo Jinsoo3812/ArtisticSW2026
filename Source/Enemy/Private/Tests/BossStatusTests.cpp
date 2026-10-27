@@ -10,6 +10,7 @@
 #include "GASDamageInstantGameplayEffect.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "UObject/UObjectGlobals.h"
 #include "Misc/ScopeExit.h"
 #include "UObject/Script.h"
 
@@ -19,10 +20,13 @@ bool FBossStatusTriggersTest::RunTest(const FString& Parameters)
 {
 	// This isolated world has no BeginPlay; allow the actor's dynamic health delegate to execute.
 	FEditorScriptExecutionGuard ScriptExecutionGuard;
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
+
+	// Resolve the authored cue before this short-lived world emits status events.
+	if (!TestNotNull(TEXT("Boss stun cue is available before status delivery"), LoadClass<UObject>(nullptr,
+		TEXT("/Game/GameplayCues/Boss/Stun/GC_Boss_Stun.GC_Boss_Stun_C")))) return false;
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("BossStatusTests"));
 	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
-	ON_SCOPE_EXIT { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
+	ON_SCOPE_EXIT { FlushAsyncLoading(); World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	AShipBossEnemy* Boss = World->SpawnActor<AShipBossEnemy>(Params);
@@ -60,15 +64,20 @@ bool FBossStatusTriggersTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Body hit during attack does not stun"), Boss->StatusComponent->HasStatus(State_Status_Stun));
 	Damage(TEXT("head"), 1.f);
 	TestTrue(TEXT("Attacking head hit stuns without a normal HitReaction GA"), Boss->StatusComponent->HasStatus(State_Status_Stun));
-	TestEqual(TEXT("Head hit selects two second GE"), Duration(), 2.f);
+	TestEqual(TEXT("Head hit defaults to four seconds"), Duration(), 4.f);
 	Damage(TEXT("head"), 1.f);
-	TestEqual(TEXT("Repeated head hit keeps original duration"), Duration(), 2.f);
+	TestEqual(TEXT("Repeated head hit keeps original duration"), Duration(), 4.f);
 	TestFalse(TEXT("Different Stun GE cannot replace head-hit Stun"), Boss->StatusComponent->ApplyStatus(
 		UBossHealthThresholdStunEffect::StaticClass(), ASC, {}).IsValid());
 	Boss->StatusComponent->ClearStatuses();
+	Boss->HeadHitStunDuration = 5.25f;
+	Damage(TEXT("head"), 1.f);
+	TestEqual(TEXT("Head hit uses the boss editor duration instead of the GE default"), Duration(), 5.25f);
+	Boss->StatusComponent->ClearStatuses();
 	ASC->RemoveLooseGameplayTag(State_Attacking);
+	Boss->HealthThresholdStunDuration = 6.f;
 	Damage(TEXT("spine_01"), 50.f);
-	TestEqual(TEXT("HP crossing selects three second GE without attacking"), Duration(), 3.f);
+	TestEqual(TEXT("HP crossing uses its independent editor duration without attacking"), Duration(), 6.f);
 	Boss->StatusComponent->ClearStatuses();
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 80.f);
 	Damage(TEXT("spine_01"), 40.f);

@@ -292,9 +292,10 @@ EDeckWalkRouteTick UDeckWalkRouteComponent::BlockRoute(const FHitResult& Hit,
 	NextGoalSelectionTime = GetWorld()->GetTimeSeconds() + GetGoalSelectionDelay();
 	if (!bHasProgressAnchor) { ProgressAnchor = Area->ToLocal(Area->GetActorFeetWorld(*GetOwner())); bHasProgressAnchor = true; }
 	bHasPendingImpact = false;
+	/* Diagnostics muted after pooling/crew verification.
 	UE_LOG(LogTemp, Verbose, TEXT("[DeckWalkBlocked] Enemy=%s Generation=%u Reason=%d Goal=%d Blocker=%s Surface=%s Escape=%s Attempts=%d"),
 		*GetNameSafe(GetOwner()), RouteGeneration, int32(Reason), LocalGoal.NodeIndex, *GetNameSafe(Hit.GetComponent()),
-		*Current.SurfaceId.ToString(), *Move.EscapeDirection.ToCompactString(), RepeatedAttempts);
+		*Current.SurfaceId.ToString(), *Move.EscapeDirection.ToCompactString(), RepeatedAttempts); */ {}
 	if (bDrawCollisionDebug)
 	{
 		const FVector Origin = Area->GetActorFeetWorld(*GetOwner());

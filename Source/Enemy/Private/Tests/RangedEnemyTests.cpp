@@ -1,6 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Components/CapsuleComponent.h"
 
 #include "AbilitySystemComponent.h"
 #include "AI/EnemyAITypes.h"
@@ -26,6 +27,7 @@
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
+#include "UObject/UObjectGlobals.h"
 #include "EngineUtils.h"
 #include "DataProviders/AIDataProvider_QueryParams.h"
 #include "EQS/EnvQueryContext_EnemyCombatTarget.h"
@@ -40,6 +42,8 @@
 #include "GAS/Ability/GA_RangedEnemyAttack.h"
 #include "GASCombatLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
+#include "Effects/StatusGameplayEffect.h"
+#include "Components/StatusComponent.h"
 #include "GameplayEffect.h"
 #include "Item/Projectiles/PlayerArrowProjectile.h"
 #include "Perception/AIPerceptionComponent.h"
@@ -81,6 +85,8 @@ namespace RangedEnemyTests
 		{
 			if (World)
 			{
+				// Deferred cue callbacks must finish while their target world is valid.
+				FlushAsyncLoading();
 				World->DestroyWorld(false);
 				GEngine->DestroyWorldContext(World);
 			}
@@ -533,7 +539,7 @@ bool FRangedEnemyCombatTreeContractTest::RunTest(const FString& Parameters)
 	const UBTTask_MoveTo* CombatMove = nullptr;
 	const UBTT_RangedAttack* RangedAttack = nullptr;
 	int32 RunEQSIndex = INDEX_NONE;
-	int32 StrafeSpeedIndex = INDEX_NONE;
+	int32 RepositionSpeedIndex = INDEX_NONE;
 	int32 MoveIndex = INDEX_NONE;
 	for (int32 ChildIndex = 0; ChildIndex < RepositionSequence->Children.Num(); ++ChildIndex)
 	{
@@ -550,9 +556,9 @@ bool FRangedEnemyCombatTreeContractTest::RunTest(const FString& Parameters)
 		}
 		else if (const UBTT_SetMovementSpeed* MovementTask = Cast<UBTT_SetMovementSpeed>(Task))
 		{
-			if (MovementTask->GetMovementMode() == EEnemyMovementSpeedMode::Strafe)
+			if (UBTT_SetMovementSpeed::GetSpeedForMode(MovementTask->GetMovementMode()) > 0.0f)
 			{
-				StrafeSpeedIndex = ChildIndex;
+				RepositionSpeedIndex = ChildIndex;
 			}
 		}
 	}
@@ -594,8 +600,8 @@ bool FRangedEnemyCombatTreeContractTest::RunTest(const FString& Parameters)
 			CombatMove->GetSelectedBlackboardKey(), FName(TEXT("PointOfInterest")));
 	}
 	TestNotNull(TEXT("Attack branch still executes the ranged attack task"), RangedAttack);
-	TestTrue(TEXT("Strafe speed is enabled after the query and before movement"),
-		RunEQSIndex != INDEX_NONE && StrafeSpeedIndex > RunEQSIndex && MoveIndex > StrafeSpeedIndex);
+	TestTrue(TEXT("A positive reposition speed and the query are both configured before movement"),
+		RunEQSIndex != INDEX_NONE && RepositionSpeedIndex != INDEX_NONE && MoveIndex > RunEQSIndex && MoveIndex > RepositionSpeedIndex);
 	TestTrue(TEXT("Attack branch stops movement before firing"),
 		IdleSpeedIndex != INDEX_NONE && AttackIndex > IdleSpeedIndex);
 
@@ -666,7 +672,6 @@ bool FRangedEnemyProjectileTeamFilterTest::RunTest(const FString& Parameters)
 
 	Projectile->SetOwner(SourceEnemy);
 	Projectile->SetInstigator(SourceEnemy);
-
 
 	TestFalse(TEXT("Projectile always rejects its source actor"), Projectile->IsValidDamageTarget(SourceEnemy));
 	TestFalse(TEXT("Default team filter rejects another enemy-team actor"),
@@ -831,12 +836,12 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 		Enemy->TryStartRangedAttack(ResolvedAttackHandle));
 	EnemyASC->OnAbilityEnded.Remove(AbilityEndedHandle);
 	TestTrue(TEXT("Ranged attack broadcasts ability completion"), bObservedAbilityEnd);
-	TestFalse(TEXT("Immediate ranged attack completion is not a cancellation"), bObservedAbilityCancel);
+	TestTrue(TEXT("Missing authored montage cancels the attack safely"), bObservedAbilityCancel);
 	TestEqual(TEXT("Immediate attack restores the server mesh pose-refresh policy"),
 		Enemy->GetMesh()->VisibilityBasedAnimTickOption, InitialAnimTickOption);
 	const int32 ProjectilesAfter = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
-	TestEqual(TEXT("An immediate-fire projectile is spawned when no montage is assigned"),
-		ProjectilesAfter, ProjectilesBefore + 1);
+	TestEqual(TEXT("An unconfigured attack cannot bypass the montage release event"),
+		ProjectilesAfter, ProjectilesBefore);
 	for (TActorIterator<ARangedEnemyProjectile> It(TestWorld.World); It; ++It)
 	{
 		TestTrue(TEXT("GA spawns the arrow at the character mesh's Arrow_socket"),
@@ -897,15 +902,18 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 	TargetAttributes->InitHealth(100.0f);
 	TargetASC->AddAttributeSetSubobject(TargetAttributes);
 
+	SourceASC->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), 10.0f);
+	TargetEnemy->StatusComponent->InitializeWithAbilitySystem(TargetASC);
+	// Faction filtering is covered separately; isolate status delivery here.
+	Projectile->SetTeamDamageFilteringEnabled(false);
 	FArrowStatusEffect FirstStatus;
-	FirstStatus.StatusEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+	FirstStatus.StatusEffectClass = UPoisonStatusGameplayEffect::StaticClass();
 	FArrowStatusEffect SecondStatus;
-	SecondStatus.StatusEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+	SecondStatus.StatusEffectClass = UBurnStatusGameplayEffect::StaticClass();
 	Projectile->DamageData.StatusEffects = {FirstStatus, SecondStatus};
 
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
-
 
 	DamageRequest.AttackCoefficient = 1.0f;
 	DamageRequest.ChargeMultiplier = 1.0f;
@@ -924,21 +932,22 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 			&& StatusSpec.Data->GetContext().GetOriginalInstigator() == SourceEnemy);
 	}
 
-	// Reuse the instant meta-damage GE as an observable test status payload.
+	// Periodic payloads begin after their first interval, not at direct impact.
 	Projectile->StatusEffectSpecHandles[0].Data->SetSetByCallerMagnitude(Data_Damage, 2.0f);
 	Projectile->StatusEffectSpecHandles[1].Data->SetSetByCallerMagnitude(Data_Damage, 3.0f);
 	const float HealthBefore = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
-	FHitResult ProjectileHit;
+	FHitResult ProjectileHit(TargetEnemy, TargetEnemy->GetCapsuleComponent(), TargetEnemy->GetActorLocation(), FVector::UpVector);
 	ProjectileHit.ImpactPoint = TargetEnemy->GetActorLocation();
 	ProjectileHit.TraceStart = Projectile->GetActorLocation();
 	ProjectileHit.TraceEnd = TargetEnemy->GetActorLocation();
 	Projectile->ApplyDamageToActor(TargetEnemy, ProjectileHit);
-	TestEqual(TEXT("Direct damage is followed by both status payloads"),
-		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 15.0f);
+	TestTrue(TEXT("Arrow delivers both supported status identities"), TargetASC->HasMatchingGameplayTag(State_Status_Poison) && TargetASC->HasMatchingGameplayTag(State_Status_Burn));
+	TestEqual(TEXT("Direct damage precedes the periodic status ticks"),
+		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 10.0f);
 
 	Projectile->ApplyDamageToActor(TargetEnemy, ProjectileHit);
 	TestEqual(TEXT("A piercing projectile applies to the same target only once"),
-		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 15.0f);
+		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 10.0f);
 	return true;
 }
 
@@ -949,7 +958,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FStatusEffectIgnoreReapplicationTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
+
 	RangedEnemyTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
 	{

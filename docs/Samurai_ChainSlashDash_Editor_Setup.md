@@ -1,5 +1,7 @@
 # Samurai 연속 SlashDash 에디터 설정
 
+2026-10-10 후속 변경: Samurai Combat BT의 Dash Point 실패 후 재배치 연결은 [Samurai Dash Point Recovery](Samurai_Dash_Point_Recovery_2026-10-10.md)를 따른다. 현재 BT에는 연속 공격의 중복 사전 Select Point를 제거했고, 단발 공격에 제한 재시도 선택 Task를 연결했다.
+
 ## 빠른 실행
 
 1. 에디터를 종료한 상태에서 `ArtisticSW2026Editor / Win64 / Development`를 빌드하고 다시 연다. 새 클래스와 구조체가 있으므로 Live Coding만으로 갱신하지 않는다.
