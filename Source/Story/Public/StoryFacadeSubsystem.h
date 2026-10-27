@@ -6,6 +6,7 @@
 #include "StoryFacadeSubsystem.generated.h"
 
 class UStorySubsystem;
+class UStorySaveGame;
 
 /**
  * Persistent events from the story flow chart.
@@ -67,6 +68,9 @@ public:
 
 	/** Development departure commits the real final quest without fabricating earlier completions. */
 	bool ActivateDevelopmentFinalBattle();
+ /** Cumulative checkpoints AFTER each Yi dialogue, including unlocked side branches. */
+ static int32 GetDevelopmentCheckpointIndex(FName Target);
+ UStorySaveGame* BuildDevelopmentCheckpoint(FName Target, FString& OutError) const;
 
 	/** True from completion onward, including after save/load and replication. */
 	UFUNCTION(BlueprintPure, Category = "Story")

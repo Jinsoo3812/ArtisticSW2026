@@ -19,6 +19,9 @@ public:
  USWDevTestInputComponent();
  void SetLocalInputDesired(bool bDesired);
  void RequestSessionEnabled(bool bEnabled);
+ UFUNCTION(Server, Reliable) void ServerSetDevelopmentOption(FName Option, bool bEnabled);
+ UFUNCTION(Server, Reliable) void ServerSkipCampaign(FName Target, int32 ExpectedGeneration);
+ void RequestCampaignSkip(FName Target);
  /** Console and key input share the same session, UI, generation and server policy. */
  void RequestSuicide();
  void BindInput(UInputComponent* Input);
@@ -36,6 +39,8 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
  friend class FPlayerDeathDevelopmentTest;
 #endif
+ void RefreshDevelopmentOptions();
+ int32 LastDevelopmentMask = INDEX_NONE;
  bool MatchesCurrentLife(ABasePlayer* ExpectedLifeCharacter, int32 ExpectedWaitingGeneration) const;
  UFUNCTION() void OnRep_SessionEnabled();
  UFUNCTION() void OnRep_ServerRestoreGeneration();

@@ -1,4 +1,5 @@
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Development/SWDevelopmentOptions.h"
 #include "Ship.h"
 
 #include "GameFramework/PlayerState.h"
@@ -657,7 +658,7 @@ bool UShipUpgradeComponent::ShouldIgnoreMaterialCostsForTesting() const
 #if UE_BUILD_SHIPPING
 	return false;
 #else
-	return bIgnoreMaterialCostsForTesting;
+	return SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::ShipUpgradeFree);
 #endif
 }
 

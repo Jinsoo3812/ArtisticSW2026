@@ -2,6 +2,7 @@
 
 
 #include "BasePlayer.h"
+#include "Development/SWDevelopmentOptions.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
 #include "Components/CapsuleComponent.h"
 #include "Combat/PlayerAimComponent.h"
@@ -203,7 +204,7 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
 {
 	if (!CanMutateLifeGameplay()) return false;
-	if (bBypassSkillRequirementsForTesting)
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillFree))
 	{
 		return GetPlayerSkillComponent()
 			&& GetPlayerSkillComponent()->FindSkillDefinition(SkillTag) != nullptr;
@@ -217,7 +218,7 @@ bool ABasePlayer::TryConsumeSkillUse(const FGameplayTag& SkillTag)
 {
 	if (!CanMutateLifeGameplay()) return false;
 	UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
-	if (bBypassSkillRequirementsForTesting)
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillFree))
 	{
 		return HasAuthority() && SkillComponent && SkillComponent->FindSkillDefinition(SkillTag) != nullptr;
 	}
@@ -299,7 +300,8 @@ void ABasePlayer::BeginPlay()
 
 void ABasePlayer::GiveStartingItemsForTest()
 {
-	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent)
+	const USWDevelopmentSettings* Settings = GetDefault<USWDevelopmentSettings>();
+	if (!HasAuthority() || !Settings->bGiveStartingItems || !InventoryComponent)
 	{
 		return;
 	}
@@ -313,7 +315,7 @@ void ABasePlayer::GiveStartingItemsForTest()
 	}
 
 	TSet<FGameplayTag> ProcessedTags;
-	for (const FStartingInventoryItemForTest& StartingItem : StartingItemsForTest)
+	for (const FStartingInventoryItemForTest& StartingItem : Settings->StartingItems)
 	{
 		if (!StartingItem.ItemTag.IsValid() || StartingItem.Count <= 0)
 		{
@@ -1095,7 +1097,7 @@ void ABasePlayer::ApplyShipUpgradeTestFlags()
 		if (UShipUpgradeComponent* UpgradeComponent = BasePlayerState->GetShipUpgradeComponent())
 		{
 			UpgradeComponent->SetIgnoreMaterialCostsForTesting(
-				bIgnoreShipUpgradeMaterialCostsForTest);
+				false); // Legacy component flag is no longer a player BP setting.
 		}
 	}
 }
@@ -1105,7 +1107,7 @@ bool ABasePlayer::IsIgnoringShipUpgradeMaterialCostsForTest() const
 #if UE_BUILD_SHIPPING
 	return false;
 #else
-	return bIgnoreShipUpgradeMaterialCostsForTest;
+	return SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::ShipUpgradeFree);
 #endif
 }
 

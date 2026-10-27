@@ -9,6 +9,7 @@
 #include "StoryDefinition.h"
 #include "StoryFacadeSubsystem.h"
 #include "StorySubsystem.h"
+#include "StorySaveGame.h"
 
 namespace StoryTests
 {
@@ -204,5 +205,41 @@ bool FStoryPersistenceTest::RunTest(const FString& Parameters)
 	UGameplayStatics::DeleteGameInSlot(Slot, 0);
 	return true;
 }
+
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FStoryDevelopmentCheckpointTest,
+ "ArtisticSW.Story.DevelopmentDialogueCheckpoints", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FStoryDevelopmentCheckpointTest::RunTest(const FString& Parameters)
+{
+ UGameInstance* GI = NewObject<UGameInstance>();
+ UStorySubsystem* Story = NewObject<UStorySubsystem>(GI);
+ UStoryFacadeSubsystem* Facade = NewObject<UStoryFacadeSubsystem>(GI);
+ UStoryDefinition* Definition = NewObject<UStoryDefinition>(GI, TEXT("DevelopmentCheckpointDefinition"));
+ Story->ConfigureDefinition(Definition);
+ Facade->ConfigureForUseCase(Story);
+ Facade->StartNewCampaign();
+ FString Error;
+ TestNull(TEXT("Unknown target rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Unknown"), Error));
+ UStorySaveGame* Prepared = Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error);
+ if (!TestNotNull(TEXT("Final dialogue checkpoint prepared"), Prepared)) return false;
+ TestFalse(TEXT("Preparing a checkpoint does not mutate live story"), Facade->IsStoryNodeReached(EStoryNode::ReconQuestAccepted));
+ TestTrue(TEXT("Prepared checkpoint can be restored"), Story->ApplyRoomProgress(Prepared));
+ const EStoryNode Required[] = { EStoryNode::CipherBookAcquired, EStoryNode::CurrentGeneratorUnlocked,
+  EStoryNode::WaterBombUnlocked, EStoryNode::BombardmentUnlocked, EStoryNode::MiddleBoss3Defeated,
+  EStoryNode::DecipherQuestAccepted, EStoryNode::UldolmokBattleQuestAccepted };
+ for (EStoryNode Node : Required) TestTrue(TEXT("Prior main and branch nodes restored"), Facade->IsStoryNodeReached(Node));
+ TestFalse(TEXT("Final boss remains alive"), Facade->IsStoryNodeReached(EStoryNode::FinalBossDefeated));
+ TestNull(TEXT("Repeated checkpoint rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error));
+ TestNull(TEXT("Backward checkpoint rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Recon"), Error));
+ Prepared = Facade->BuildDevelopmentCheckpoint(TEXT("Ending"), Error);
+ if (!TestNotNull(TEXT("Ending can follow final checkpoint"), Prepared)) return false;
+ TestTrue(TEXT("Ending restored"), Story->ApplyRoomProgress(Prepared));
+ TestTrue(TEXT("Ending includes final defeat"), Facade->IsStoryNodeReached(EStoryNode::FinalBossDefeated));
+ TestTrue(TEXT("Ending dialogue complete"), Facade->IsStoryNodeReached(EStoryNode::EndingDialogueCompleted));
+ return true;
+}
+#endif
 
 #endif

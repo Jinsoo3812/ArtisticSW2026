@@ -1,4 +1,9 @@
 #include "Development/TestInput/SWDevTestInputComponent.h"
+#include "Development/SWDevelopmentOptions.h"
+#include "Crafting/CraftingComponent.h"
+#include "Skills/PlayerSkillComponent.h"
+#include "Upgrade/SharedShipUpgradeState.h"
+#include "Upgrade/ShipUpgradeComponent.h"
 #include "Development/TestInput/SWDevTestInputWidget.h"
 #include "BasePlayerController.h"
 #include "BasePlayer.h"
@@ -100,6 +105,7 @@ void USWDevTestInputComponent::TickComponent(float DeltaTime,ELevelTick TickType
  if (GetOwner()->HasAuthority()) if (USWRoomProgressSubsystem* State=SWDevTestInput::Room(GetWorld()))
  { bServerSessionEnabled=State->IsDevelopmentTestSessionEnabled(GetWorld()); ServerRestoreGeneration=State->GetRestoreGeneration(); }
  if (PendingRequestId && FPlatformTime::Seconds()-PendingAt>=5) PendingRequestId=0;
+ RefreshDevelopmentOptions();
  RefreshLocalState();
 }
 bool USWDevTestInputComponent::ValidateAssets(UInputMappingContext* Context,const TArray<TObjectPtr<UInputAction>>& InActions,FString& Error)
@@ -204,6 +210,7 @@ void USWDevTestInputComponent::ServerSetSessionEnabled_Implementation(bool bEnab
  ABasePlayerController* PC=Cast<ABasePlayerController>(GetOwner()); AMultiGameMode* Mode=GetWorld()->GetAuthGameMode<AMultiGameMode>(); USWRoomProgressSubsystem* State=SWDevTestInput::Room(GetWorld());
  if (!PC || !PC->HasAuthority() || !Mode || !State || !Mode->IsRoomHostController(PC) || (bEnabled && !SWDevTestInput::SafeWorld(GetWorld()))) { ClientTestResult(0,false,TEXT("호스트 권한 또는 준비 상태를 확인하세요")); return; }
  State->SetDevelopmentTestSessionEnabled(GetWorld(),bEnabled);
+ RefreshDevelopmentOptions();
  for (FConstPlayerControllerIterator It=GetWorld()->GetPlayerControllerIterator(); It; ++It) if (ABasePlayerController* Target=Cast<ABasePlayerController>(It->Get()))
  { Target->DevTestInput->bServerSessionEnabled=bEnabled; Target->DevTestInput->ServerRestoreGeneration=State->GetRestoreGeneration(); Target->DevTestInput->RefreshLocalState(); Target->ForceNetUpdate(); }
 }
@@ -296,3 +303,98 @@ void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction
  for (ABasePlayerController* Target:Alive) Target->GetLifeCharacter()->GetAbilitySystemComponent()->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(),0);
  Reply(true,TEXT("정상 사망 테스트 실행"));
 }
+
+void USWDevTestInputComponent::RefreshDevelopmentOptions()
+{
+ const int32 Mask = SWDevelopmentOptions::GetMask(this);
+ if (GetOwner()->HasAuthority())
+  if (ASWRoomReadyState* Ready = SWDevTestInput::Ready(GetWorld()); Ready && Ready->DevelopmentOptionMask != Mask)
+  { Ready->DevelopmentOptionMask = Mask; Ready->ForceNetUpdate(); }
+ if (Mask == LastDevelopmentMask) return;
+ LastDevelopmentMask = Mask;
+ if (ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner()))
+  if (ABasePlayer* Player = PC->GetLifeCharacter())
+  {
+   if (UPlayerSkillComponent* Skills = Player->GetPlayerSkillComponent()) Skills->NotifyInventoryChanged();
+   if (UCraftingComponent* Crafting = Player->FindComponentByClass<UCraftingComponent>()) Crafting->OnCraftingDataChanged.Broadcast();
+  }
+ // Refresh all local upgrade views, including the shared upgrade component.
+ for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+  if (UShipUpgradeComponent* Upgrade = It->FindComponentByClass<UShipUpgradeComponent>()) Upgrade->OnUpgradeDataChanged.Broadcast();
+}
+
+void USWDevTestInputComponent::ServerSetDevelopmentOption_Implementation(FName Option, bool bEnabled)
+{
+ if (!SWDevTestInput::Allowed() || !SWDevTestInput::SafeWorld(GetWorld())) return;
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>();
+ USWRoomProgressSubsystem* Room = SWDevTestInput::Room(GetWorld());
+ if (!PC || !Mode || !Room || !Mode->IsRoomHostController(PC)) return;
+ int32 Bit = 0;
+ if (Option == TEXT("ShipUpgradeFree")) Bit = SWDevelopmentOptions::ShipUpgradeFree;
+ else if (Option == TEXT("CraftingFree")) Bit = SWDevelopmentOptions::CraftingFree;
+ else if (Option == TEXT("SkillFree")) Bit = SWDevelopmentOptions::SkillFree;
+ else if (Option == TEXT("SkillNoCooldown")) Bit = SWDevelopmentOptions::SkillNoCooldown;
+ if (!Bit) return;
+ if (bEnabled) Room->DevelopmentOptionMask |= Bit; else Room->DevelopmentOptionMask &= ~Bit;
+ RefreshDevelopmentOptions();
+ PC->ClientMessage(FString::Printf(TEXT("SW.DevTest.%s = %d (Session must be enabled)"), *Option.ToString(), bEnabled));
+}
+
+void USWDevTestInputComponent::RequestCampaignSkip(FName Target)
+{
+ ServerSkipCampaign(Target, ServerRestoreGeneration);
+}
+
+void USWDevTestInputComponent::ServerSkipCampaign_Implementation(FName Target, int32 ExpectedGeneration)
+{
+ if (!SWDevTestInput::Allowed()) return;
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ USWRoomProgressSubsystem* Room = SWDevTestInput::Room(GetWorld());
+ if (!PC || !Room || ExpectedGeneration != Room->GetRestoreGeneration() || !SWDevTestInput::SafeWorld(GetWorld()))
+ { ClientTestResult(0, false, TEXT("Campaign skip rejected: world is not ready or request is stale.")); return; }
+ UClassFeatureRoomProgressSubsystem* Progress = GetWorld()->GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>();
+ FString Error;
+ const bool bAccepted = Progress && Progress->TryDevelopmentCampaignSkip(GetWorld(), PC, Target, Error);
+ ClientTestResult(0, bAccepted, bAccepted ? TEXT("Campaign restart requested.") : Error);
+}
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+namespace
+{
+USWDevTestInputComponent* FindDevelopmentInput(UWorld* World)
+{
+ if (!World || !World->IsGameWorld()) return nullptr;
+ USWDevTestInputComponent* Result = nullptr;
+ for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+  if (ABasePlayerController* PC = Cast<ABasePlayerController>(It->Get()); PC && PC->IsLocalPlayerController())
+  { if (Result) return nullptr; Result = PC->DevTestInput; }
+ return Result;
+}
+void SetDevelopmentOption(const TArray<FString>& Args, UWorld* World, FName Name)
+{
+ if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1"))) return;
+ if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetDevelopmentOption(Name, Args[0] == TEXT("1"));
+}
+FAutoConsoleCommandWithWorldAndArgs FreeUpgrade(TEXT("SW.DevTest.ShipUpgradeFree"), TEXT("Ignore ship materials 0|1"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("ShipUpgradeFree")); }));
+FAutoConsoleCommandWithWorldAndArgs FreeCrafting(TEXT("SW.DevTest.CraftingFree"), TEXT("Ignore recipes and materials 0|1"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("CraftingFree")); }));
+FAutoConsoleCommandWithWorldAndArgs FreeSkills(TEXT("SW.DevTest.SkillFree"), TEXT("Temporary all-skill access without materials 0|1"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillFree")); }));
+FAutoConsoleCommandWithWorldAndArgs NoCooldown(TEXT("SW.DevTest.SkillNoCooldown"), TEXT("Ignore player skill cooldowns 0|1"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillNoCooldown")); }));
+FAutoConsoleCommandWithWorldAndArgs SkipCampaign(TEXT("SW.DevTest.Campaign.Skip"), TEXT("After Yi dialogue: Recon|SupplyPatrol|Decipher|Suppress|Uldolmok|Ending"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) {
+  if (A.Num() == 1) if (USWDevTestInputComponent* Input = FindDevelopmentInput(W)) Input->RequestCampaignSkip(FName(*A[0]));
+ }));
+FAutoConsoleCommandWithWorldAndArgs CampaignList(TEXT("SW.DevTest.Campaign.List"), TEXT("List supported dialogue checkpoints"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld*) {
+  UE_LOG(LogSWDevTestInput, Display, TEXT("After Yi dialogue: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending. Includes prior side branches; forward only."));
+ }));
+FAutoConsoleCommandWithWorldAndArgs DevelopmentStatus(TEXT("SW.DevTest.Status"), TEXT("Print active development option mask and campaign targets"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* W) {
+  UE_LOG(LogSWDevTestInput, Display, TEXT("Mask=%d (Session=16 Upgrade=1 Crafting=2 Skills=4 Cooldown=8). Campaign: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending"), SWDevelopmentOptions::GetMask(W));
+ }));
+}
+#endif
