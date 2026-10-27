@@ -16,11 +16,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyShipDebugTeleportRequesterTest,
 
 bool FEnemyShipDebugTeleportRequesterTest::RunTest(const FString& Parameters)
 {
-	// Existing crafting fixtures report these unrelated errors during world initialization.
-	AddExpectedErrorPlain(TEXT("[ItemSubsystem][Crafting] QuestItem has an invalid ResultItemTag: Item.Quest.DecipheredCipher"),
-		EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedErrorPlain(TEXT("[ItemSubsystem][Crafting] QuestItem contains an invalid ingredient."),
-		EAutomationExpectedErrorFlags::Contains, 2);
+
 	struct FScopedWorld
 	{
 		UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);

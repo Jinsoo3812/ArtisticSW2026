@@ -70,24 +70,29 @@ bool FEnemyNetworkPolicyDefaultsTest::RunTest(const FString& Parameters)
 			&& BossDeathAbility->GetPathName().Contains(TEXT("BPGA_BossDeath")));
 	}
 
-	const UClass* PlayerBlueprintClass = LoadObject<UClass>(nullptr,
-		TEXT("/Game/Blueprints/Player/BP_Player.BP_Player_C"));
-	const ABasePlayer* PlayerBlueprintCDO = PlayerBlueprintClass
-		? Cast<ABasePlayer>(PlayerBlueprintClass->GetDefaultObject())
-		: nullptr;
-	if (TestNotNull(TEXT("Player Blueprint loads for death policy"), PlayerBlueprintCDO))
+	for (const TCHAR* PlayerPath : {
+		TEXT("/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man_C"),
+		TEXT("/Game/Blueprints/Player/BP_Player_Woman.BP_Player_Woman_C") })
 	{
-		int32 PlayerDeathAbilityCount = 0;
-		for (const TSubclassOf<UGameplayAbility>& AbilityClass : PlayerBlueprintCDO->DefaultGrantedAbilities)
+		const UClass* PlayerBlueprintClass = LoadObject<UClass>(nullptr,
+			PlayerPath);
+		const ABasePlayer* PlayerBlueprintCDO = PlayerBlueprintClass
+			? Cast<ABasePlayer>(PlayerBlueprintClass->GetDefaultObject())
+			: nullptr;
+		if (TestNotNull(TEXT("Player Blueprint loads for death policy"), PlayerBlueprintCDO))
 		{
-			if (AbilityClass && AbilityClass->IsChildOf(UBaseDeathGameplayAbility::StaticClass()))
+			int32 PlayerDeathAbilityCount = 0;
+			for (const TSubclassOf<UGameplayAbility>& AbilityClass : PlayerBlueprintCDO->DefaultGrantedAbilities)
 			{
-				++PlayerDeathAbilityCount;
-				TestTrue(TEXT("Player uses the dedicated BPGA_PlayerDeath ability"),
-					AbilityClass->GetPathName().Contains(TEXT("BPGA_PlayerDeath")));
+				if (AbilityClass && AbilityClass->IsChildOf(UBaseDeathGameplayAbility::StaticClass()))
+				{
+					++PlayerDeathAbilityCount;
+					TestTrue(TEXT("Player uses the dedicated BPGA_PlayerDeath ability"),
+						AbilityClass->GetPathName().Contains(TEXT("BPGA_PlayerDeath")));
+				}
 			}
+			TestEqual(TEXT("Player owns exactly one death ability"), PlayerDeathAbilityCount, 1);
 		}
-		TestEqual(TEXT("Player owns exactly one death ability"), PlayerDeathAbilityCount, 1);
 	}
 
 	const UAnimMontage* DeathMontage = LoadObject<UAnimMontage>(nullptr,
@@ -270,8 +275,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyDamageGameplayCueAuthorityTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
-		EAutomationExpectedErrorFlags::Contains, 0);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("EnemyDamageGameplayCueAuthorityWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
 	{

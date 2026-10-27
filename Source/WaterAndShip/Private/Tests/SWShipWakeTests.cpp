@@ -81,6 +81,53 @@ bool FSWShipWakeM7GoldenTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSWShipWakeBoundaryTest,
+	"ArtisticSW.Water.ShipWake.SharedBoundaryOwnership",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSWShipWakeBoundaryTest::RunTest(const FString& Parameters)
+{
+	if (!TestTrue(TEXT("Golden atlas loads"), FSWKelvinWakeAtlas::Get().Initialize())) return false;
+	FSWShipWakeEvent Earlier = MakeM7Event();
+	Earlier.EndOrigin = Earlier.Origin;
+	FSWShipWakeEvent Later = Earlier;
+	Later.StartServerTime = Earlier.EndServerTime;
+	Later.EndServerTime = Later.StartServerTime + 1.0;
+	const FVector2D Query(-1200.0, 0.0);
+	const double BoundaryArrival = Earlier.EndServerTime + 1.0;
+	const auto First = FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, BoundaryArrival, Earlier);
+	const auto Second = FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, BoundaryArrival, Later);
+	TestFalse(TEXT("Previous segment never owns its shared end"), First.bHasRoot);
+	TestTrue(TEXT("Next segment owns the shared start"), Second.bHasRoot);
+	TestEqual(TEXT("Shared start uses initial amplitude"), Second.Alpha, 0.0f);
+	TestTrue(TEXT("Previous segment owns emission before the boundary"),
+		FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, BoundaryArrival - 0.001, Earlier).bHasRoot);
+	TestFalse(TEXT("Next segment cannot contribute before its causal front"),
+		FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, BoundaryArrival - 0.001, Later).bHasRoot);
+	TestFalse(TEXT("No contribution before the first causal front"),
+		FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, Earlier.StartServerTime + 0.99, Earlier).bHasRoot);
+	Later.InitialAmplitudeCm = 0.0f;
+	Later.EndAmplitudeCm = 80.0f;
+	const auto Ramping = FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, BoundaryArrival + 0.5, Later);
+	TestTrue(TEXT("Zero-to-positive amplitude segments remain queryable"), Ramping.bHasRoot);
+	TestTrue(TEXT("Recorded amplitudes interpolate at emission time"), FMath::IsNearlyEqual(Ramping.AmplitudeCm, 40.0f, 0.001f));
+	TestFalse(TEXT("Boundary correction never revives an expired event"),
+		FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, Later.ExpireServerTime, Later).bHasRoot);
+	// At propagation speed the quadratic degenerates to a linear equation.
+	Earlier.EndOrigin = FVector2D(1200.0, 0.0);
+	Later = Earlier;
+	Later.Origin = Earlier.EndOrigin;
+	Later.EndOrigin = FVector2D(2400.0, 0.0);
+	Later.StartServerTime = Earlier.EndServerTime;
+	Later.EndServerTime = Later.StartServerTime + 1.0;
+	const double LinearBoundaryArrival = Earlier.EndServerTime + 2.0;
+	TestFalse(TEXT("Linear solver excludes the previous shared end"),
+		FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, LinearBoundaryArrival, Earlier).bHasRoot);
+	TestTrue(TEXT("Linear solver includes the next shared start"),
+		FSWShipWakeEvaluator::EvaluateEventDiagnostic(Query, LinearBoundaryArrival, Later).bHasRoot);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSWShipWakeM7RotationTest,
 	"ArtisticSW.Water.ShipWake.M7ImmutableRotation",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

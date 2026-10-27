@@ -7,6 +7,7 @@ public class ClassFeatureEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AssetTools",
+			"Json",
 			"Core",
 			"CoreUObject",
 			"Engine",

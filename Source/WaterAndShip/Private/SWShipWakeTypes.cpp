@@ -35,14 +35,23 @@ namespace
 		const float B = 2.0f * (static_cast<float>(FVector2D::DotProduct(D, V)) + C2 * Trem);
 		const float C_coeff = static_cast<float>(FVector2D::DotProduct(D, D)) - C2 * Trem * Trem;
 
-		// 기존 ±1 ms 허용과 끝점 clamp는 인접 구간의 같은 출발점을 두 번 합산해 높이를 튀게 했다.
-		// CPU/GPU 모두 [0, DeltaT)로 판정한다. 공유 끝점은 다음 구간만 소유하며 범위 밖 root는 버린다.
+		// Snap only floating-point roundoff at either boundary. The end remains
+		// exclusive so adjacent segments never both own the same emission time.
+		// Keep this policy identical to SWShipWake.ush.
+		const float RootTolerance = FMath::Min(0.25f * DeltaT,
+			8.0f * FLT_EPSILON * FMath::Max(1.0f, FMath::Max(Trem, DeltaT)));
+		const auto NormalizeRoot = [DeltaT, RootTolerance](float Root)
+		{
+			if (FMath::Abs(Root) <= RootTolerance) return 0.0f;
+			if (FMath::Abs(Root - DeltaT) <= RootTolerance) return DeltaT;
+			return Root;
+		};
 		float Tau = -1.0f;
 		if (FMath::Abs(A) < 1.0e-5f)
 		{
 			if (FMath::Abs(B) > 1.0e-5f)
 			{
-				const float LinearTau = -C_coeff / B;
+				const float LinearTau = NormalizeRoot(-C_coeff / B);
 				if (LinearTau >= 0.0f && LinearTau < DeltaT && LinearTau <= Trem)
 				{
 					Tau = LinearTau;
@@ -55,8 +64,8 @@ namespace
 			if (Disc >= 0.0f)
 			{
 				const float SqrtDisc = FMath::Sqrt(Disc);
-				const float Tau1 = (-B - SqrtDisc) / (2.0f * A);
-				const float Tau2 = (-B + SqrtDisc) / (2.0f * A);
+				const float Tau1 = NormalizeRoot((-B - SqrtDisc) / (2.0f * A));
+				const float Tau2 = NormalizeRoot((-B + SqrtDisc) / (2.0f * A));
 				const bool bValid1 = (Tau1 >= 0.0f && Tau1 < DeltaT && Tau1 <= Trem);
 				const bool bValid2 = (Tau2 >= 0.0f && Tau2 < DeltaT && Tau2 <= Trem);
 				if (bValid1)

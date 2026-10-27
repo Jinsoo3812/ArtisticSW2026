@@ -192,6 +192,7 @@ public:
 	UFUNCTION(Client, Reliable) void ClientRoomSaveResult(uint64 RequestId, bool bSuccess, const FString& Message);
 
 private:
+	bool CanChangeDevelopmentCampaignState();
 	void SyncYiSunSinDialogueTestMode();
 	void ConsumeMiddleBossReturnRequest();
 	int32 LastYiSunSinDialogueTestValue = INDEX_NONE;

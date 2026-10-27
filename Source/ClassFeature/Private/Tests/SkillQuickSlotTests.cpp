@@ -15,7 +15,7 @@
 #include "Cannon.h"
 #include "Ship.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
+#include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 #include "Skills/PlayerSkillComponent.h"
 #include "UI/SkillQuickSlotWidget.h"
@@ -128,17 +128,17 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FSkillQuickSlotAvailabilityOverlayTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	if (!TestNotNull(TEXT("World exists"), World)) return false;
 	FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
 	Context.SetCurrentWorld(World);
 	ABasePlayerState* State = World->SpawnActor<ABasePlayerState>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
-	APlayerController* Controller = World->SpawnActor<APlayerController>();
+	ABasePlayerController* Controller = World->SpawnActor<ABasePlayerController>();
 	State->GetAbilitySystemComponent()->AddAttributeSetSubobject(State->GetAttributeSet());
 	Player->SetPlayerState(State);
+	Controller->PlayerState = State;
 	Controller->Possess(Player);
 	UClass* DesignerClass = LoadClass<USkillQuickSlotWidget>(nullptr,
 		TEXT("/Game/Blueprints/02_UI/UI_HUD/UI_SkillQuickSlot/WBP_SkillQuickSlot.WBP_SkillQuickSlot_C"));
@@ -195,8 +195,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FSkillQuickSlotPawnModeTest::RunTest(const FString& Parameters)
 {
 	// Existing shared crafting data is unrelated to the HUD mode transition.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	if (!TestNotNull(TEXT("World exists"), World)) return false;
 	USkillQuickSlotWidget* Widget = NewObject<USkillQuickSlotWidget>(World);

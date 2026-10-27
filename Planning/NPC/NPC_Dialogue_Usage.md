@@ -10,8 +10,8 @@
 
 ## 테스트 NPC
 
-- `/Game/New/NPC/Blueprints/BP_TestNPC`
-- `/Game/New/NPC/Data/DA_TestNPCDialogue`
+- `/Game/Blueprints/NPC/Blueprints/BP_TestNPC`
+- `/Game/Blueprints/NPC/Data/DA_TestNPCDialogue`
 
 `BP_TestNPC`를 레벨에 배치한 뒤 Skeletal Mesh와 Animation Blueprint를 지정한다. NPC 블루프린트의 `DialogueCameraAnchor`를 옮기면 NPC별 카메라 구도를 바꿀 수 있다. FOV와 블렌드 시간은 Dialogue Data Asset에서 조정한다.
 
@@ -29,7 +29,7 @@
 
 ## WBP Designer 편집
 
-Designer 전용 UI는 `/Game/New/NPC/Blueprints/UI/WBP_NPCDialogue`와 `WBP_NPCDialogueReply`이다. `BP_Player`와 `BP_BasePlayerTest`의 `PlayerDialogueComponent.DialogueWidgetClass`에 연결되어 있다. 대화 시작 시 자동 생성되고 종료 시 제거된다.
+Designer 전용 UI는 `/Game/Blueprints/NPC/Blueprints/UI/WBP_NPCDialogue`와 `WBP_NPCDialogueReply`이다. `BP_Player`와 `BP_BasePlayerTest`의 `PlayerDialogueComponent.DialogueWidgetClass`에 연결되어 있다. 대화 시작 시 자동 생성되고 종료 시 제거된다.
 
 WBP Graph와 프로퍼티 바인딩은 사용하지 않는다. 디자이너는 Designer 탭에서 하단 박스, 이름/대화문, 우측 상단 Reply의 위치·크기·폰트·색상만 조정한다. 네이티브 `BindWidget`에 사용하는 다음 이름은 변경하면 안 된다.
 
@@ -48,3 +48,14 @@ WBP Graph와 프로퍼티 바인딩은 사용하지 않는다. 디자이너는 D
 - 다른 플레이어는 Busy 실패 이벤트만 받고 대화로 끌려오지 않는다.
 - 스토리 진행은 기존 Story 모듈의 공유 복제 상태를 사용한다.
 - 전투 여부 제한은 넣지 않았다.
+
+## 개발용 공유 캠페인 명령 권한 (2026-10-22)
+
+`sw.Dialogue.YiSunSin.SkipRequirements`와 `sw.Campaign.MiddleBossAndReturn`은 공유 서버 상태를 바꾼다. 네트워크 참가자의 RPC는 서버 GameMode의 `CanChangeDevelopmentCampaignState`에서 인증된 방 호스트인지 확인한다. 일반 참가자는 활성화와 비활성화 모두 거부한다. 독립 실행과 listen server의 로컬 호스트는 기존 개발 흐름을 유지한다. Shipping/Test 구성에서는 이 개발 경로를 허용하지 않는다.
+
+호스트 판정은 기존 방 접속/HostKey로 등록된 소유권을 사용하며 PlayerState의 존재나 gameplay readiness만으로 대체하지 않는다. 중간 보스 one-shot 값을 서버 컨트롤러들이 확인할 때도 같은 정책을 적용해 일반 참가자가 값을 먼저 소비하지 않도록 한다. NPC 예약/인벤토리 트랜잭션/Story 진행 검증은 각 기존 모듈에 남는다.
+
+
+### 제작과 캠페인 아이템 태그 계약 (2026-10-22)
+
+인벤토리 기반 제작은 일반 아이템 `Item.Id`와 캠페인 아이템 `Item.Quest`의 하위 태그를 사용한다. 퀘스트의 `CipherBook`과 `JapaneseCipher`를 소비해 `DecipheredCipher`를 만드는 기존 `QuestItem` 행도 같은 제작·인벤토리 트랜잭션을 사용한다. `Item` 아래의 분류 태그나 `State` 태그를 아이템으로 허용하지 않는다. 결과물, 재료, 필요 레시피 아이템은 동일한 검증 규칙과 에디터 태그 선택 범위를 사용한다.

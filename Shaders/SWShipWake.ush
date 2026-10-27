@@ -56,14 +56,15 @@
         const float SW_B = 2.0 * (dot(SW_D, SW_V) + SW_C2 * SW_Trem); \
         const float SW_C = SW_DistSq - SW_C2 * SW_Trem * SW_Trem; \
         \
-        /* 기존 ±1 ms 허용과 끝점 clamp가 인접 구간의 기여를 중복시켜 높이를 튀게 했다. */ \
-        /* CPU와 같은 [0, DeltaT) 판정: 공유 끝점은 다음 구간이 소유하고 범위 밖 root는 버린다. */ \
+        /* Match CPU roundoff snapping; the shared end remains exclusive. */ \
+        const float SW_RootTolerance = min(0.25 * SW_DeltaT, 8.0 * 1.192092896e-7 * max(1.0, max(SW_Trem, SW_DeltaT))); \
         float SW_Tau = -1.0; \
         if (abs(SW_A) < 1.0e-5) \
         { \
             if (abs(SW_B) > 1.0e-5) \
             { \
                 float SW_LinTau = -SW_C / SW_B; \
+                SW_LinTau = abs(SW_LinTau) <= SW_RootTolerance ? 0.0 : (abs(SW_LinTau - SW_DeltaT) <= SW_RootTolerance ? SW_DeltaT : SW_LinTau); \
                 if (SW_LinTau >= 0.0 && SW_LinTau < SW_DeltaT && SW_LinTau <= SW_Trem) \
                 { \
                     SW_Tau = SW_LinTau; \
@@ -77,8 +78,10 @@
             { \
                 const float SW_SqrtDisc = sqrt(SW_Disc); \
                 const float SW_Inv2A = 0.5 / SW_A; \
-                const float SW_Tau1 = (-SW_B - SW_SqrtDisc) * SW_Inv2A; \
-                const float SW_Tau2 = (-SW_B + SW_SqrtDisc) * SW_Inv2A; \
+                float SW_Tau1 = (-SW_B - SW_SqrtDisc) * SW_Inv2A; \
+                float SW_Tau2 = (-SW_B + SW_SqrtDisc) * SW_Inv2A; \
+                SW_Tau1 = abs(SW_Tau1) <= SW_RootTolerance ? 0.0 : (abs(SW_Tau1 - SW_DeltaT) <= SW_RootTolerance ? SW_DeltaT : SW_Tau1); \
+                SW_Tau2 = abs(SW_Tau2) <= SW_RootTolerance ? 0.0 : (abs(SW_Tau2 - SW_DeltaT) <= SW_RootTolerance ? SW_DeltaT : SW_Tau2); \
                 const bool bV1 = (SW_Tau1 >= 0.0 && SW_Tau1 < SW_DeltaT && SW_Tau1 <= SW_Trem); \
                 const bool bV2 = (SW_Tau2 >= 0.0 && SW_Tau2 < SW_DeltaT && SW_Tau2 <= SW_Trem); \
                 if (bV1) \

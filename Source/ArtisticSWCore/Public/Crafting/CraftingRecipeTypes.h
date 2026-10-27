@@ -25,7 +25,7 @@ struct ARTISTICSWCORE_API FCraftingItemStack
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id,Item.Quest"))
 	FGameplayTag ItemTag;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "1"))
@@ -38,7 +38,7 @@ struct ARTISTICSWCORE_API FCraftingRecipeRow : public FTableRowBase
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id,Item.Quest"))
 	FGameplayTag ResultItemTag;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "1"))
@@ -48,7 +48,7 @@ struct ARTISTICSWCORE_API FCraftingRecipeRow : public FTableRowBase
 	 * Tier-four weapons each require their own reusable recipe item. Acquisition
 	 * is configured independently from automated progression material drops.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id,Item.Quest"))
 	FGameplayTag RequiredRecipeItemTag;
 
 	/** Recipe items are knowledge tokens by default. Enable only for one-use recipes. */
