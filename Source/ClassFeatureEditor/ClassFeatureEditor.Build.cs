@@ -36,7 +36,9 @@ public class ClassFeatureEditor : ModuleRules
 			"MeshConversion",
 			"AssetRegistry",
 			"PropertyEditor",
-			"ImageCore"
+			"ImageCore",
+			"MaterialEditor",
+			"RHI"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

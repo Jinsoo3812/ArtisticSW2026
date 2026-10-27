@@ -249,12 +249,11 @@ bool AShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FS
 #include "Cannonball.h"
 #include "LandscapeProxy.h"
 #include "WaterSurfaceQueryLibrary.h"
+#include "SWWaterSkillOverlaySubsystem.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "Repair/ShipLeakDamageGameplayEffect.h"
-#include "Materials/MaterialParameterCollection.h"
-#include "Materials/MaterialParameterCollectionInstance.h"
 
 bool AShip::TryGetMovementFrameVelocityAtPoint(const FVector& WorldPoint, FVector& OutVelocity) const
 {
@@ -2374,59 +2373,24 @@ void AShip::UpdateLocalBombardmentPreview()
 
 void AShip::UpdateLocalWaterSkillPreview(const FVector& Center, float Radius)
 {
-	UWorld* World = GetWorld();
-	if (!World || World->IsNetMode(NM_DedicatedServer))
+	if (GetWorld())
 	{
-		return;
-	}
-
-	if (!WaterSkillPreviewParameterCollection)
-	{
-		WaterSkillPreviewParameterCollection = LoadObject<UMaterialParameterCollection>(
-			nullptr,
-			TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom"));
-	}
-
-	UMaterialParameterCollectionInstance* Instance = WaterSkillPreviewParameterCollection
-		? World->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection)
-		: nullptr;
-	if (!Instance)
-	{
-		return;
-	}
-
-	const float SafeRadius = FMath::Max(1.0f, Radius);
-	if (!bWaterSkillPreviewEnabled
-		|| FVector::DistSquared2D(Center, LastWaterSkillPreviewCenter) > 25.0f
-		|| !FMath::IsNearlyEqual(SafeRadius, LastWaterSkillPreviewRadius, 0.1f))
-	{
-		Instance->SetVectorParameterValue(
-			TEXT("SW_VortexPreviewCenterRadius"),
-			FLinearColor(Center.X, Center.Y, Center.Z, SafeRadius));
-		LastWaterSkillPreviewCenter = Center;
-		LastWaterSkillPreviewRadius = SafeRadius;
-	}
-
-	if (!bWaterSkillPreviewEnabled)
-	{
-		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 1.0f);
-		bWaterSkillPreviewEnabled = true;
+		if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+		{
+			Overlays->Upsert(this, Center, Radius);
+		}
 	}
 }
 
 void AShip::ClearLocalWaterSkillPreview()
 {
-	if (!bWaterSkillPreviewEnabled || !GetWorld() || !WaterSkillPreviewParameterCollection)
+	if (GetWorld())
 	{
-		return;
+		if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+		{
+			Overlays->Remove(this);
+		}
 	}
-
-	if (UMaterialParameterCollectionInstance* Instance =
-		GetWorld()->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection))
-	{
-		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 0.0f);
-	}
-	bWaterSkillPreviewEnabled = false;
 }
 
 bool AShip::ResolveBombardmentTargetFromCursor(FVector& OutLocation) const

@@ -281,7 +281,7 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 		FieldDefaults->Duration));
 	TestTrue(TEXT("Field replication is enabled"), FieldDefaults->GetIsReplicated());
 	TestTrue(TEXT("Field ticking is enabled"), FieldDefaults->PrimaryActorTick.bCanEverTick);
-	TestTrue(TEXT("Field debug visualization is enabled"), FieldDefaults->bDrawDebug);
+	TestFalse(TEXT("Field debug visualization is disabled"), FieldDefaults->bDrawDebug);
 	TestTrue(TEXT("Field pull radius is positive"), FieldDefaults->PullRadius > 0.0f);
 	TestTrue(TEXT("Field acceleration is positive"), FieldDefaults->PullAcceleration > 0.0f);
 	TestTrue(TEXT("Field duration is positive"), FieldDefaults->Duration > 0.0f);
