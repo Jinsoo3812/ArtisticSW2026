@@ -1,0 +1,338 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-28",
+  "engine": "5.7.4",
+  "map": "/Game/Level/Lvl_CY",
+  "authored_world_assets": {
+    "packages": 295,
+    "sound_waves": 162,
+    "populated_events": 15,
+    "reserved_silent_events": [
+      "CannonSolidImpact",
+      "ShipCreak"
+    ]
+  },
+  "latest_automation": [
+    {
+      "name": "SW.Audio.AuthoredAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.CoverageAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.EnemyAuthoredContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.ShipMotionAndAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.SurfaceAuthoring",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.AuthoredAnimationPlayback",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.ContactPolicies",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.CrowdAdmission",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.DedicatedServer",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.EventFallbackRouting",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.LifetimeAndMissingContent",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.LocomotionAssetContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.ProfileValidation",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceFallback",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceTraceAndSelection",
+      "result": "Success"
+    }
+  ],
+  "enemy_authored_contact_clips": 16,
+  "enemy_authored_contact_markers": 86,
+  "standalone_rain_before_after_rms_reduction_db": 14.169256488000999,
+  "listen_server_client_net_modes": [
+    2,
+    3
+  ],
+  "cannons": {
+    "player_water_impact_modes": [
+      2,
+      3
+    ],
+    "player_fire_modes": [
+      2,
+      3
+    ],
+    "player_fire_counts": {
+      "2": 1,
+      "3": 1
+    },
+    "enemy_water_impact_modes": [
+      2,
+      3
+    ],
+    "enemy_fire_modes": [
+      2,
+      3
+    ],
+    "enemy_fire_counts": {
+      "2": 1,
+      "3": 1
+    }
+  },
+  "player_full_entries": {
+    "BP_Player_Woman_C_0/NetMode2": 1,
+    "BP_Player_Woman_C_0/NetMode3": 1,
+    "BP_Player_Man_C_0/NetMode2": 1,
+    "BP_Player_Man_C_0/NetMode3": 1
+  },
+  "player_full_entry_repeated_during_recorded_floating": false,
+  "ship_movement_active_loops": {
+    "player": [
+      1,
+      1
+    ],
+    "enemy": [
+      1,
+      1
+    ],
+    "both": [
+      2,
+      2
+    ],
+    "idle": [
+      0,
+      0
+    ],
+    "stopped": [
+      0,
+      0
+    ],
+    "far": [
+      0,
+      0
+    ],
+    "returned": [
+      2,
+      2
+    ]
+  },
+  "ship_wave_impact_counts": {
+    "BP_PlayerShip_Kelvin_C_1/NetMode3": 6,
+    "BP_PlayerShip_Kelvin_C_1/NetMode2": 5,
+    "BP_ES_Normal_MRR_C_0/NetMode3": 4,
+    "BP_ES_Normal_MRR_C_0/NetMode2": 4
+  },
+  "latest_coverage": {
+    "stationary_surface_strokes": [
+      0,
+      0
+    ],
+    "forward_swim_strokes": [
+      11,
+      11
+    ],
+    "npc_full_entries": [
+      1,
+      1
+    ],
+    "npc_replica_names": {
+      "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY": "T1_BP_DeckMeleeEnemy_C_19",
+      "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY": "T1_BP_DeckMeleeEnemy_C_2"
+    },
+    "leak_voices": {
+      "leak_player": [
+        1,
+        1
+      ],
+      "leak_enemy": [
+        1,
+        1
+      ],
+      "leak_many": [
+        3,
+        3
+      ],
+      "leak_off": [
+        0,
+        0
+      ],
+      "leak_far": [
+        0,
+        0
+      ],
+      "leak_return": [
+        1,
+        1
+      ],
+      "leak_hidden": [
+        0,
+        0
+      ],
+      "leak_resume": [
+        1,
+        1
+      ],
+      "leak_final_off": [
+        0,
+        0
+      ]
+    },
+    "cabin_states_after_settle": {
+      "rain_out": [
+        false,
+        false
+      ],
+      "rain_cabin": [
+        true,
+        true
+      ],
+      "rain_out_again": [
+        false,
+        false
+      ]
+    },
+    "gull_day_calls": [
+      1,
+      1
+    ],
+    "gull_night_calls_observed_12s": [
+      0,
+      0
+    ],
+    "rain_cabin_to_outside_rms_ratio": [
+      0.26637489067688475,
+      0.2530553021374878
+    ]
+  },
+  "latest_recheck_recordings": [
+    {
+      "file": "network_verified_recheck_npc_entry_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 12.010666666666667,
+      "rms": 0.007425473334691381,
+      "peak": 0.082366943359375,
+      "clipped_samples": 0,
+      "active_samples": 1144969
+    },
+    {
+      "file": "network_verified_recheck_npc_entry_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 12.608,
+      "rms": 0.0077582486295300224,
+      "peak": 0.136016845703125,
+      "clipped_samples": 0,
+      "active_samples": 1201862
+    },
+    {
+      "file": "network_verified_recheck_rain_cabin_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 6.997333333333334,
+      "rms": 0.0017771730754869302,
+      "peak": 0.036407470703125,
+      "clipped_samples": 0,
+      "active_samples": 641002
+    },
+    {
+      "file": "network_verified_recheck_rain_cabin_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.616,
+      "rms": 0.0016931441693853423,
+      "peak": 0.032806396484375,
+      "clipped_samples": 0,
+      "active_samples": 697413
+    },
+    {
+      "file": "network_verified_recheck_rain_out_again_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 6.976,
+      "rms": 0.00673841246328957,
+      "peak": 0.05572509765625,
+      "clipped_samples": 0,
+      "active_samples": 664089
+    },
+    {
+      "file": "network_verified_recheck_rain_out_again_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.594666666666667,
+      "rms": 0.006752883085896377,
+      "peak": 0.05572509765625,
+      "clipped_samples": 0,
+      "active_samples": 723166
+    },
+    {
+      "file": "network_verified_recheck_rain_out_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 6.997333333333334,
+      "rms": 0.006671698938931364,
+      "peak": 0.0621337890625,
+      "clipped_samples": 0,
+      "active_samples": 664789
+    },
+    {
+      "file": "network_verified_recheck_rain_out_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.573333333333333,
+      "rms": 0.006690806930674142,
+      "peak": 0.0621337890625,
+      "clipped_samples": 0,
+      "active_samples": 718865
+    }
+  ],
+  "local_evidence_not_committed": [
+    "Saved/AudioIntegration/ContactWeatherValidation_20261028.json",
+    "Saved/AudioIntegration/ShipWaterValidation_20261028.json",
+    "Saved/AudioIntegration/AudioCoverageValidation_20261028.json"
+  ],
+  "limitations": [
+    "Master recordings prove output, not subjective timbre approval.",
+    "Final NPC master also contains rain; initial isolated NPC recordings are retained in CoverageRecheck.",
+    "Cabin mix retake fixes ship transforms to isolate the occupied voxel boundary from physics jitter.",
+    "Only live falling NPCs are handled; corpses/ragdolls need separate impact integration.",
+    "Night observation was 12 seconds; late join, packet loss, all enemy variants and packaged play remain untested.",
+    "Direct UBT and final automation passed before documentation-only PR preparation; the editor was not reopened.",
+    "Ship motion uses controlled physical velocity; full steering, all ship classes and current-relative hydrodynamics were not tested.",
+    "Repair-point activation was exercised; the complete repair input transaction was not executed.",
+    "Vertical dive input and every moving cabin boundary remain untested.",
+    "Cannon operator camera/avatar changes were discussed only and are outside this implementation."
+  ],
+  "shutdown": {
+    "pie_settings_restored": true,
+    "editor_closed_normally": true
+  }
+}

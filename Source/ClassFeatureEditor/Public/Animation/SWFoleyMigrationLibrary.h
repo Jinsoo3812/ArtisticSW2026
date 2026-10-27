@@ -4,6 +4,8 @@
 #include "SWFoleyMigrationLibrary.generated.h"
 
 class UAnimSequenceBase;
+class UAnimNotify;
+class UBlendSpace;
 
 /** Explicit, backed-up animation contact migration; source GASP packages are never saved. */
 UCLASS()
@@ -16,4 +18,11 @@ public:
     static TArray<FString> ExportNotifyMetadata(UAnimSequenceBase* Sequence);
     UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")
     static FString MigrateGaspFoley(const TArray<FString>& Packages, const FString& SourceContent, bool bApply);
+    /** Adds one enemy-only marker. Caller owns backups, pose analysis and saving. */
+    UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")
+    static bool AddEnemyContact(UAnimSequenceBase* Sequence, TSubclassOf<UAnimNotify> NotifyClass, float Time, bool bLeft);
+    UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")
+    static TArray<FString> InspectFunctions(UObject* Object, const FString& NameFilter);
+    UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")
+    static void RebuildContactBlendSpace(UBlendSpace* BlendSpace);
 };

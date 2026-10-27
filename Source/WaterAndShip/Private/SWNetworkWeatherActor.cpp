@@ -601,6 +601,22 @@ bool ASWNetworkWeatherActor::Invoke(FName Name, const TMap<FName, double>& Argum
 	return true;
 }
 
+bool ASWNetworkWeatherActor::AllowsCoastalWildlifeAudio() const
+{
+	if (ActiveWeatherState.Sequence == 0 || ActiveWeatherState.Hour < 6 || ActiveWeatherState.Hour >= 19 || ReadNumber(TEXT("SunVisible")) < 0.5) { return false; }
+	const FProperty* Property = GetClass()->FindPropertyByName(TEXT("InitWeather"));
+	const UEnum* Enum = nullptr;
+	int64 Value = 0;
+	if (const auto* Byte = CastField<FByteProperty>(Property)) { Enum = Byte->Enum; Value = Byte->GetPropertyValue_InContainer(this); }
+	else if (const auto* Typed = CastField<FEnumProperty>(Property))
+	{
+		Enum = Typed->GetEnum(); Value = Typed->GetUnderlyingProperty()->GetSignedIntPropertyValue(Typed->ContainerPtrToValuePtr<void>(this));
+	}
+	if (!Enum) { return false; }
+	const FString Name = Enum->GetDisplayNameTextByValue(Value).ToString().ToUpper();
+	return Name == TEXT("SUNNY") || Name == TEXT("CLOUDY");
+}
+
 double ASWNetworkWeatherActor::ReadNumber(FName Name) const
 {
 	if (const FNumericProperty* Property = FindFProperty<FNumericProperty>(GetClass(), Name))

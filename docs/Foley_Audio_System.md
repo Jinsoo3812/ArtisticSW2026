@@ -2,6 +2,16 @@
 
 2026-10-16, Unreal Engine 5.7.4 기준. Project_J의 Foley 기반을 이식하고 ArtisticSW2026의 캐릭터·이동 상태 수명에 맞춰 연결했다.
 
+## 2026-10-28 표면·적 접촉 확장
+
+현재 `/Game/Level/Lvl_CY`는 Sand/Soil/Grass/Water/Wood/Rock/Metal을 SurfaceType1~7로 정의하고 전용 큐를 연결한다. 기존 GASP 기본 음원은 미지정 표면의 fallback으로 남긴다. 플레이어 애니메이션 Notify는 유지한다. 아래 2026-10-16 기록의 ‘표면 슬롯/맵을 변경하지 않았다’는 당시 초기 이식 범위다.
+
+`ABaseEnemy`에도 native FoleyComponent를 상속시킨다. 실제 걷기/뛰기 클립 16개에 `SWAnimNotify_EnemyFootContact` 86개를 작성했으며, 원본 포즈의 발 높이·속도로 접촉을 찾아 작성할 때만 분석한다. 런타임 매 프레임 발 IK를 분석하는 방식은 아니다. 적의 기본 `bUseDistanceDrivenSteps=false`와 authored contact 경로를 함께 사용해 거리 주기와 중복하지 않는다. 같은 발 marker의 blend 중복은 접촉 컴포넌트에서 거른다. 해당 클립/BlendSpace를 사용하는 다른 캐릭터를 변경할 때도 접촉 경로를 확인한다.
+
+스케일된 Landscape의 표면 조회는 월드 cm를 유지하며, 선박의 단순 충돌이 기본 표면을 반환하면 현재 이동 베이스의 갑판 목재 표면을 보조 사용한다. 전용 서버 제외·거리/동시 재생 예산과 공유 비동기 로딩은 유지한다. 가까운 살아 있는 비수영 적의 공중 입수 감지도 동일 컴포넌트에 추가했으며 사망 래그돌은 대상이 아니다.
+
+강우 믹스·발 접촉 검증, 적 클립 재작성/백업 절차, 수영/입수·함선·선실 및 2인 출력 결과는 [World audio 통합 문서](World_Audio_Integration.md)를 따른다. 최종 SW.Audio/SW.Foley 자동화 15/15와 실제 출력 수치는 [검증 요약](validation/World_Audio_20261028.json)에 보존한다. 이전의 10개/13개 성공 기록은 각 실행 시점의 범위다.
+
 ## 런타임 연결
 
 `GASP Animation → SWAnimNotify_FoleyEvent → BasePlayer.FoleyComponent → SWFoleySubsystem → 지면 Physical Material → SurfaceSounds / DefaultSound → 공간화 재생`

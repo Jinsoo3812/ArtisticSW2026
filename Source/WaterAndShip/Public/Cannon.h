@@ -257,6 +257,10 @@ protected:
 
 	void ResetCooldown();
 
+	/** One server-accepted shot, including AI; clients never predict this sound twice. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastFireSound(FVector_NetQuantize Location);
+
 	// ---- Replication Callbacks ----
 	UFUNCTION()
 	void OnRep_AimRotation();
