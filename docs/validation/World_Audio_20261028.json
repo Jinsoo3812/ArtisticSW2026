@@ -4,8 +4,8 @@
   "engine": "5.7.4",
   "map": "/Game/Level/Lvl_CY",
   "authored_world_assets": {
-    "packages": 297,
-    "sound_waves": 164,
+    "packages": 299,
+    "sound_waves": 166,
     "populated_events": 15,
     "reserved_silent_events": [
       "CannonSolidImpact",
@@ -344,5 +344,6 @@
     }
   ],
   "surface_swim_contact_validation": "Swim_Hand_Contacts_20261028.json",
-  "character_entry_weight_validation": "Character_Entry_Weight_20261028.json"
+  "character_entry_weight_validation": "Character_Entry_Weight_20261028.json",
+  "cannon_entry_weight_validation": "Cannon_Entry_Weight_20261028.json"
 }
