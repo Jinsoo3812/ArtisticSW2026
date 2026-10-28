@@ -37,6 +37,8 @@ public:
 	bool PrepareLocalAudio(USWFoleyComponent* Component);
 	void Cancel(USWFoleyComponent* Component);
 	const FSWFoleyStats& GetStats() const { return Stats; }
+	/** Shared per-world budget for nearby airborne NPC water-entry queries. */
+	bool AdmitWaterProbe(const FVector& Location);
 protected:
 	virtual bool DoesSupportWorldType(EWorldType::Type Type) const override;
 private:
@@ -88,6 +90,8 @@ private:
 	FDelegateHandle PostActorTickHandle;
 	uint64 ListenerFrame = MAX_uint64;
 	uint64 NextOrder = 0;
+	uint64 WaterProbeFrame = MAX_uint64;
+	int32 WaterProbeCount = 0;
 	double RemoteTokens = 12.0;
 	double LastTokenTime = -1.0;
 	bool bStopped = false;

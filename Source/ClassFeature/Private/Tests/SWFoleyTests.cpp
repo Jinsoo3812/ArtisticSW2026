@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameplayTagsManager.h"
 #include "GameFramework/Character.h"
@@ -227,12 +228,41 @@ bool FSWFoleyLifetimeTest::RunTest(const FString&)
 		TestFalse(TEXT("Unowned/remote avatars do not preload during ownership hooks"), Component->PrepareLocalAudio());
 		TestEqual(TEXT("Remote ownership check runs before allocating stream resources"), Service->Resources.Num(), 0);
 		Service->ListenerFrame = GFrameCounter; Service->ListenerPositions.Add(Character->GetActorLocation());
+		TestFalse(TEXT("Distant NPCs cannot spend water query budget"), Service->AdmitWaterProbe(Character->GetActorLocation() + FVector(6000, 0, 0)));
+		for (int32 I = 0; I < 8; ++I) { TestTrue(TEXT("Nearby NPC water queries share eight frame slots"), Service->AdmitWaterProbe(Character->GetActorLocation())); }
+		TestFalse(TEXT("The ninth same-frame water query is rejected"), Service->AdmitWaterProbe(Character->GetActorLocation()));
 		Event.Side = ESWFoleySide::Left;
 		TestTrue(TEXT("Ready profile admits first contact"), Service->Submit(Component, Event));
 		Event.Event = SW::Foley::Run;
 		TestFalse(TEXT("Walk/Run blend cannot double the same foot contact"), Service->Submit(Component, Event));
 		Event.Side = ESWFoleySide::Right;
 		TestTrue(TEXT("Opposite foot keeps independent admission"), Service->Submit(Component, Event));
+		Service->Pending.Reset();
+		// Reproduce NPC cadence on Lvl_CY's scaled landscape. The real timer path
+		// must measure world centimetres while excluding motion of the floor.
+		auto* Floor = World->SpawnActor<AActor>();
+		auto* FloorShape = NewObject<UBoxComponent>(Floor);
+		Floor->SetRootComponent(FloorShape); FloorShape->RegisterComponent();
+		FloorShape->SetWorldScale3D(FVector(150.f, 150.f, 140.f));
+		Character->SetBase(FloorShape);
+		Component->bUseDistanceDrivenSteps = true;
+		Component->bMovementInitialized = false;
+		for (double& Time : Component->LastAdmission) { Time = -DBL_MAX; }
+		Component->UpdateMovementAudio();
+		const uint64 BeforeScaledStep = Service->GetStats().Submitted;
+		for (int32 Sample = 0; Sample < 6; ++Sample)
+		{
+			Character->SetActorLocation(Character->GetActorLocation() + FVector(20.f, 0.f, 0.f));
+			Service->ListenerPositions[0] = Character->GetActorLocation();
+			Component->UpdateMovementAudio();
+		}
+		TestEqual(TEXT("120cm on a scaled floor emits one NPC step"), Service->GetStats().Submitted, BeforeScaledStep + 1);
+		Floor->SetActorLocation(Floor->GetActorLocation() + FVector(500.f, 0.f, 0.f));
+		Character->SetActorLocation(Character->GetActorLocation() + FVector(500.f, 0.f, 0.f));
+		Component->UpdateMovementAudio();
+		TestEqual(TEXT("Riding a moving floor emits no extra step"), Service->GetStats().Submitted, BeforeScaledStep + 1);
+		Character->SetBase(nullptr);
+		Component->bUseDistanceDrivenSteps = false;
 		Service->Pending.Reset();
 		for (int32 I = 0; I < USWFoleySubsystem::MaxPending; ++I)
 		{

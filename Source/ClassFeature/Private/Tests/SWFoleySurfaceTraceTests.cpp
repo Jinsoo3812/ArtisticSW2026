@@ -14,6 +14,7 @@
 #include "GameFramework/WorldSettings.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Sound/SoundWave.h"
+#include "Ship.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSWFoleySurfaceTraceTest, "SW.Foley.SurfaceTraceAndSelection",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -54,7 +55,10 @@ bool FSWFoleySurfaceTraceTest::RunTest(const FString&)
     TestTrue(TEXT("Fixture floor is queryable"), bHit && FixtureHit.GetComponent() == Box);
     TestEqual(TEXT("Fixture returns assigned physical material"), FixtureHit.PhysMaterial.Get(), Material);
 
-    auto* Profile = NewObject<USWFoleyAudioProfile>(World);
+    // Audio-device/editor diagnostics may retain a submitted wave after Stop().
+    // Its Outer chain must not retain the disposable fixture world into PIE.
+    auto* Profile = NewObject<USWFoleyAudioProfile>();
+    TestFalse(TEXT("Submitted fixture assets cannot retain the temporary world"), Profile->IsIn(World));
     auto* Default = NewObject<USoundWave>(Profile, TEXT("DefaultSurfaceContact"));
     auto* Override = NewObject<USoundWave>(Profile, TEXT("SurfaceOneContact"));
     FSWFoleySoundSet Definition;
@@ -81,6 +85,28 @@ bool FSWFoleySurfaceTraceTest::RunTest(const FString&)
     Service->Execute(Request);
     TestEqual(TEXT("Trace miss has default surface"), Service->Stats.LastSurface, SurfaceType_Default);
     TestEqual(TEXT("Trace miss retains default sound"), Service->Stats.LastSound, Default->GetPathName());
+    // Match the production deck: Pawn blocks but Visibility deliberately ignores.
+    // Keep deferred construction so this contact fixture has no ship gameplay.
+    auto* Ship = World->SpawnActorDeferred<AShip>(AShip::StaticClass(), FTransform::Identity);
+    auto* Deck = NewObject<UBoxComponent>(Ship);
+    Ship->AddInstanceComponent(Deck); Deck->SetBoxExtent(FVector(500, 500, 10));
+    Deck->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    Deck->SetCollisionResponseToAllChannels(ECR_Ignore);
+    Deck->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block); Deck->RegisterComponent();
+    Character->SetBase(Deck);
+    Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+    auto* Wood = NewObject<USoundWave>(Profile, TEXT("WoodDeckContact"));
+    Profile->Events[SW::Foley::Walk].SurfaceSounds.Add(Profile->ShipDeckSurface, Wood);
+    const uint64 TracesBeforeDeck = Service->Stats.SurfaceTraces;
+    Service->Execute(Request);
+    TestEqual(TEXT("Accepted ship base resolves wood even when Visibility misses"), Service->Stats.LastSurface, Profile->ShipDeckSurface.GetValue());
+    TestEqual(TEXT("Ship contact selects the authored deck recording"), Service->Stats.LastSound, Wood->GetPathName());
+    TestEqual(TEXT("Deck fallback adds no second collision query"), Service->Stats.SurfaceTraces, TracesBeforeDeck + 1);
+    const uint64 PlayedBeforeFalling = Service->Stats.Played;
+    Character->GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+    Service->Execute(Request);
+    TestEqual(TEXT("An airborne character cannot emit a contact from a stale deck base"), Service->Stats.Played, PlayedBeforeFalling);
+    Character->SetBase(nullptr);
     Service->Stop();
     return true;
 }

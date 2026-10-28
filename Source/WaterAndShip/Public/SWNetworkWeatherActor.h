@@ -164,6 +164,9 @@ public:
 	void SetNetworkSunVisible();
 	UFUNCTION(BlueprintCallable, Category = "Weather|Network")
 	void SetNetworkWeatherTime(int32 Hour, int32 Minute, uint8 Weather);
+	/** Read the presented weather; no clock, material, or replication state is changed. */
+	UFUNCTION(BlueprintPure, Category = "Weather|Audio")
+	bool AllowsCoastalWildlifeAudio() const;
 
 protected:
 	virtual void BeginPlay() override;

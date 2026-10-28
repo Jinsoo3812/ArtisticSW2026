@@ -1,0 +1,367 @@
+{
+  "date": "2026-10-28",
+  "engine": "5.7.4",
+  "map": "/Game/Level/Lvl_CY",
+  "authored_clips": 8,
+  "authored_markers": 16,
+  "checks": {
+    "surface_counts": {
+      "host_forward": [
+        16,
+        16
+      ],
+      "client_forward": [
+        16,
+        16
+      ],
+      "host_left": [
+        5,
+        5
+      ],
+      "host_back": [
+        13,
+        13
+      ]
+    },
+    "cadence_seconds": {
+      "host_forward/NetMode2": 0.5500000000000043,
+      "host_forward/NetMode3": 0.5500000000000043,
+      "client_forward/NetMode2": 0.5500000000000043,
+      "client_forward/NetMode3": 0.5500000000000043
+    },
+    "settled_stop_counts": {
+      "idle": [
+        0,
+        0
+      ],
+      "host_stop": [
+        0,
+        0
+      ],
+      "client_stop": [
+        0,
+        0
+      ],
+      "final_stop": [
+        0,
+        0
+      ],
+      "underwater_stop": [
+        0,
+        0
+      ]
+    },
+    "underwater_strokes": [
+      12,
+      12
+    ]
+  },
+  "tests": [
+    {
+      "name": "SW.Audio.AuthoredAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.CoverageAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.EnemyAuthoredContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.ShipMotionAndAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.SurfaceAuthoring",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.SurfaceSwimContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.AuthoredAnimationPlayback",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.ContactPolicies",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.CrowdAdmission",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.DedicatedServer",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.EventFallbackRouting",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.LifetimeAndMissingContent",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.LocomotionAssetContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.ProfileValidation",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceFallback",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceSwimAdmission",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceTraceAndSelection",
+      "result": "Success"
+    }
+  ],
+  "recordings": [
+    {
+      "file": "network_verified_swim_client_forward_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.168,
+      "rms": 0.005000734029253528,
+      "peak": 0.06427001953125,
+      "clipped_samples": 0,
+      "active_samples": 670183
+    },
+    {
+      "file": "network_verified_swim_client_forward_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.786666666666667,
+      "rms": 0.007283111924418027,
+      "peak": 0.060272216796875,
+      "clipped_samples": 0,
+      "active_samples": 736373
+    },
+    {
+      "file": "network_verified_swim_client_stop_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.3013333333333332,
+      "rms": 0.0031878336424937493,
+      "peak": 0.049713134765625,
+      "clipped_samples": 0,
+      "active_samples": 91915
+    },
+    {
+      "file": "network_verified_swim_client_stop_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.3013333333333332,
+      "rms": 0.0039042503183764283,
+      "peak": 0.047027587890625,
+      "clipped_samples": 0,
+      "active_samples": 90503
+    },
+    {
+      "file": "network_verified_swim_final_stop_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.344,
+      "rms": 0.004294360938056137,
+      "peak": 0.062225341796875,
+      "clipped_samples": 0,
+      "active_samples": 97810
+    },
+    {
+      "file": "network_verified_swim_final_stop_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.3013333333333332,
+      "rms": 0.0051841249971166774,
+      "peak": 0.05712890625,
+      "clipped_samples": 0,
+      "active_samples": 91958
+    },
+    {
+      "file": "network_verified_swim_host_back_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 6.016,
+      "rms": 0.004600190229295184,
+      "peak": 0.06304931640625,
+      "clipped_samples": 0,
+      "active_samples": 539094
+    },
+    {
+      "file": "network_verified_swim_host_back_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 6.592,
+      "rms": 0.006804608657133285,
+      "peak": 0.061981201171875,
+      "clipped_samples": 0,
+      "active_samples": 597361
+    },
+    {
+      "file": "network_verified_swim_host_dive_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 3.2853333333333334,
+      "rms": 0.008574862333777087,
+      "peak": 0.0440673828125,
+      "clipped_samples": 0,
+      "active_samples": 307592
+    },
+    {
+      "file": "network_verified_swim_host_dive_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 3.9466666666666668,
+      "rms": 0.007518337040629049,
+      "peak": 0.053314208984375,
+      "clipped_samples": 0,
+      "active_samples": 372786
+    },
+    {
+      "file": "network_verified_swim_host_forward_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.466666666666667,
+      "rms": 0.005114359972840644,
+      "peak": 0.061981201171875,
+      "clipped_samples": 0,
+      "active_samples": 698935
+    },
+    {
+      "file": "network_verified_swim_host_forward_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 8.085333333333333,
+      "rms": 0.007296119644045304,
+      "peak": 0.061248779296875,
+      "clipped_samples": 0,
+      "active_samples": 764880
+    },
+    {
+      "file": "network_verified_swim_host_left_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 4.8853333333333335,
+      "rms": 0.0031259574376889285,
+      "peak": 0.056976318359375,
+      "clipped_samples": 0,
+      "active_samples": 362355
+    },
+    {
+      "file": "network_verified_swim_host_left_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 5.632,
+      "rms": 0.004313398996645603,
+      "peak": 0.059234619140625,
+      "clipped_samples": 0,
+      "active_samples": 396657
+    },
+    {
+      "file": "network_verified_swim_host_stop_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.0026666666666666,
+      "rms": 0.0032966653382865835,
+      "peak": 0.0526123046875,
+      "clipped_samples": 0,
+      "active_samples": 65575
+    },
+    {
+      "file": "network_verified_swim_host_stop_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.0026666666666666,
+      "rms": 0.004942014060454544,
+      "peak": 0.056488037109375,
+      "clipped_samples": 0,
+      "active_samples": 63737
+    },
+    {
+      "file": "network_verified_swim_settle_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 2.2613333333333334,
+      "rms": 0.01224420186995097,
+      "peak": 0.12591552734375,
+      "clipped_samples": 0,
+      "active_samples": 175122
+    },
+    {
+      "file": "network_verified_swim_settle_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 2.176,
+      "rms": 0.010938075097407782,
+      "peak": 0.097137451171875,
+      "clipped_samples": 0,
+      "active_samples": 176677
+    },
+    {
+      "file": "network_verified_swim_underwater_forward_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 6.997333333333334,
+      "rms": 0.009774658163702188,
+      "peak": 0.052642822265625,
+      "clipped_samples": 0,
+      "active_samples": 667382
+    },
+    {
+      "file": "network_verified_swim_underwater_forward_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.616,
+      "rms": 0.007512360474858449,
+      "peak": 0.058197021484375,
+      "clipped_samples": 0,
+      "active_samples": 722070
+    },
+    {
+      "file": "network_verified_swim_underwater_stop_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 2.816,
+      "rms": 0.005940152767398429,
+      "peak": 0.048095703125,
+      "clipped_samples": 0,
+      "active_samples": 221295
+    },
+    {
+      "file": "network_verified_swim_underwater_stop_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.792,
+      "rms": 0.0047169591354063655,
+      "peak": 0.057464599609375,
+      "clipped_samples": 0,
+      "active_samples": 121215
+    }
+  ],
+  "catch_clips": [
+    "anim_swim_backward_C02",
+    "anim_swim_forward_E",
+    "anim_swim_left"
+  ],
+  "limitations": [
+    "Surface hand catches follow the dominant replicated local pose, not a synchronized RPC clock.",
+    "Submerged travel keeps its existing distance cadence and a separate underwater cue.",
+    "The artificial editor-property play-rate trial was excluded; variable-rate linked-graph playback remains unverified.",
+    "No package/cook, packet-loss or late-join test; recorded output is not subjective timbre approval."
+  ],
+  "saved_assets_cold_verification": {
+    "clips": 8,
+    "markers": 16,
+    "saved_metadata_round_trip": true
+  }
+}
