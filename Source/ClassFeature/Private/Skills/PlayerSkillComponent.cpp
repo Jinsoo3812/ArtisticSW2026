@@ -1,4 +1,5 @@
 #include "Skills/PlayerSkillComponent.h"
+#include "Development/SWDevelopmentOptions.h"
 
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
@@ -117,6 +118,7 @@ bool UPlayerSkillComponent::CanUseSkillWithInventory(
 	const UInventoryComponent* Inventory) const
 {
 	const FPlayerSkillDefinition* Definition = FindSkillDefinition(SkillTag);
+ if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillFree)) return Definition != nullptr;
 	return Definition
 		&& Inventory
 		&& IsSkillUnlockedWithInventory(SkillTag, Inventory)
@@ -127,6 +129,8 @@ bool UPlayerSkillComponent::TryConsumeSkillUseWithInventory(
 	FGameplayTag SkillTag,
 	UInventoryComponent* Inventory)
 {
+ if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillFree))
+  return GetOwner() && GetOwner()->HasAuthority() && FindSkillDefinition(SkillTag);
 	if (!GetOwner()
 		|| !GetOwner()->HasAuthority()
 		|| !IsSkillUnlockedWithInventory(SkillTag, Inventory))

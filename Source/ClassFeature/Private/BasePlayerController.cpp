@@ -190,8 +190,7 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 		}
 		if (SharedUpgrade)
 		{
-			SharedUpgrade->SetIgnoreMaterialCostsForTesting(
-				RequestingPlayer && RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest());
+			SharedUpgrade->SetIgnoreMaterialCostsForTesting(false); // The shared component queries the session policy.
 			SharedState->ForceNetUpdate();
 		}
 	}

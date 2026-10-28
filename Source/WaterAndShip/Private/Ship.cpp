@@ -2,6 +2,7 @@
 
 
 #include "Ship.h"
+#include "Development/SWDevelopmentOptions.h"
 #include "MountedDamageUserInterface.h"
 #include "MultiGameMode.h"
 #include "Room/SWRoomSnapshotComponent.h"
@@ -744,6 +745,7 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+ if (bUsingHelmFirstPersonCamera && !SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session)) ResetToFollowCamera();
 
 	static const auto CVarShipBalanceDiagnostics = IConsoleManager::Get().RegisterConsoleVariable(
 		TEXT("sw.ShipBalanceDiagnostics"),
@@ -2626,6 +2628,7 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 
 void AShip::ToggleHelmCamera()
 {
+ if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session)) return;
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC || !PC->IsLocalController() || !RidingPlayer)
 	{
@@ -2642,6 +2645,7 @@ void AShip::ResetToFollowCamera()
 
 void AShip::SetHelmFirstPersonCameraEnabled(bool bEnabled)
 {
+ if (bEnabled && !SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session)) return;
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (bEnabled && (!PC || !PC->IsLocalController() || !RidingPlayer
 		|| !RidingPlayer->GetRootComponent() || !HelmFirstPersonCamera))

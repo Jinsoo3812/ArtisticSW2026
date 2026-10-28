@@ -2,6 +2,7 @@
 
 #include "NativeGameplayTags.h"
 #include "StorySubsystem.h"
+#include "StorySaveGame.h"
 #include "Engine/World.h"
 
 namespace StoryFacadeTags
@@ -244,4 +245,48 @@ FGameplayTag UStoryFacadeSubsystem::GetInternalTag(EStoryNode Node) const
 	default:
 		return FGameplayTag();
 	}
+}
+
+int32 UStoryFacadeSubsystem::GetDevelopmentCheckpointIndex(FName Target)
+{
+ const FName Names[] = { TEXT("Recon"), TEXT("SupplyPatrol"), TEXT("Decipher"), TEXT("Suppress"), TEXT("Uldolmok"), TEXT("Ending") };
+ for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index) if (Names[Index] == Target) return Index;
+ return INDEX_NONE;
+}
+
+UStorySaveGame* UStoryFacadeSubsystem::BuildDevelopmentCheckpoint(FName Target, FString& OutError) const
+{
+ OutError = TEXT("Invalid checkpoint. Use Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending.");
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ const int32 Index = GetDevelopmentCheckpointIndex(Target);
+ UStorySubsystem* Story = ResolveStory();
+ if (Index == INDEX_NONE || !Story || !Story->HasStoryAuthority()) return nullptr;
+ const EStoryNode Checkpoints[] = { EStoryNode::ReconQuestAccepted, EStoryNode::SupplyPatrolQuestAccepted,
+  EStoryNode::DecipherQuestAccepted, EStoryNode::SuppressJapaneseForcesQuestAccepted,
+  EStoryNode::UldolmokBattleQuestAccepted, EStoryNode::EndingDialogueCompleted };
+ for (int32 Later = Index; Later < UE_ARRAY_COUNT(Checkpoints); ++Later)
+  if (IsStoryNodeReached(Checkpoints[Later]))
+  { OutError = TEXT("That dialogue has already been reached. Campaign skip only moves forward."); return nullptr; }
+ // Boss completion also makes a preceding dialogue checkpoint a backwards move.
+ if ((Index == 0 && IsStoryNodeReached(EStoryNode::MiddleBoss1Defeated))
+  || (Index <= 1 && IsStoryNodeReached(EStoryNode::MiddleBoss2Defeated))
+  || (Index <= 3 && IsStoryNodeReached(EStoryNode::MiddleBoss3Defeated))
+  || (Index <= 4 && IsStoryNodeReached(EStoryNode::FinalBossDefeated)))
+ { OutError = TEXT("Cannot move backwards past a defeated boss."); return nullptr; }
+ UStorySaveGame* Prepared = Story->BuildRoomProgress();
+ if (!Prepared || !Prepared->StoryDefinitionId.IsValid())
+ { OutError = TEXT("The campaign definition is not configured."); return nullptr; }
+ auto Add = [this, Prepared](EStoryNode Node) { Prepared->Facts.AddTag(GetInternalTag(Node)); };
+ Add(EStoryNode::GameStarted); Add(EStoryNode::FirstSailingCompleted); Add(EStoryNode::ReconQuestAccepted);
+ Add(EStoryNode::StoryClue1Acquired); Add(EStoryNode::CipherBookAcquired);
+ if (Index >= 1) { Add(EStoryNode::MiddleBoss1Defeated); Add(EStoryNode::SupplyPatrolQuestAccepted); Add(EStoryNode::CurrentGeneratorUnlocked); }
+ if (Index >= 2) { Add(EStoryNode::MiddleBoss2Defeated); Add(EStoryNode::DecipherQuestAccepted); }
+ if (Index >= 3) { Add(EStoryNode::SuppressJapaneseForcesQuestAccepted); Add(EStoryNode::WaterBombUnlocked); }
+ if (Index >= 4) { Add(EStoryNode::MiddleBoss3Defeated); Add(EStoryNode::UldolmokBattleQuestAccepted); Add(EStoryNode::BombardmentUnlocked); }
+ if (Index >= 5) { Add(EStoryNode::FinalBossDefeated); Add(EStoryNode::EndingDialogueCompleted); }
+ OutError.Reset();
+ return Prepared;
+#else
+ return nullptr;
+#endif
 }

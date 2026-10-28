@@ -1,4 +1,8 @@
 #include "System/SWFoleySubsystem.h"
+#include "SwimmingComponent.h"
+#include "Ship.h"
+#include "SWCabinWaterCullComponent.h"
+#include "WaterSurfaceQueryLibrary.h"
 
 #include "Audio/SWFoleyAudioProfile.h"
 #include "AudioDevice.h"
@@ -7,6 +11,8 @@
 #include "Engine/StreamableManager.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -134,6 +140,16 @@ void USWFoleySubsystem::RefreshListeners()
 		}
 		if (!Position.ContainsNaN()) { ListenerPositions.Add(Position); }
 	}
+}
+
+bool USWFoleySubsystem::AdmitWaterProbe(const FVector& Location)
+{
+	float DistanceSquared = 0.f;
+	if (bStopped || !GetListenerDistanceSquared(Location, DistanceSquared) || DistanceSquared > FMath::Square(5000.f)) { return false; }
+	if (WaterProbeFrame != GFrameCounter) { WaterProbeFrame = GFrameCounter; WaterProbeCount = 0; }
+	if (WaterProbeCount >= 8) { return false; }
+	++WaterProbeCount;
+	return true;
 }
 
 bool USWFoleySubsystem::GetListenerDistanceSquared(const FVector& Location, float& OutDistanceSquared)
@@ -344,6 +360,36 @@ void USWFoleySubsystem::Execute(const FRequest& Request)
 		{
 			Location = Hit.ImpactPoint;
 			Surface = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
+			if (Surface == SurfaceType_Default && Cast<AShip>(Hit.GetActor())) { Surface = Profile->ShipDeckSurface; }
+		}
+		// Production deck collision intentionally ignores Visibility. Reuse the
+		// character's accepted movement base instead of changing collision profiles
+		// or adding another trace for each contact on a moving ship.
+		if (Surface == SurfaceType_Default)
+		{
+			const auto* Character = Cast<ACharacter>(Component->GetOwner());
+			const auto* Base = Character ? Character->GetMovementBase() : nullptr;
+			if (Base && Cast<AShip>(Base->GetOwner()) && Character->GetCharacterMovement()->IsMovingOnGround())
+				Surface = Profile->ShipDeckSurface;
+		}
+	}
+	if (Definition->Group == ESWFoleyGroup::Footstep || Definition->Group == ESWFoleyGroup::Scuff ||
+		Definition->Group == ESWFoleyGroup::Jump || Definition->Group == ESWFoleyGroup::Land)
+	{
+		if (const auto* Swimming = Component->GetOwner()->FindComponentByClass<USwimmingComponent>();
+			Swimming && Swimming->IsInShallowWater())
+		{
+			Surface = Profile->ShallowWaterSurface;
+		}
+		else if (!Swimming && !USWCabinWaterCullComponent::IsWorldPositionInsideAnyCabin(GetWorld(), Location))
+		{
+			// Ground NPCs have no swimming component. Reuse the water query only for
+			// distance/budget-admitted contacts, not as an extra per-NPC water tick.
+			float WaterZ = 0.f;
+			if (FWaterSurfaceQueryLibrary::QueryWaterSurface(GetWorld(), Location, WaterZ, true) && WaterZ > Location.Z + 3.f)
+			{
+				Surface = Profile->ShallowWaterSurface;
+			}
 		}
 	}
 	USoundBase* Sound = Definition->ResolveSound(Surface).Get();

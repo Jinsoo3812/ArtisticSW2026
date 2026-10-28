@@ -1151,3 +1151,26 @@ void UInventoryComponent::PrintInventoryToScreen() const
         DebugText
     );
 }
+
+bool UInventoryComponent::BuildSnapshotWithAddedItems(const TArray<FCraftingItemStack>& AddedItems,
+ TArray<FSWInventorySlotSnapshot>& OutSlots) const
+{
+ OutSlots.Reset();
+ if (!CanApplyItemTransaction({}, AddedItems)) return false;
+ TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+ for (const FCraftingItemStack& Item : AddedItems)
+ {
+  FInventoryTabPage* Page = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
+  if (!Page || !AddToSlots(Page->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag))) return false;
+ }
+ for (const FInventoryTabPage& Page : WorkingPages)
+  for (int32 Index = 0; Index < Page.Slots.Num(); ++Index)
+  {
+   const FInventorySlot& Slot = Page.Slots[Index];
+   if (Slot.IsEmpty()) continue;
+   FSWInventorySlotSnapshot& Saved = OutSlots.AddDefaulted_GetRef();
+   Saved.Tab = static_cast<uint8>(Page.Tab); Saved.SlotIndex = Index;
+   Saved.ItemTag = Slot.ItemTag; Saved.Count = Slot.Count;
+  }
+ return true;
+}

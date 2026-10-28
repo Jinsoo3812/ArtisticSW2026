@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannon.h"
+#include "Development/SWDevelopmentOptions.h"
+#include "Audio/SWWorldAudio.h"
 #include "CannonRiderInterface.h"
 #include "MountedDamageUserInterface.h"
 #include "Components/StaticMeshComponent.h"
@@ -420,7 +422,7 @@ void ACannon::ToggleWaterBombAbility()
 
 bool ACannon::FireCannon()
 {
-	if (!bCanFire) return false;
+	if (!bCanFire && !(bWaterBombMode && SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown))) return false;
 	if (bWaterBombMode)
 	{
 		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
@@ -491,6 +493,7 @@ bool ACannon::CanFireCannon() const
 
 float ACannon::GetFireCooldownRemaining() const
 {
+	if (bWaterBombMode && SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown)) return 0.f;
 	return FMath::Max(0.0f, GetWorldTimerManager().GetTimerRemaining(CooldownTimerHandle));
 }
 
@@ -702,7 +705,7 @@ void ACannon::ServerFire_Implementation(
 	FVector_NetQuantize100 ClientMuzzleLocation,
 	FRotator ClientLaunchRotation)
 {
-	if (!bCanFire) return;
+	if (!bCanFire && !(bWaterBombMode && SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown))) return;
 	if (bWaterBombMode)
 	{
 		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
@@ -802,6 +805,7 @@ void ACannon::SpawnCannonball(
 	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(SelectedProjectileClass, MuzzleLocation, LaunchRotation, SpawnParams);
 	if (SpawnedProjectile)
 	{
+		MulticastFireSound(MuzzleLocation);
 		if (ACannonball* Projectile = Cast<ACannonball>(SpawnedProjectile))
 		{
 			if (AWaterBombCannonball* WaterBombProjectile = Cast<AWaterBombCannonball>(Projectile))
@@ -828,6 +832,11 @@ void ACannon::SpawnCannonball(
 			}
 		}
 	}
+}
+
+void ACannon::MulticastFireSound_Implementation(FVector_NetQuantize Location)
+{
+	USWWorldAudioSubsystem::PlayEvent(this, ESWWorldSound::CannonFire, Location, this);
 }
 
 void ACannon::ServerToggleWaterBombAbility_Implementation()

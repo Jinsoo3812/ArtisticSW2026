@@ -1,4 +1,5 @@
 #include "Crafting/CraftingComponent.h"
+#include "Development/SWDevelopmentOptions.h"
 
 #include "BasePlayer.h"
 #include "Crafting/CraftingAccessComponent.h"
@@ -56,11 +57,11 @@ ECraftingAvailability UCraftingComponent::EvaluateAvailability(const FCraftingRe
 	{
 		return ECraftingAvailability::Disabled;
 	}
-	if (Recipe.RequiredRecipeItemTag.IsValid() && GetOwnedItemCount(Recipe.RequiredRecipeItemTag) <= 0)
+	if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe.RequiredRecipeItemTag.IsValid() && GetOwnedItemCount(Recipe.RequiredRecipeItemTag) <= 0)
 	{
 		return ECraftingAvailability::MissingRecipe;
 	}
-	if (Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid()
+	if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid()
 		&& GetOwnedItemCount(Recipe.RequiredRecipeItemTag) < CraftCount)
 	{
 		return ECraftingAvailability::MissingIngredients;
@@ -72,7 +73,7 @@ ECraftingAvailability UCraftingComponent::EvaluateAvailability(const FCraftingRe
 	for (const FCraftingItemStack& Ingredient : Recipe.Ingredients)
 	{
 		const int64 Required = static_cast<int64>(Ingredient.Quantity) * CraftCount;
-		if (Required > MAX_int32 || GetOwnedItemCount(Ingredient.ItemTag) < Required)
+		if (Required > MAX_int32 || (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && GetOwnedItemCount(Ingredient.ItemTag) < Required))
 		{
 			return ECraftingAvailability::MissingIngredients;
 		}
@@ -211,6 +212,12 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 		}
 	}
 	OutDetails.MaxCraftableCount = MaxCraftable == MAX_int32 ? MaxCraftCountPerRequest : MaxCraftable;
+ if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree))
+ {
+  OutDetails.RequiredRecipeItem.bEnough = true;
+  for (FCraftingIngredientView& View : OutDetails.Ingredients) View.bEnough = true;
+  OutDetails.MaxCraftableCount = MaxCraftCountPerRequest;
+ }
 	return true;
 }
 
@@ -300,7 +307,7 @@ bool UCraftingComponent::BuildCosts(const FCraftingRecipeRow& Recipe, int32 Craf
 		}
 		Totals.FindOrAdd(Ingredient.ItemTag) += static_cast<int64>(Ingredient.Quantity) * CraftCount;
 	}
-	if (Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid())
+	if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid())
 	{
 		Totals.FindOrAdd(Recipe.RequiredRecipeItemTag) += CraftCount;
 	}
@@ -315,6 +322,7 @@ bool UCraftingComponent::BuildCosts(const FCraftingRecipeRow& Recipe, int32 Craf
 		Stack.Quantity = static_cast<int32>(Pair.Value);
 		OutCosts.Add(Stack);
 	}
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree)) OutCosts.Reset();
 	return true;
 }
 
@@ -411,7 +419,7 @@ void UCraftingComponent::ProcessCraftRequest(const FCraftingRequest& Request)
 		CompleteRequest(Result);
 		return;
 	}
-	if (Recipe->RequiredRecipeItemTag.IsValid() && Inventory->GetItemCount(Recipe->RequiredRecipeItemTag) <= 0)
+	if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe->RequiredRecipeItemTag.IsValid() && Inventory->GetItemCount(Recipe->RequiredRecipeItemTag) <= 0)
 	{
 		Result.Reason = ECraftingFailureReason::MissingRecipe;
 		CompleteRequest(Result);

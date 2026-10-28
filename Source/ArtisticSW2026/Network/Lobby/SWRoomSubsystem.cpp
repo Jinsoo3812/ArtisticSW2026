@@ -7,6 +7,8 @@
 #include "Misc/CommandLine.h"
 #include "Misc/NetworkVersion.h"
 #include "Misc/Parse.h"
+#include "HAL/IConsoleManager.h"
+#include "Engine/World.h"
 #include "SWRoomName.h"
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWRoomSaveStore.h"
@@ -39,6 +41,36 @@ FString GetPackagedServerProjectDirectory(const FString& Executable)
 {
 	return FPaths::GetPath(FPaths::GetPath(FPaths::GetPath(Executable)));
 }
+
+bool IsLocalRoomTestEnabled()
+{
+#if UE_BUILD_SHIPPING || UE_BUILD_TEST
+	return false;
+#else
+	return FParse::Param(FCommandLine::Get(), TEXT("SWRoomLocalTest"));
+#endif
+}
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+FAutoConsoleCommandWithWorldAndArgs LocalHostCommand(
+	TEXT("SW.DevTest.Local.Host"), TEXT("Create a local room and auto-join: SW.DevTest.Local.Host [Name]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World || !World->IsGameWorld() || !World->GetGameInstance() || Args.Num() > 1) return;
+		if (USWRoomSubsystem* Room = World->GetGameInstance()->GetSubsystem<USWRoomSubsystem>())
+			if (!Room->HostLocalTestRoom(Args.IsEmpty() ? TEXT("Host") : Args[0]))
+				UE_LOG(LogSWConnection, Warning, TEXT("Local.Host failed. Check room state, name and server paths."));
+	}));
+FAutoConsoleCommandWithWorldAndArgs LocalJoinCommand(
+	TEXT("SW.DevTest.Local.Join"), TEXT("Join a local room: SW.DevTest.Local.Join [Name] [IPv4; default 127.0.0.1]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World || !World->IsGameWorld() || !World->GetGameInstance() || Args.Num() > 2) return;
+		if (USWRoomSubsystem* Room = World->GetGameInstance()->GetSubsystem<USWRoomSubsystem>())
+			if (!Room->JoinLocalTestRoom(Args.IsEmpty() ? TEXT("Guest") : Args[0], Args.Num() < 2 ? TEXT("127.0.0.1") : Args[1]))
+				UE_LOG(LogSWConnection, Warning, TEXT("Local.Join failed. Use an idle client, valid name and private/loopback IPv4."));
+	}));
+#endif
 
 bool NormalizeLocalFilePath(FString& Path)
 {
@@ -241,10 +273,11 @@ bool USWRoomSubsystem::ContinueRoom(const FString& Name, const FString& Optional
 	return BeginHosting(Name, OptionalPublicIPv4, true);
 }
 
-bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& OptionalPublicIPv4, bool bContinue)
+bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& OptionalPublicIPv4, bool bContinue, bool bLocalTest)
 {
 	SWRoomLoadDiagnostics::Mark(TEXT("Host.Requested"));
 	if (State != ESWRoomState::Idle && State != ESWRoomState::Failed) return false;
+	bLocalCommandHost = bLocalTest;
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=RoomSetup OperationId=%llu Mode=%s Phase=Requested"), OperationId + 1,
 		bContinue ? TEXT("Continue") : TEXT("New"));
 	bReturningToLobby = false;
@@ -305,6 +338,12 @@ bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& Optional
 	PublicAddress.Empty();
 	bAwaitingHostJoin = false;
 	bOwnsServer = false;
+	if (bLocalCommandHost)
+	{
+		bNeedsManualPublicIP = false;
+		StartServer(TEXT("127.0.0.1"));
+		return State != ESWRoomState::Failed;
+	}
 	uint8 Octets[4];
 	if (!OptionalPublicIPv4.IsEmpty())
 	{
@@ -455,9 +494,10 @@ void USWRoomSubsystem::Tick(float DeltaTime)
 			&& Parts[0] == RoomRunId.ToString(EGuidFormats::DigitsWithHyphens)
 			&& FCString::Strtoui64(*Parts[1], nullptr, 10) == ServerPid && Parts[2] == TEXT("7777"))
 		{
-			if (!FSWRoomCode::Encode(PublicAddress, RoomPort, DisplayCode)) { Fail(FText::FromString(TEXT("참가 코드를 만들 수 없습니다."))); return; }
+			if (!bLocalCommandHost && !FSWRoomCode::Encode(PublicAddress, RoomPort, DisplayCode)) { Fail(FText::FromString(TEXT("참가 코드를 만들 수 없습니다."))); return; }
 			UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerReady Result=Success ElapsedMs=%d Port=%d"), *RoomRunId.ToString(), OperationId, FMath::RoundToInt(ServerStartElapsed * 1000), RoomPort);
 			bAwaitingHostJoin = true;
+			if (bLocalCommandHost) { ConnectHostedRoom(); return; }
 			SWRoomLoadDiagnostics::Mark(TEXT("Host.ReadyMarkerReceived"));
 			SetState(ESWRoomState::StartingServer, FText::FromString(Parts.Num() == 4
 				? TEXT("월드 복원에 실패하여 초기화했습니다. 진행 데이터는 유지됩니다. 서버 접속을 누르세요.") : bUsingBackup
@@ -469,14 +509,63 @@ void USWRoomSubsystem::Tick(float DeltaTime)
 	if (ServerStartElapsed >= ServerStartTimeoutSeconds) Fail(FText::FromString(TEXT("서버 준비 시간이 초과되었습니다.")));
 }
 
+bool USWRoomSubsystem::HostLocalTestRoom(const FString& Name)
+{
+#if UE_BUILD_SHIPPING || UE_BUILD_TEST
+	return false;
+#else
+	return BeginHosting(Name, FString(), false, true);
+#endif
+}
+
+bool USWRoomSubsystem::JoinLocalTestRoom(const FString& Name, const FString& Address)
+{
+#if UE_BUILD_SHIPPING || UE_BUILD_TEST
+	return false;
+#else
+	if (State != ESWRoomState::Idle && State != ESWRoomState::Failed) return false;
+	TArray<FString> Parts;
+	Address.ParseIntoArray(Parts, TEXT("."), false);
+	if (Parts.Num() != 4) return false;
+	int32 Octets[4];
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		if (Parts[Index].IsEmpty() || Parts[Index].Len() > 3) return false;
+		for (TCHAR Ch : Parts[Index]) if (Ch < '0' || Ch > '9') return false;
+		Octets[Index] = FCString::Atoi(*Parts[Index]);
+		if (Octets[Index] > 255) return false;
+	}
+	if (!(Octets[0] == 127 || Octets[0] == 10 || (Octets[0] == 192 && Octets[1] == 168)
+		|| (Octets[0] == 172 && Octets[1] >= 16 && Octets[1] <= 31))) return false;
+	if (!FSWRoomName::Normalize(Name, DisplayName)) return false;
+	++OperationId;
+	bReturningToLobby = false;
+	bOwnsServer = false;
+	bAwaitingHostJoin = false;
+	bLocalCommandHost = false;
+	DisplayCode.Empty();
+	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("Local server connecting...")));
+	UE_LOG(LogSWConnection, Display, TEXT("Side=JoinClient Phase=LocalCommand Address=%s Port=%d"), *Address, RoomPort);
+	USWConnectionSubsystem* Connection = GetGameInstance()->GetSubsystem<USWConnectionSubsystem>();
+	if (!Connection || !Connection->ConnectDirectWithName(FString::Printf(TEXT("%s:%d"), *Address, RoomPort), DisplayName))
+	{
+		Fail(FText::FromString(TEXT("Local server connection could not start.")));
+		return false;
+	}
+	return true;
+#endif
+}
+
 bool USWRoomSubsystem::ConnectHostedRoom()
 {
 	if (!bOwnsServer || !bAwaitingHostJoin || State != ESWRoomState::StartingServer) return false;
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=HostJoin OperationId=%llu RoomRunId=%s Phase=Requested"), OperationId, *RoomRunId.ToString());
 	bAwaitingHostJoin = false;
 	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("서버 연결 중...")));
+	const FString ConnectAddress = IsLocalRoomTestEnabled() ? TEXT("127.0.0.1") : PublicAddress;
+	UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient Phase=ConnectTarget Address=%s Port=%d LocalTest=%d"), *ConnectAddress, RoomPort, IsLocalRoomTestEnabled());
 	USWConnectionSubsystem* Connection = GetGameInstance()->GetSubsystem<USWConnectionSubsystem>();
-	if (!Connection || !Connection->ConnectDirectWithName(FString::Printf(TEXT("%s:%d"), *PublicAddress, RoomPort), DisplayName, HostKey))
+	if (!Connection || !Connection->ConnectDirectWithName(FString::Printf(TEXT("%s:%d"), *ConnectAddress, RoomPort), DisplayName, HostKey))
 	{
 		Fail(FText::FromString(TEXT("방 생성 실패: 서버 연결을 시작할 수 없습니다.")));
 		return false;
@@ -509,8 +598,10 @@ bool USWRoomSubsystem::JoinRoom(const FString& Name, const FString& Code)
 	UE_LOG(LogSWConnection, Display, TEXT("Side=JoinClient OperationId=%llu Phase=CodeValidation Result=Success Port=%u"), OperationId, Port);
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=GuestJoin OperationId=%llu Phase=CodeValidated Port=%u"), OperationId, Port);
 	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("서버 연결 중...")));
+	const FString ConnectAddress = IsLocalRoomTestEnabled() ? TEXT("127.0.0.1") : Address;
+	UE_LOG(LogSWConnection, Display, TEXT("Side=JoinClient Phase=ConnectTarget Address=%s Port=%u LocalTest=%d"), *ConnectAddress, Port, IsLocalRoomTestEnabled());
 	USWConnectionSubsystem* Connection = GetGameInstance()->GetSubsystem<USWConnectionSubsystem>();
-	if (!Connection || !Connection->ConnectDirectWithName(FString::Printf(TEXT("%s:%u"), *Address, Port), DisplayName))
+	if (!Connection || !Connection->ConnectDirectWithName(FString::Printf(TEXT("%s:%u"), *ConnectAddress, Port), DisplayName))
 	{
 		Fail(FText::FromString(TEXT("기타 오류")));
 		return false;
