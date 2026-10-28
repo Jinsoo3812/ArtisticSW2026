@@ -4,7 +4,7 @@
 
 ## 현재 적용 상태
 
-적용 맵은 `/Game/Level/Lvl_CY`다. World Audio 자산 295개(그중 SoundWave 162개), 프로필 사건 15개를 포함한다. `CannonSolidImpact`와 `ShipCreak`는 원음이 없어 비워 둔 별도 확장 슬롯이다. 새 게임플레이 음원은 프로젝트에 포함되므로 제공자의 UE 5.8 프로젝트나 로컬 WAV 경로가 실행에 필요하지 않다.
+적용 맵은 `/Game/Level/Lvl_CY`다. World Audio 자산 297개(그중 SoundWave 164개), 프로필 사건 15개를 포함한다. `CannonSolidImpact`와 `ShipCreak`는 원음이 없어 비워 둔 별도 확장 슬롯이다. 새 게임플레이 음원은 프로젝트에 포함되므로 제공자의 UE 5.8 프로젝트나 로컬 WAV 경로가 실행에 필요하지 않다.
 
 | 범위 | 적용 내용 |
 | --- | --- |
@@ -220,6 +220,16 @@ Asset Registry에서 프로젝트 SoundWave 447개, SoundCue 64개, MetaSoundSou
 집계 재현은 `Scripts/summarize_audio_coverage.py --session Saved/AudioIntegration/Live/21548 --log Saved/Logs/AudioCoverageFinal.log --recheck-session Saved/AudioIntegration/Live/7708 --recheck-log Saved/Logs/AudioCoverageRecheck.log --output Saved/AudioIntegration/AudioCoverageValidation_20261028.json`이다. WAV 지표는 먼저 `Scripts/analyze_ship_audio.py`로 각 결과 폴더에 작성한다. Python 분석기는 numpy가 있는 런타임을 사용한다. `network_coverage_recheck.py`는 전체 흐름 중 적 입수/선실만 따로 재현하는 보조 검사이며, main probe와 함께 쓰고 각각의 완료 JSON을 확인한다.
 
 PIE를 종료하고 원래 Standalone/1인/640×480/개별 오디오 장치 비활성 및 성능 설정을 복구했다. 최종 세션의 미저장 머티리얼 4개도 `CoverageAudit/UnsavedMaterialCheckpoint_7708`에 별도로 보존했고 미저장 맵은 없었다. 사용자 요청에 따라 에디터를 정상 종료했으며 로그의 `LogExit: Exiting` 및 프로세스 부재를 확인했다. 늦은 참가/패킷 손실, 시체 물 충돌, 전체 적 종류와 패키지 실행은 별도 검증이 남는다. 출력/사건 검증과 주관적인 음색 청취 합격을 구분한다.
+
+## 사람 전신 입수의 무게감 보강 — 2026-10-28 후속
+
+사람의 큰 입수 Cue는 기존 수영 동작 Heavy/Splash 선택에서 실제 Diving1/2 중심의 `CharacterEntry_PlungeA/B`로 바꿨다. 각각 Splash4/2를 겹쳐 처음 물을 가르는 부분을 보강하고, `CharacterWaterBody`에는 Diving_Underwater1과 Splash6를 25~45ms 뒤 겹친다. 실제 물 녹음의 선형 gain·작은 피치 변경·짧은 경계 fade만 사용하며 합성 저음/폭발음은 넣지 않는다. 프로필 WaterEnter 배율은 0.55→0.72로 올렸다. 기존 전신 입수 호출 배율 0.8과 입수 재진입 판정은 유지한다. 앞의 0.55 및 Swimming_Heavy 기반 구성은 이전 단계 기록이다.
+
+`prepare_character_entry.py --staging Saved/AudioIntegration`이 세 WAV를 준비하고 `author_character_entry.py`가 해당 Wave/Cue/프로필만 백업 후 저장한다. 기존 에셋의 준비 WAV 해시가 바뀌면 실제로 다시 가져온다. 이전 제작 경로는 기존 Wave를 로드한 뒤 metadata만 새 해시로 바꿀 수 있었으므로 재가져오기 조건을 고쳤다. 전체 재제작 `prepare_ship_water_audio.py`/`author_ship_water_audio.py`도 같은 새 레시피를 사용한다. 준비 Wave peak는 0.82 이하이며 engine export PCM은 준비본과 최대 16-bit 한 단계 이내로 일치한다. 원본 녹음은 보존한다.
+
+`CharacterEntryWeightFinal.log`의 SW.Audio/SW.Foley **17/17 성공**. 실제 2인 PIE에서 Woman/Man의 관리된 낙하 각각 NetMode 2/3에 전신 입수 1회씩이며 기록한 뒤 부유 구간의 추가 전신 입수는 없었다. 네 master WAV 모두 비무음/클리핑 0, 최대 peak 0.1868이다. 포탄 입수 Cue/body, 수면/수중 stroke Cue와 Foley 프로필의 파일 해시는 전후 동일하다. 더 넓은 환경 믹스 전체의 무클리핑이나 주관적인 음색 합격을 뜻하지 않는다.
+
+증거 수치는 [사람 입수 검증](validation/Character_Entry_Weight_20261028.json), 로컬 녹음은 `Live/19692/CharacterEntryWeightVerified/EntriesVerified`다. `AudioPIE/network_character_entry_weight.py`는 기존 낙하 하네스를 재사용하며 시험 월드에서만 함선을 숨겨 항주음을 제외한다. 제작 후 PCM 검사는 `verify_character_entry.py`, 집계는 `summarize_character_entry.py`를 사용한다. 이 변경은 살아 있는 캐릭터의 공통 WaterEnter에 적용하며 시체/래그돌 물 충돌의 새로운 발생 경계를 추가하지 않는다.
 
 ## 수면 수영의 팔 동작 동기화 — 2026-10-28 후속
 

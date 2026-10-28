@@ -14,7 +14,7 @@ folder = "/Game/Audio/World/Waves/Ship"
 sound_class = assets.load_asset("/Game/Audio/World/Mix/SC_WorldSFX")
 waves = {}
 entries = json.loads((source / "prepared_manifest.json").read_text()) if (source / "prepared_manifest.json").exists() else [
-    {"file": n + ".wav", "loop": n.startswith("Loop_")} for n in ["Loop_River_Ambience__Boat1", "Loop_Running_Water2", "Oneshot_Splash3", "Oneshot_Splash5", "WaterImpact_Body", "Oneshot_Swimming_Heavy1", "Oneshot_Wave_Crash4", "CharacterWaterBody", "CannonWaterBody"]]
+    {"file": n + ".wav", "loop": n.startswith("Loop_")} for n in ["Loop_River_Ambience__Boat1", "Loop_Running_Water2", "Oneshot_Splash3", "Oneshot_Splash5", "WaterImpact_Body", "Oneshot_Swimming_Heavy1", "Oneshot_Wave_Crash4", "CharacterWaterBody", "CannonWaterBody", "CharacterEntry_PlungeA", "CharacterEntry_PlungeB"]]
 for entry in entries:
     path = source / entry["file"]
     name = path.stem
@@ -22,8 +22,10 @@ for entry in entries:
     task.filename = str(path); task.destination_path = folder; task.destination_name = name
     task.automated = True; task.replace_existing = False; task.save = False
     wave = assets.load_asset(folder + "/" + name)
-    if not wave:
+    if not wave or ("sha256" in entry and assets.get_metadata_tag(wave, "SWAudio.SourceSHA256") != entry["sha256"]):
         assert path.exists(), "Export and prepare sources before first import: " + name
+        task.replace_existing = True
+        task.replace_existing_settings = False
         tools.import_asset_tasks([task]); wave = assets.load_asset(folder + "/" + name)
     assert isinstance(wave, unreal.SoundWave), name
     wave.set_editor_property("looping", entry["loop"])
@@ -41,14 +43,16 @@ if not backup.exists(): shutil.copy2(original, backup)
 profile = assets.load_asset(profile_path)
 events = dict(profile.get_editor_property("events"))
 for event, name, attacks, body, pitch in [
-    (unreal.SWWorldSound.WATER_ENTER, "Cue_CharacterWaterEntry_Heavy", [waves["Oneshot_Swimming_Heavy1"], waves["Oneshot_Splash3"]], waves['CharacterWaterBody'], .9),
+    (unreal.SWWorldSound.WATER_ENTER, "Cue_CharacterWaterEntry_Heavy", [waves["CharacterEntry_PlungeA"], waves["CharacterEntry_PlungeB"]], waves['CharacterWaterBody'], .94),
     (unreal.SWWorldSound.CANNON_WATER_IMPACT, "Cue_CannonWaterImpact_Heavy", [assets.load_asset("/Game/Audio/World/Waves/Water/Oneshot_Splash4"), waves["Oneshot_Splash5"]], waves['CannonWaterBody'], .8),
 ]:
     cue = unreal.SWAudioAuthoringLibrary.create_water_impact_cue("/Game/Audio/World/Cues/" + name, attacks, body, pitch)
     assert cue
     cue.set_editor_property("sound_class_object", sound_class)
     assert assets.save_loaded_asset(cue, False)
-    value = events[event]; value.set_editor_property("sound", cue); events[event] = value
+    value = events[event]; value.set_editor_property("sound", cue)
+    if event == unreal.SWWorldSound.WATER_ENTER: value.set_editor_property("volume", .72)
+    events[event] = value
 
 mix_folder = "/Game/Audio/World/Mix"
 attenuation = assets.load_asset(mix_folder + "/ATT_ShipMovement") or tools.create_asset("ATT_ShipMovement", mix_folder, unreal.SoundAttenuation, unreal.SoundAttenuationFactory())
