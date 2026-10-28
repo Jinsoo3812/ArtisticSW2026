@@ -37,6 +37,7 @@ public:
 
 	// GameplayTag로 에셋 데이터(오브젝트/클래스) 가져오기
 	const FItemDefinition* GetItemDefinition(const FGameplayTag& ItemTag) const;
+	UEquippableWeaponDefinition* GetWeaponDefinition(const FGameplayTag& ItemTag) const;
 
 	// GameplayTag로 피처 데이터(수치) 가져오기
 	const FItemFeatureData* GetItemFeature(const FGameplayTag& Tag) const;
@@ -79,6 +80,10 @@ public:
 #endif
 
 private:
+	/** Per-world ownership keeps resolved DT data alive on both server and client. */
+	UPROPERTY(Transient)
+	TMap<FGameplayTag, TObjectPtr<UEquippableWeaponDefinition>> ResolvedWeapons;
+
 	// ItemData 캐시
 	UPROPERTY()
 	TObjectPtr<UItemData> CachedItemData;
