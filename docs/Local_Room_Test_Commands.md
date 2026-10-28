@@ -1,5 +1,7 @@
 # Local room test commands
 
+**Retired on 2026-10-28:** `SW.DevTest.Local.Host` and `SW.DevTest.Local.Join` registrations are commented out. Use the existing room UI to create/continue/join a room and `sw.Room.ServerBackend` to select the editor or packaged server. The examples below are historical and are not active console commands.
+
 Development/editor builds only. Rebuild ArtisticSW2026Editor before use.
 Run two standalone game windows with the existing SWRoomEditorExe and SWRoomProject path overrides. No SWRoomLocalTest flag is required for these console commands.
 

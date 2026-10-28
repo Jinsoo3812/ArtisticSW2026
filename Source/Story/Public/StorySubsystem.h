@@ -31,17 +31,17 @@ class STORY_API UStorySubsystem : public UGameInstanceSubsystem
 	GENERATED_BODY()
 
 public:
-	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
 	/** Called once by the server world subsystem after network mode is known. */
 	void InitializeConfiguredProgress();
 
-	UFUNCTION(BlueprintCallable, Category = "Story")
+	/** Retired compatibility API. Always rejects; use UStoryFacadeSubsystem. */
+	UFUNCTION(BlueprintCallable, Category = "Story|Legacy", meta = (DeprecatedFunction, DeprecationMessage = "StoryDefinition is retired. Use StoryFacadeSubsystem."))
 	bool ConfigureDefinition(UStoryDefinition* NewDefinition, bool bResetProgress = true);
 
-	UFUNCTION(BlueprintPure, Category = "Story")
-	UStoryDefinition* GetDefinition() const { return Definition; }
+	UFUNCTION(BlueprintPure, Category = "Story|Legacy", meta = (DeprecatedFunction, DeprecationMessage = "StoryDefinition is retired."))
+	UStoryDefinition* GetDefinition() const { return nullptr; }
 
 	UFUNCTION(BlueprintPure, Category = "Story")
 	bool HasStoryAuthority() const;
@@ -91,51 +91,34 @@ public:
 	/** Client-side replicated state application. */
 	void ApplyReplicatedSnapshot(const FStoryProgressSnapshot& Snapshot);
 
+	/** Legacy compatibility hooks; definition-driven actions are no longer dispatched. */
 	void RegisterActionReceiver(UStoryActionReceiverComponent* Receiver);
 	void UnregisterActionReceiver(UStoryActionReceiverComponent* Receiver);
 
 	UPROPERTY(BlueprintAssignable, Category = "Story")
 	FOnStoryProgressChanged OnProgressChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "Story")
+	UPROPERTY(BlueprintAssignable, Category = "Story|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Definition state rules are retired."))
 	FOnStoryStateActivated OnStateActivated;
 
-	/** Diagnostic signal: this action remains pending until a receiver handles it. */
-	UPROPERTY(BlueprintAssignable, Category = "Story")
+	/** Legacy serialized delegate; no definition actions are emitted. */
+	UPROPERTY(BlueprintAssignable, Category = "Story|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Definition actions are retired."))
 	FOnStoryActionPending OnActionPending;
 
 private:
-	struct FPendingAction
-	{
-		FGameplayTag OwningStateTag;
-		FStoryActionSpec Action;
-	};
-
-	void EvaluateStateRules();
-	void QueueActionsForState(const FStoryStateRule& Rule);
-	void RebuildPendingActions();
-	void TryExecutePendingActions();
 	void CommitProgressChange();
 	void SynchronizeReplicator();
-	FName MakeActionKey(FGameplayTag StateTag, FName ActionId) const;
 	FString ResolveSlotName(const FString& RequestedSlotName) const;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UStoryDefinition> Definition = nullptr;
 
 	UPROPERTY(Transient)
 	FGameplayTagContainer Facts;
 
 	TMap<FGameplayTag, int32> Counters;
 	TSet<FName> AppliedActionKeys;
-	TArray<FPendingAction> PendingActions;
-	TArray<TWeakObjectPtr<UStoryActionReceiverComponent>> ActionReceivers;
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AStoryStateReplicator> ActiveReplicator;
 
 	int32 Revision = 0;
-	bool bEvaluatingRules = false;
-	bool bDispatchingActions = false;
 	bool bStartupProgressInitialized = false;
 };

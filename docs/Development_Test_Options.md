@@ -4,6 +4,8 @@
 
 Development 또는 Editor의 정상적으로 열린 방에서 호스트 콘솔로 실행한다. 서버/클라이언트 준비가 끝난 후 사용하며 Shipping/Test 빌드에서는 비활성이다.
 
+방 생성·이어하기·접속은 기존 방 UI를 사용한다. `SW.DevTest.Local.Host/Join`은 주석 처리되어 등록되지 않는다. Editor/패키징 서버 선택은 기존 `sw.Room.ServerBackend` 설정을 사용한다.
+
 ```text
 SW.DevTest.Session 1
 SW.DevTest.Status
@@ -29,6 +31,8 @@ SW.DevTest.Session 0
 
 ## 이순신 대화 직후로 이동
 
+캠페인 진행은 `StoryFacadeSubsystem`의 노드와 Facts/Counters를 사용한다. `StoryDefinition`의 로딩·규칙 실행·Cook 루트는 폐기되었으며 체크포인트에 Definition 에셋이나 ID가 필요하지 않다. 기존 저장의 Definition ID는 무시하고 진행 데이터를 복원한다. 기존 `sw.Dialogue.YiSunSin.SkipRequirements` 및 대화 조건/거래 우회 경로는 제거되었다. 일반 NPC 대화의 조건·아이템 거래는 항상 정상 규칙을 따른다.
+
 ```text
 SW.DevTest.Campaign.List
 SW.DevTest.Campaign.Skip SupplyPatrol
@@ -53,12 +57,14 @@ SW.DevTest.Campaign.Skip SupplyPatrol
 
 ## BP_Player 설정 이전
 
+기존 `sw.Campaign.MiddleBossAndReturn`도 폐기되었다. 진행을 초기화해 앞뒤로 이동하던 임시 방식 대신 `SW.DevTest.Campaign.Skip`의 전진 전용 체크포인트를 사용한다.
+
 BP_Player의 기존 테스트 변수는 기존 에셋 참조 호환용으로 남기고 기본값 편집 노출과 동작 경로를 제거했다.
 
 시작 아이템 목록은 `Project Settings → Game → SW Development Tests`의 `Editor Starting Inventory`로 옮겼다. 새 인벤토리의 에디터 시작 시만 지급한다. 기존 BP에 저장된 목록을 자동으로 가져오지는 않으므로 사용하던 목록이 있다면 이 설정에 한 번 입력해야 한다.
 
 ## 검증 상태
 
-C++ 선언/정의, 로컬 엔진 API 시그니처, 비용/UI 경로, 세션 권한/복제, 스냅샷과 취소 경로를 소스로 확인했다. 변경 파일의 CRLF와 git diff를 확인했다. 캠페인 분기/중복/역방향 이동 및 보상 스냅샷 무변경성에 대한 회귀 테스트 소스를 추가/수정했다.
+2026-10-28 통합 검증: UE 5.7 `ArtisticSW2026Editor Win64 Development` 빌드 성공. 헤드리스 Editor에서 Story, NPCDialogue, ShipUpgrade.MaterialAndMultiParentPipeline, Player.Death.LifeOwnership 자동화 테스트 15개가 모두 통과했다. Definition 없는 여섯 체크포인트 준비·복원, 중복/역방향 거절, 옛 Definition ID 저장 복원, 폐기된 콘솔 명령 미등록, 일반 대화 및 보상 스냅샷 회귀 검사를 포함한다.
 
-프로젝트 지침에 따라 빌드, 에디터, 자동화/런타임 테스트는 실행하지 않았다. 리플렉션 및 모듈 의존성 변경이 있으므로 컴파일과 실제 2인 방 재시작 확인은 별도로 필요하다.
+로그: `Saved/Logs/DevTestIntegration_Build.log`, `Saved/Logs/DevTestIntegration_Automation.log`. 실제 2인 방에서의 이동/보상/접속 유지 및 패키징 실행은 별도 확인이 필요하다. 무료 옵션의 실제 클라이언트 UI·쿨타임 동기화 전체를 이 자동화 결과만으로 검증했다고 간주하지 않는다.

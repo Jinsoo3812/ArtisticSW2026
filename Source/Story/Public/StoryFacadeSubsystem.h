@@ -72,8 +72,6 @@ public:
  static int32 GetDevelopmentCheckpointIndex(FName Target);
  UStorySaveGame* BuildDevelopmentCheckpoint(FName Target, FString& OutError) const;
 
-	/** Development only: replaces campaign progress with the selected middle-boss quest stage. */
-	bool ActivateDevelopmentMiddleBoss(int32 BossNumber);
 
 	/** True from completion onward, including after save/load and replication. */
 	UFUNCTION(BlueprintPure, Category = "Story")
