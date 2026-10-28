@@ -21,6 +21,9 @@ public:
     /** Adds one enemy-only marker. Caller owns backups, pose analysis and saving. */
     UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")
     static bool AddEnemyContact(UAnimSequenceBase* Sequence, TSubclassOf<UAnimNotify> NotifyClass, float Time, bool bLeft);
+    /** Adds an idempotent, client-only hand-catch marker; caller backs up and saves. */
+    UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")
+    static bool AddSwimContact(UAnimSequenceBase* Sequence, float Time, bool bLeft);
     UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")
     static TArray<FString> InspectFunctions(UObject* Object, const FString& NameFilter);
     UFUNCTION(BlueprintCallable, Category="Artistic SW|Authoring|Foley")

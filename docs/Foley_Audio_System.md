@@ -10,7 +10,9 @@
 
 스케일된 Landscape의 표면 조회는 월드 cm를 유지하며, 선박의 단순 충돌이 기본 표면을 반환하면 현재 이동 베이스의 갑판 목재 표면을 보조 사용한다. 전용 서버 제외·거리/동시 재생 예산과 공유 비동기 로딩은 유지한다. 가까운 살아 있는 비수영 적의 공중 입수 감지도 동일 컴포넌트에 추가했으며 사망 래그돌은 대상이 아니다.
 
-강우 믹스·발 접촉 검증, 적 클립 재작성/백업 절차, 수영/입수·함선·선실 및 2인 출력 결과는 [World audio 통합 문서](World_Audio_Integration.md)를 따른다. 최종 SW.Audio/SW.Foley 자동화 15/15와 실제 출력 수치는 [검증 요약](validation/World_Audio_20261028.json)에 보존한다. 이전의 10개/13개 성공 기록은 각 실행 시점의 범위다.
+플레이어의 수면 수영은 `bUseAnimationDrivenSurfaceStrokes=true`와 `SWAnimNotify_SwimStroke`를 쓴다. 수면의 이동 클립 8개/좌우 marker 16개로 손 뻗기와 당기기 시작에 맞추고, 정지 클립에는 marker를 넣지 않는다. 수면의 거리 주기를 끄고 수중은 별도 기존 이동 Cue를 유지한다. 이 경로는 지상 `CanPresent`와 분리하되 숨김/사망/래그돌/소스 메시/전용 서버 조건과 접촉 중복을 확인한다.
+
+강우 믹스·발 접촉 검증, 적 클립 재작성/백업 절차, 수영/입수·함선·선실 및 2인 출력 결과는 [World audio 통합 문서](World_Audio_Integration.md)를 따른다. 최종 SW.Audio/SW.Foley 자동화 17/17와 실제 출력 수치는 [검증 요약](validation/World_Audio_20261028.json), [손 접촉 검사](validation/Swim_Hand_Contacts_20261028.json)에 보존한다. 이전의 10개/13개/15개 성공 기록은 각 실행 시점의 범위다.
 
 ## 런타임 연결
 

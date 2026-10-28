@@ -109,7 +109,7 @@ void USWFoleyComponent::UpdateMovementAudio()
 				LastWaterSoundTime = Now;
 			}
 		}
-		if (Swimming && WaterState >= 2 && SwimDistance > 1.f && SwimDistance < 400.f &&
+		if (Swimming && WaterState >= 2 && (!bUseAnimationDrivenSurfaceStrokes || WaterState == 3) && SwimDistance > 1.f && SwimDistance < 400.f &&
 			(Character->GetVelocity().SizeSquared2D() > FMath::Square(50.f) || (bVerticalSwim && FMath::Abs(Character->GetVelocity().Z) > 50.f)))
 		{
 			SwimTravel += SwimDistance;

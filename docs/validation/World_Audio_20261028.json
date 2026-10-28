@@ -34,6 +34,10 @@
       "result": "Success"
     },
     {
+      "name": "SW.Audio.SurfaceSwimContacts",
+      "result": "Success"
+    },
+    {
       "name": "SW.Foley.AuthoredAnimationPlayback",
       "result": "Success"
     },
@@ -67,6 +71,10 @@
     },
     {
       "name": "SW.Foley.SurfaceFallback",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceSwimAdmission",
       "result": "Success"
     },
     {
@@ -150,7 +158,28 @@
     "BP_ES_Normal_MRR_C_0/NetMode3": 4,
     "BP_ES_Normal_MRR_C_0/NetMode2": 4
   },
-  "latest_coverage": {
+  "local_evidence_not_committed": [
+    "Saved/AudioIntegration/ContactWeatherValidation_20261028.json",
+    "Saved/AudioIntegration/ShipWaterValidation_20261028.json",
+    "Saved/AudioIntegration/AudioCoverageValidation_20261028.json"
+  ],
+  "limitations": [
+    "Direct UBT and final 17-test automation passed after surface hand-catch implementation.",
+    "Final NPC master also contains rain; initial isolated NPC recordings are retained in CoverageRecheck.",
+    "Cabin mix retake fixes ship transforms to isolate the occupied voxel boundary from physics jitter.",
+    "Only live falling NPCs are handled; corpses/ragdolls need separate impact integration.",
+    "Night observation was 12 seconds; late join, packet loss, all enemy variants and packaged play remain untested.",
+    "Direct UBT and final automation passed before documentation-only PR preparation; the editor was not reopened.",
+    "Ship motion uses controlled physical velocity; full steering, all ship classes and current-relative hydrodynamics were not tested.",
+    "Repair-point activation was exercised; the complete repair input transaction was not executed.",
+    "Vertical dive input and every moving cabin boundary remain untested.",
+    "Cannon operator camera/avatar changes were discussed only and are outside this implementation."
+  ],
+  "shutdown": {
+    "pie_settings_restored": true,
+    "editor_closed_normally": true
+  },
+  "baseline_coverage_before_swim_notifies": {
     "stationary_surface_strokes": [
       0,
       0
@@ -232,7 +261,7 @@
       0.2530553021374878
     ]
   },
-  "latest_recheck_recordings": [
+  "baseline_recheck_recordings": [
     {
       "file": "network_verified_recheck_npc_entry_device0.wav",
       "rate": 48000,
@@ -314,25 +343,5 @@
       "active_samples": 718865
     }
   ],
-  "local_evidence_not_committed": [
-    "Saved/AudioIntegration/ContactWeatherValidation_20261028.json",
-    "Saved/AudioIntegration/ShipWaterValidation_20261028.json",
-    "Saved/AudioIntegration/AudioCoverageValidation_20261028.json"
-  ],
-  "limitations": [
-    "Master recordings prove output, not subjective timbre approval.",
-    "Final NPC master also contains rain; initial isolated NPC recordings are retained in CoverageRecheck.",
-    "Cabin mix retake fixes ship transforms to isolate the occupied voxel boundary from physics jitter.",
-    "Only live falling NPCs are handled; corpses/ragdolls need separate impact integration.",
-    "Night observation was 12 seconds; late join, packet loss, all enemy variants and packaged play remain untested.",
-    "Direct UBT and final automation passed before documentation-only PR preparation; the editor was not reopened.",
-    "Ship motion uses controlled physical velocity; full steering, all ship classes and current-relative hydrodynamics were not tested.",
-    "Repair-point activation was exercised; the complete repair input transaction was not executed.",
-    "Vertical dive input and every moving cabin boundary remain untested.",
-    "Cannon operator camera/avatar changes were discussed only and are outside this implementation."
-  ],
-  "shutdown": {
-    "pie_settings_restored": true,
-    "editor_closed_normally": true
-  }
+  "surface_swim_contact_validation": "Swim_Hand_Contacts_20261028.json"
 }

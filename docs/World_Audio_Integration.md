@@ -10,11 +10,11 @@
 | --- | --- |
 | 대포·포탄 | 플레이어/적 함선 공통 발사·입수·물폭탄. 서버가 수락한 발사/최초 입수 경계에서 재생하며 캐릭터·포탄의 Heavy 입수 Cue를 분리한다. |
 | 발 접촉 | 플레이어의 기존 Notify 유지. 적 이동 클립 16개에 접촉 Notify 86개를 작성하고 물/모래/흙/풀/갑판 목재/돌/금속 표면을 연결한다. |
-| 캐릭터의 물 이동 | 얕은 물·전신 입수·출수·수면/수중 이동. 살아 있는 비수영 적의 낙하 입수도 감지하고 파도에 떠 있는 수직 운반은 stroke에서 제외한다. |
+| 캐릭터의 물 이동 | 얕은 물·전신 입수·출수·수면/수중 이동. 플레이어 수면 수영은 손 접촉 Notify, 수중은 전용 이동 Cue를 사용한다. 살아 있는 비수영 적의 낙하 입수도 감지한다. |
 | 함선·환경 | 플레이어/적 함선의 항주 물살·선수 파도·누수, 바다/해안/수중 루프, 낮·잔잔한 날씨의 해안 갈매기를 연결한다. |
 | 비·선실 | Rain을 Weather class로 분리하고 수중/선실에서는 전용 믹스로 감쇠한다. 강우가 전투·접촉 소리를 덮는 정도를 줄인다. |
 
-최종 직접 UBT 빌드 및 SW.Audio/SW.Foley 자동화 **15/15 성공**. 2인 listen server/client PIE에서 플레이어·적 함선 대포/입수, 항주 및 양 플레이어·살아 있는 적의 입수 출력을 확인했다. 추가 누수·수영·선실·갈매기 검증은 아래 최신 기록을 따른다. 핵심 수치는 [버전 관리되는 검증 요약](validation/World_Audio_20261028.json)에 보존한다. 이전 날짜의 중단/실패 기록은 당시 상태이며 현재 미완료 상태로 읽지 않는다.
+최종 직접 UBT 빌드 및 SW.Audio/SW.Foley 자동화 **17/17 성공**. 2인 listen server/client PIE에서 플레이어·적 함선 대포/입수, 항주 및 양 플레이어·살아 있는 적의 입수 출력을 확인했다. 추가 누수·수영·선실·갈매기 검증은 아래 최신 기록을 따른다. 핵심 수치는 [버전 관리되는 검증 요약](validation/World_Audio_20261028.json)에 보존한다. 이전 날짜의 중단/실패 기록은 당시 상태이며 현재 미완료 상태로 읽지 않는다.
 
 늦은 참가/패킷 손실, 모든 적 종류, 움직이는 선실 경계 전수, 시체/래그돌 입수와 패키지 실행은 남아 있다. 아래 ‘추가로 준비하면 좋은 에셋’은 필요한 원음과 후속 연결 경계를 정리한다. 대포 조종 중 캐릭터 표시/카메라 개선은 이번 오디오 변경에 포함하지 않는다. 에디터와 PIE는 정상 종료했고 원래 PIE 설정을 복구했다.
 
@@ -220,3 +220,17 @@ Asset Registry에서 프로젝트 SoundWave 447개, SoundCue 64개, MetaSoundSou
 집계 재현은 `Scripts/summarize_audio_coverage.py --session Saved/AudioIntegration/Live/21548 --log Saved/Logs/AudioCoverageFinal.log --recheck-session Saved/AudioIntegration/Live/7708 --recheck-log Saved/Logs/AudioCoverageRecheck.log --output Saved/AudioIntegration/AudioCoverageValidation_20261028.json`이다. WAV 지표는 먼저 `Scripts/analyze_ship_audio.py`로 각 결과 폴더에 작성한다. Python 분석기는 numpy가 있는 런타임을 사용한다. `network_coverage_recheck.py`는 전체 흐름 중 적 입수/선실만 따로 재현하는 보조 검사이며, main probe와 함께 쓰고 각각의 완료 JSON을 확인한다.
 
 PIE를 종료하고 원래 Standalone/1인/640×480/개별 오디오 장치 비활성 및 성능 설정을 복구했다. 최종 세션의 미저장 머티리얼 4개도 `CoverageAudit/UnsavedMaterialCheckpoint_7708`에 별도로 보존했고 미저장 맵은 없었다. 사용자 요청에 따라 에디터를 정상 종료했으며 로그의 `LogExit: Exiting` 및 프로세스 부재를 확인했다. 늦은 참가/패킷 손실, 시체 물 충돌, 전체 적 종류와 패키지 실행은 별도 검증이 남는다. 출력/사건 검증과 주관적인 음색 청취 합격을 구분한다.
+
+## 수면 수영의 팔 동작 동기화 — 2026-10-28 후속
+
+`BS_Swim_Surface`의 실제 9개 클립 중 정지 `anim_swim_idle_A`를 제외한 8개에 `SWAnimNotify_SwimStroke`를 좌우 하나씩, 총 16개 작성했다. 자유형 E/Left/Right는 손이 최대 앞으로 뻗고 당기기를 시작하는 시점, 배영 C02 계열은 뒤로 뻗은 시점, 좌우 이동은 옆으로 뻗은 시점을 포즈에서 구했다. 기본 자유형 E의 오른손은 0.0583초, 왼손은 0.5583초다. 클립 포즈/기존 Notify를 보존하고 원본은 `Saved/AudioIntegration/SwimContacts/Backups`에 보관한다. `inspect_swim_contacts.py`와 `author_swim_contacts.py`로 재현한다. 파도 표면과 손의 물리 교차를 매 프레임 추적하는 기능은 아니다.
+
+BasePlayer는 `bUseAnimationDrivenSurfaceStrokes=true`다. 수면에서 기존 거리 주기는 꺼지고 실제 소스 메시의 지배적인 애니메이션 Notify가 손 위치의 `SwimStroke`를 요청한다. BlendSpace의 HighestWeightedAnimation, follower/블렌드 아웃 제외, 캐릭터별 좌우·전체 접촉 간격으로 겹침을 막는다. 비활성·숨김·사망·래그돌·대포 조종·비수영·수중 상태는 이 수면 접촉 경로에서 제외한다. 전용 서버의 재생/추가 RPC/프레임별 손 궤적 분석은 없다. 각 클라이언트에서 보이는 복제 포즈와 같은 시계를 사용하며 서로의 오디오 시각을 RPC로 고정하지 않는다.
+
+물속은 기존 `UnderwaterStroke` 녹음과 실제 수중/수직 이동 거리 주기를 유지한다. 수면의 큰 찰박 음원을 수중에서 겹치지 않는다. 기존 수중 앰비언스와 listener 기반 믹스도 유지한다. 이번에는 새로운 기포 반복음이나 호흡 생리 효과를 만들지 않았다.
+
+`SwimHandContactsFinal.log`의 최종 자동화 **17/17 성공**. 직접 UBT 재빌드 중 기존 익명 namespace 상수 `Range`가 Unity로 묶인 엔진 헤더의 지역 변수와 충돌해 C4459를 냈다. 첫 오류를 확인한 뒤 `ShipAudioAudibleDistance`로 명시적으로 이름을 바꿨고 값/거리 동작을 유지한 재빌드가 성공했다.
+
+실제 두 플레이어 입력의 최종 `Live/8828/SwimContactsVerified`에서 남녀 각각 전진 시 NetMode 2/3에 수면 접촉 각 16회, 좌우 교대 및 중앙 간격 0.55초를 확인했다. 옆 이동은 양쪽 각 5회, 뒤 이동은 각 13회이며 모두 대응 Notify와 제출 수가 같아 추가 거리 주기 중복은 없었다. 정지 후 1.5초 안정 구간은 수면/수중 모두 양쪽 0회다. 실제 잠수 뒤 전진은 양쪽 수중 전용 12회, 수면 찰박 0회였다. 움직인 구간의 장치별 WAV는 비무음이고 저장된 녹음의 클리핑은 0이다.
+
+초기 속도 시험은 Python 편집 속성으로 GlobalAnimRateScale을 변경한 후 후반 Notify가 멈췄으므로 합격 근거에서 제외했다. 최종 입력 시험은 그 속성 쓰기를 제거하고 새 PIE에서 재현했다. 변경된 재생 속도의 linked graph 동작은 별도 미검증이며 게임 외 편집 속성 쓰기가 섞인 시험과 실제 입력 시험을 구분한다. 샘플/실패 기록은 삭제하지 않았다. 최종 수치는 [손 접촉 검증 JSON](validation/Swim_Hand_Contacts_20261028.json), 집계는 `Scripts/summarize_swim_contacts.py`에 있다. PIE 하네스는 `AudioPIE/network_swim_contacts.py`이며 configure_network→begin→enable_both_devices→하네스→end→restore_network_settings 순서로 실행한다. 에셋 저장 후 검사하고, 마무리 때 개인 설정을 복구한다.

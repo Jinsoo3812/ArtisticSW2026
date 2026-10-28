@@ -4,6 +4,7 @@
 #include "AnimationBlueprintLibrary.h"
 #include "Animation/BlendSpace.h"
 #include "Animation/SWAnimNotify_FoleyEvent.h"
+#include "Animation/SWAnimNotify_SwimStroke.h"
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
@@ -228,6 +229,35 @@ bool USWFoleyMigrationLibrary::AddEnemyContact(UAnimSequenceBase* Sequence, TSub
     }
     Sequence->RefreshCacheData();
     Sequence->MarkPackageDirty();
+    return true;
+}
+
+bool USWFoleyMigrationLibrary::AddSwimContact(UAnimSequenceBase* Sequence, float Time, bool bLeft)
+{
+    if (!Sequence || !FMath::IsFinite(Time) || Time < 0.f || Time >= Sequence->GetPlayLength()) { return false; }
+    const auto Side = bLeft ? ESWFoleySide::Left : ESWFoleySide::Right;
+    for (const auto& Event : Sequence->Notifies)
+    {
+        const auto* Notify = Cast<USWAnimNotify_SwimStroke>(Event.Notify);
+        if (Notify && Notify->Side == Side && FMath::IsNearlyEqual(Event.GetTime(), Time, 0.001f)) { return true; }
+    }
+    Sequence->Modify();
+    const FName Track(TEXT("SW Swim Catches"));
+    if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Sequence, Track))
+        UAnimationBlueprintLibrary::AddAnimationNotifyTrack(Sequence, Track, FLinearColor(0.1f, 0.6f, 0.9f));
+    auto* Notify = Cast<USWAnimNotify_SwimStroke>(UAnimationBlueprintLibrary::AddAnimationNotifyEvent(
+        Sequence, Track, Time, USWAnimNotify_SwimStroke::StaticClass()));
+    if (!Notify) { return false; }
+    Notify->Side = Side;
+    for (auto& Event : Sequence->Notifies)
+    {
+        if (Event.Notify != Notify) { continue; }
+        Event.NotifyName = FName(*Notify->GetNotifyName());
+        Event.bTriggerOnDedicatedServer = false;
+        Event.bTriggerOnFollower = false;
+        Event.TriggerWeightThreshold = 0.1f;
+    }
+    Sequence->RefreshCacheData(); Sequence->MarkPackageDirty();
     return true;
 }
 

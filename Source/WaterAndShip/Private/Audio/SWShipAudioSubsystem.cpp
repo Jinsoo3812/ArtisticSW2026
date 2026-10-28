@@ -13,7 +13,7 @@
 #include "TimerManager.h"
 #include "WaterSurfaceQueryLibrary.h"
 
-namespace { constexpr float Range = 8000.f; constexpr int32 VoiceLimit = 4; }
+namespace { constexpr float ShipAudioAudibleDistance = 8000.f; constexpr int32 VoiceLimit = 4; }
 
 bool USWShipAudioSubsystem::DoesSupportWorldType(EWorldType::Type Type) const
 {
@@ -98,7 +98,7 @@ void USWShipAudioSubsystem::UpdateAudio()
 		if (Ship->IsHidden() || Ship->IsSinking() || !Ship->IsShipRuntimePhysicsEnabled()) { continue; }
 		const FVector Position = Ship->GetActorLocation();
 		const float Distance = FVector::DistSquared(Position, Listener);
-		if (Distance > FMath::Square(Range) || Seen.Num() >= 64 || Position.ContainsNaN()) { continue; }
+		if (Distance > FMath::Square(ShipAudioAudibleDistance) || Seen.Num() >= 64 || Position.ContainsNaN()) { continue; }
 		Seen.Add(Ship);
 		FMotion* Existing = Observations.Find(Ship);
 		if (!Existing) { Observations.Add(Ship, FMotion{Position, Now, 0.f}); continue; }

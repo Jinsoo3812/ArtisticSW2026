@@ -9,6 +9,7 @@ class USWFoleyAudioProfile;
 class USkeletalMeshComponent;
 class ACharacter;
 class UPrimitiveComponent;
+class UAnimSequenceBase;
 struct FSWFoleySoundSet;
 
 /** Avatar-local cosmetic events; no component Tick, replication or persistent PlayerState state. */
@@ -35,6 +36,9 @@ public:
 	/** Airborne non-swimming NPC entry only; queries share the listener-side Foley budget. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley")
 	bool bDetectWaterWithoutSwimming = false;
+	/** Surface strokes follow authored hand catches; submerged travel keeps its separate cadence. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley|Swimming")
+	bool bUseAnimationDrivenSurfaceStrokes = false;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley", meta = (ClampMin = "50.0"))
 	float WalkStepDistance = 110.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley", meta = (ClampMin = "50.0"))
@@ -44,6 +48,7 @@ public:
 	/** Ownership/profile activation hook; requests local audio without submitting a contact. */
 	bool PrepareLocalAudio();
 	void HandleAnimNotify(USkeletalMeshComponent* Mesh, const FSWFoleyEvent& Event);
+	bool HandleSurfaceSwimStroke(USkeletalMeshComponent* Mesh, ESWFoleySide Side, UAnimSequenceBase* Sequence);
 	void PlayJump(float HorizontalSpeed, float AgeSeconds = 0.0f);
 	void PlayLanding(float ImpactSpeed, float AgeSeconds = 0.0f);
 
@@ -62,6 +67,9 @@ private:
 	FVector LastMovementPosition = FVector::ZeroVector;
 	float StepTravel = 0.f;
 	float SwimTravel = 0.f;
+	bool AdmitSurfaceStroke(USkeletalMeshComponent* Mesh, ESWFoleySide Side, double Now);
+	double LastSurfaceStrokeTime = -DBL_MAX;
+	double LastSurfaceStrokeBySide[2] = {-DBL_MAX, -DBL_MAX};
 	float LastVerticalSpeed = 0.f;
 	double LastWaterSoundTime = -DBL_MAX;
 	double LastFullWaterEntryTime = -DBL_MAX;
@@ -75,6 +83,7 @@ private:
 	bool bNextLeft = true;
 	friend class USWFoleySubsystem;
 	friend class FSWFoleyLifetimeTest;
+	friend class FSWFoleySwimStrokeTest;
 	/** Bounded family/side storage, never stored on the shared AnimNotify UObject. */
 	double LastAdmission[15];
 };
