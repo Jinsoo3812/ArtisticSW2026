@@ -66,6 +66,12 @@ public:
 	FName VisualRightHand;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley|Contact")
 	TEnumAsByte<ECollisionChannel> SurfaceTraceChannel = ECC_Visibility;
+	/** Water at the feet takes precedence over the submerged ground material. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley|Contact")
+	TEnumAsByte<EPhysicalSurface> ShallowWaterSurface = SurfaceType4;
+	/** Used only when a ship's simple hull collision has no authored physical surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley|Contact")
+	TEnumAsByte<EPhysicalSurface> ShipDeckSurface = SurfaceType5;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley|Contact", meta = (ClampMin = "0.0", ClampMax = "100.0"))
 	float TraceAboveContact = 20.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Foley|Contact", meta = (ClampMin = "1.0", ClampMax = "200.0"))

@@ -3,6 +3,10 @@
 이 문서는 기본 Enemy AI의 공통 구조를 빠르게 파악하기 위한 요약본이다.  
 세부 에디터 클릭 순서, 디버깅 절차, 테스트 명령어, Boss 전용 기능은 제외하고 핵심 책임과 실행 흐름만 정리한다.
 
+## 2026-10-28 클라이언트 Foley
+
+`ABaseEnemy`는 native `USWFoleyComponent`를 상속한다. 이동 애니메이션의 `SWAnimNotify_EnemyFootContact`가 표면별 발소리를 요청하며 기본 거리 기반 발걸음은 비활성이다. 살아 있는 공중 적의 입수는 가까운 청취자와 공유 수면 조회 예산 안에서 감지한다. 전용 서버는 이 음향 타이머/서비스를 실행하지 않고, AI 판단·피해·사망·이동 복제의 권위는 기존 경로에 둔다. 사망/래그돌 입수는 별도 범위다. 제작 대상 클립과 검증은 [Foley 시스템](Foley_Audio_System.md), [World audio 통합](World_Audio_Integration.md)을 따른다.
+
 ## 2026-10-08 스탯·Room 저장 계약
 
 `ConfigureSpawnBalance`는 서버에서만 실행하고, 이미 스탯을 적용한 적과 BeginPlay 이후 활성 상태인 `ADeckEnemy`의 재구성을 거부한다. 비활성 풀의 Fresh 초기화는 `ResetBalanceForReuse`로 재구성 가능 상태를 만들고, 실제 스탯 적용은 활성화 준비 단계에서 수행한다.

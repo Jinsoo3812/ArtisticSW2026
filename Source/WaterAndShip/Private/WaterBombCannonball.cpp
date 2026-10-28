@@ -43,6 +43,7 @@ void AWaterBombCannonball::HandleShipHit(AShip* HitShip)
 		return;
 	}
 
+	MulticastImpactSound(ESWWorldSound::WaterBombBurst, GetActorLocation());
 	SpawnNiagaraEffectForAll(
 		WaterBombExplosionEffect,
 		GetActorLocation(),

@@ -5,6 +5,8 @@
 .idea/
 
 # Compiled Object files
+__pycache__/
+*.py[cod]
 *.slo
 *.lo
 *.o

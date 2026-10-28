@@ -118,6 +118,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	FoleyComponent = CreateDefaultSubobject<USWFoleyComponent>(TEXT("Foley"));
+	FoleyComponent->bUseAnimationDrivenSurfaceStrokes = true;
 	FoleyComponent->ProfileOverride = TSoftObjectPtr<USWFoleyAudioProfile>(FSoftObjectPath(
 		TEXT("/Game/Audio/Foley/DA_Mannequin_Foley.DA_Mannequin_Foley")));
 

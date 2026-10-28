@@ -1,7 +1,10 @@
 #include "Animation/SWFoleyMigrationLibrary.h"
 
 #include "Animation/AnimSequenceBase.h"
+#include "AnimationBlueprintLibrary.h"
+#include "Animation/BlendSpace.h"
 #include "Animation/SWAnimNotify_FoleyEvent.h"
+#include "Animation/SWAnimNotify_SwimStroke.h"
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
@@ -195,4 +198,88 @@ TArray<FString> USWFoleyMigrationLibrary::ExportNotifyMetadata(UAnimSequenceBase
     TArray<FString> Result;
     if (Sequence) { for (const auto& Event : Sequence->Notifies) { Result.Add(ExportEvent(Event)); } }
     return Result;
+}
+
+bool USWFoleyMigrationLibrary::AddEnemyContact(UAnimSequenceBase* Sequence, TSubclassOf<UAnimNotify> NotifyClass, float Time, bool bLeft)
+{
+    if (!Sequence || !NotifyClass || NotifyClass->GetFName() != TEXT("SWAnimNotify_EnemyFootContact") ||
+        !FMath::IsFinite(Time) || Time < 0.f || Time >= Sequence->GetPlayLength()) { return false; }
+    const auto* Side = FindFProperty<FEnumProperty>(NotifyClass, TEXT("Side"));
+    if (!Side) { return false; }
+    // Idempotent for an existing plan; never remove another creator's notifies.
+    for (const auto& Event : Sequence->Notifies)
+    {
+        if (Event.Notify && Event.Notify->GetClass() == NotifyClass && FMath::IsNearlyEqual(Event.GetTime(), Time, 0.001f) &&
+            Side->GetUnderlyingProperty()->GetSignedIntPropertyValue(Side->ContainerPtrToValuePtr<void>(Event.Notify)) == (bLeft ? 1 : 2)) { return true; }
+    }
+    Sequence->Modify();
+    const FName Track(TEXT("SW Enemy Contacts"));
+    if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Sequence, Track))
+        UAnimationBlueprintLibrary::AddAnimationNotifyTrack(Sequence, Track, FLinearColor(0.1f, 0.7f, 0.9f));
+    UAnimNotify* Notify = UAnimationBlueprintLibrary::AddAnimationNotifyEvent(Sequence, Track, Time, NotifyClass);
+    if (!Notify) { return false; }
+    Side->GetUnderlyingProperty()->SetIntPropertyValue(Side->ContainerPtrToValuePtr<void>(Notify), int64(bLeft ? 1 : 2));
+    for (auto& Event : Sequence->Notifies)
+    {
+        if (Event.Notify != Notify) { continue; }
+        Event.NotifyName = FName(*Notify->GetNotifyName());
+        Event.bTriggerOnDedicatedServer = false;
+        Event.bTriggerOnFollower = false;
+        Event.TriggerWeightThreshold = 0.1f;
+    }
+    Sequence->RefreshCacheData();
+    Sequence->MarkPackageDirty();
+    return true;
+}
+
+bool USWFoleyMigrationLibrary::AddSwimContact(UAnimSequenceBase* Sequence, float Time, bool bLeft)
+{
+    if (!Sequence || !FMath::IsFinite(Time) || Time < 0.f || Time >= Sequence->GetPlayLength()) { return false; }
+    const auto Side = bLeft ? ESWFoleySide::Left : ESWFoleySide::Right;
+    for (const auto& Event : Sequence->Notifies)
+    {
+        const auto* Notify = Cast<USWAnimNotify_SwimStroke>(Event.Notify);
+        if (Notify && Notify->Side == Side && FMath::IsNearlyEqual(Event.GetTime(), Time, 0.001f)) { return true; }
+    }
+    Sequence->Modify();
+    const FName Track(TEXT("SW Swim Catches"));
+    if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Sequence, Track))
+        UAnimationBlueprintLibrary::AddAnimationNotifyTrack(Sequence, Track, FLinearColor(0.1f, 0.6f, 0.9f));
+    auto* Notify = Cast<USWAnimNotify_SwimStroke>(UAnimationBlueprintLibrary::AddAnimationNotifyEvent(
+        Sequence, Track, Time, USWAnimNotify_SwimStroke::StaticClass()));
+    if (!Notify) { return false; }
+    Notify->Side = Side;
+    for (auto& Event : Sequence->Notifies)
+    {
+        if (Event.Notify != Notify) { continue; }
+        Event.NotifyName = FName(*Notify->GetNotifyName());
+        Event.bTriggerOnDedicatedServer = false;
+        Event.bTriggerOnFollower = false;
+        Event.TriggerWeightThreshold = 0.1f;
+    }
+    Sequence->RefreshCacheData(); Sequence->MarkPackageDirty();
+    return true;
+}
+
+TArray<FString> USWFoleyMigrationLibrary::InspectFunctions(UObject* Object, const FString& NameFilter)
+{
+    TArray<FString> Result;
+    if (!Object) { return Result; }
+    for (TFieldIterator<UFunction> It(Object->GetClass()); It; ++It)
+    {
+        if (!It->GetName().Contains(NameFilter)) { continue; }
+        FString Line = It->GetName();
+        for (TFieldIterator<FProperty> Param(*It); Param && Param->HasAnyPropertyFlags(CPF_Parm); ++Param)
+            Line += FString::Printf(TEXT(" | %s:%s%s"), *Param->GetName(), *Param->GetCPPType(), Param->HasAnyPropertyFlags(CPF_OutParm) ? TEXT("(out)") : TEXT(""));
+        Result.Add(Line);
+    }
+    return Result;
+}
+
+void USWFoleyMigrationLibrary::RebuildContactBlendSpace(UBlendSpace* BlendSpace)
+{
+    if (!BlendSpace) { return; }
+    BlendSpace->ResampleData();
+    BlendSpace->PostEditChange();
+    BlendSpace->MarkPackageDirty();
 }
