@@ -1045,6 +1045,13 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 	// reset by home-return/fresh encounter handling, not by this suspension flag.
 
 	bDistanceOptimizationDormant = bDormant;
+	if (EnemyShipDiagnostics::QueueLogLevel() > 0)
+	{
+		const USWRoomSnapshotComponent* Snapshot = FindComponentByClass<USWRoomSnapshotComponent>();
+		UE_LOG(LogEnemyShipInit, Display, TEXT("[EnemyShipQueue] Side=Server Event=DistanceDormancy UTC=%s NowSec=%.6f GameSec=%.3f Id=%s Actor=%s Dormant=%d RangeCm=%.1f Position=%s"),
+			*FDateTime::UtcNow().ToIso8601(), FPlatformTime::Seconds(), GetWorld()->GetTimeSeconds(), Snapshot ? *Snapshot->StableId.ToString() : TEXT("None"),
+			*GetName(), bDormant, DistanceOptimizationRange, *GetActorLocation().ToCompactString());
+	}
 	ApplyEffectiveDormancyState();
 	ForceNetUpdate();
 	if (bDormant)

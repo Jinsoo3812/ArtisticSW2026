@@ -23,6 +23,8 @@
 #include "Engine/GameInstance.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "GameplayTasksComponent.h"
 #include "BaseEnemy.h"
 #include "ItemSpawn/LootSpawnPoint.h"
@@ -380,13 +382,18 @@ void AEnemyShipBundlePool::UpdatePresentation()
 			Node->Definition.Meshes = Placement.Meshes;
 			PresentationNodes.Add(Node);
 		}
+		const uint32 ActivationGeneration = IsValid(Placement.ActiveShip) ? Placement.ActiveShip->GetBundleActivationGeneration() : 0;
+		const bool bStateChanged = Node->State.Assignment != Placement.Assignment || Node->State.bDormant != Placement.bDormant
+			|| Node->State.bDestroyed != Placement.bDestroyed || Node->State.bUnloaded != Placement.bUnloaded
+			|| Node->State.bStoryHidden != Placement.bStoryHidden || Node->State.ActiveShip != Placement.ActiveShip
+			|| Node->State.ActivationGeneration != ActivationGeneration;
 		Node->State.Assignment = Placement.Assignment;
 		Node->State.bDormant = Placement.bDormant;
 		Node->State.bDestroyed = Placement.bDestroyed;
 		Node->State.bUnloaded = Placement.bUnloaded;
 		Node->State.bStoryHidden = Placement.bStoryHidden;
 		Node->State.ActiveShip = Placement.ActiveShip;
-		Node->State.ActivationGeneration = IsValid(Placement.ActiveShip) ? Placement.ActiveShip->GetBundleActivationGeneration() : 0;
+		Node->State.ActivationGeneration = ActivationGeneration;
 		if (IsValid(Placement.ActiveShip))
 		{
 			Node->State.ActivationTransform = Placement.ActiveShip->GetActorTransform();
@@ -396,6 +403,11 @@ void AEnemyShipBundlePool::UpdatePresentation()
 				Node->State.ActivationAngularVelocity = Root->GetPhysicsAngularVelocityInDegrees();
 			}
 		}
+		if (bStateChanged && EnemyShipDiagnostics::QueueLogLevel() > 0)
+			UE_LOG(LogEnemyShipInit, Display, TEXT("[EnemyShipQueue] Side=Server Event=PublishState UTC=%s NowSec=%.6f GameSec=%.3f Id=%s Name=%s Assignment=%u Actor=%s Generation=%u Dormant=%d Destroyed=%d Unloaded=%d StoryHidden=%d"),
+				*FDateTime::UtcNow().ToIso8601(), FPlatformTime::Seconds(), GetWorld()->GetTimeSeconds(), *Placement.StableId.ToString(),
+				*Placement.AuthoredName.ToString(), Placement.Assignment, *GetNameSafe(Placement.ActiveShip.Get()), ActivationGeneration,
+				Placement.bDormant, Placement.bDestroyed, Placement.bUnloaded, Placement.bStoryHidden);
 	}
 	for (int32 Index = PresentationNodes.Num() - 1; Index >= 0; --Index)
 		if (!PresentationNodes[Index] || !Placements.ContainsByPredicate([&](const FEnemyShipBundlePlacement& Placement)
@@ -842,8 +854,59 @@ void AEnemyShipBundlePool::HandleShipDestroyed(AActor* Ship)
 
 
 static TAutoConsoleVariable<float> CVarEnemyShipPoolBudgetMs(
-	TEXT("sw.EnemyShipPool.QueueBudgetMs"), 1.0f, TEXT("Combined server/client pooling work budget per game frame in milliseconds."));
+	TEXT("sw.EnemyShipPool.QueueBudgetMs"), 4.0f, TEXT("Pool preparation/client presentation budget per frame in milliseconds. Server state publication is not delayed by preparation."));
 
+namespace
+{
+	const TCHAR* QueueWorkName(EEnemyShipPoolWork Kind)
+	{
+		switch (Kind)
+		{
+		case EEnemyShipPoolWork::Wake: return TEXT("Wake");
+		case EEnemyShipPoolWork::Sleep: return TEXT("Sleep");
+		case EEnemyShipPoolWork::Reserve: return TEXT("Reserve");
+		case EEnemyShipPoolWork::Trim: return TEXT("Trim");
+		default: return TEXT("Unknown");
+		}
+	}
+
+	FString QueueSpatialContext(UWorld* World, const FEnemyShipBundlePlacement& Placement)
+	{
+		AShip* NearestShip = nullptr;
+		double ShipDistanceSq = TNumericLimits<double>::Max(), PawnDistanceSq = TNumericLimits<double>::Max();
+		const FVector Home = Placement.HomeTransform.GetLocation();
+		for (TActorIterator<AShip> It(World); It; ++It)
+			if (!It->IsEnemyShipForEffects() && It->ActorHasTag(TEXT("Player")) && !It->ActorHasTag(TEXT("Enemy")))
+			{
+				const double DistanceSq = FVector::DistSquared2D(Home, It->GetActorLocation());
+				if (DistanceSq < ShipDistanceSq) { ShipDistanceSq = DistanceSq; NearestShip = *It; }
+			}
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+			if (const APlayerController* Controller = It->Get())
+				if (const APawn* Pawn = Controller->GetPawn()) PawnDistanceSq = FMath::Min(PawnDistanceSq, FVector::DistSquared2D(Home, Pawn->GetActorLocation()));
+		const double Distance = NearestShip ? FMath::Sqrt(ShipDistanceSq) : -1.0;
+		return FString::Printf(TEXT("Home=%s ShipDistanceCm=%.1f PawnDistanceCm=%.1f PlayerShip=%s PlayerPos=%s SpeedCmS=%.1f RangeCm=%.1f InRange=%d"),
+			*Home.ToCompactString(), Distance, PawnDistanceSq < TNumericLimits<double>::Max() ? FMath::Sqrt(PawnDistanceSq) : -1.0,
+			*GetNameSafe(NearestShip), NearestShip ? *NearestShip->GetActorLocation().ToCompactString() : TEXT("None"),
+			NearestShip ? NearestShip->GetVelocity().Size2D() : 0.0, Placement.ActivationRange,
+			NearestShip && Distance <= FMath::Max(0.f, Placement.ActivationRange));
+	}
+
+	void LogQueueEvent(UWorld* World, const TCHAR* Event, const FEnemyShipPoolTransition& Job, AEnemyShip* Ship,
+		int32 Pending, int32 Active, int32 Idle, const TCHAR* CurrentWork, const FString& Reason = FString())
+	{
+		if (EnemyShipDiagnostics::QueueLogLevel() <= 0) return;
+		const double Now = FPlatformTime::Seconds();
+		const bool bStarted = Job.StartedAt > 0.0;
+		UE_LOG(LogEnemyShipInit, Display, TEXT("[EnemyShipQueue] Side=Server Event=%s UTC=%s NowSec=%.6f GameSec=%.3f Id=%s Name=%s Kind=%s RequestSec=%.6f Actor=%s Pending=%d CurrentWork=%s Active=%d Idle=%d BudgetMs=%.2f WaitMs=%.2f PrepareMs=%.2f TotalMs=%.2f WorkMs=%.2f MaxStepMs=%.2f SlowStage=%d Frames=%d Steps=%d Stage=%d Object=%d Property=%d DefaultProperty=%d Reason=%s %s"),
+			Event, *FDateTime::UtcNow().ToIso8601(), Now, World->GetTimeSeconds(), *Job.Definition.StableId.ToString(),
+			*Job.Definition.AuthoredName.ToString(), QueueWorkName(Job.Kind), Job.RequestedAt, *GetNameSafe(Ship), Pending, CurrentWork, Active, Idle,
+			FMath::Clamp(CVarEnemyShipPoolBudgetMs.GetValueOnGameThread(), 0.1f, 8.0f),
+			((bStarted ? Job.StartedAt : Now) - Job.RequestedAt) * 1000.0, bStarted ? (Now - Job.StartedAt) * 1000.0 : 0.0,
+			(Now - Job.RequestedAt) * 1000.0, Job.WorkSeconds * 1000.0, Job.MaxStepSeconds * 1000.0, Job.SlowStage,
+			Job.Frames, Job.Steps, Job.Stage, Job.Object, Job.Property, Job.DefaultProperty, *Reason, *QueueSpatialContext(World, Job.Definition));
+	}
+}
 
 void AEnemyShipBundlePool::Tick(float DeltaSeconds)
 {
@@ -852,7 +915,7 @@ void AEnemyShipBundlePool::Tick(float DeltaSeconds)
 	if (bChangingPool || (Room && Room->IsRestoringSnapshot())) return;
 	const double Deadline = FPlatformTime::Seconds() + FMath::Clamp(CVarEnemyShipPoolBudgetMs.GetValueOnGameThread(), 0.1f, 8.0f) * 0.001;
 	if (HasAuthority()) ProcessTransitionQueue(Deadline);
-	if (bPresentationPending && FPlatformTime::Seconds() < Deadline) ProcessPresentation(Deadline);
+	if (bPresentationPending && (HasAuthority() || FPlatformTime::Seconds() < Deadline)) ProcessPresentation(Deadline);
 }
 
 void AEnemyShipBundlePool::EnqueueTransition(const FEnemyShipBundlePlacement& Placement, EEnemyShipPoolWork Kind)
@@ -863,6 +926,8 @@ void AEnemyShipBundlePool::EnqueueTransition(const FEnemyShipBundlePlacement& Pl
 	Request.Definition = Placement;
 	Request.Kind = Kind;
 	Request.RequestedAt = FPlatformTime::Seconds();
+	LogQueueEvent(GetWorld(), TEXT("Enqueue"), Request, nullptr, TransitionRequests.Num(), CountActiveBundles(), IdleBundles.Num(),
+		Transition ? QueueWorkName(Transition->Kind) : TEXT("None"));
 }
 
 void AEnemyShipBundlePool::QueueCapacityMaintenance()
@@ -879,6 +944,8 @@ void AEnemyShipBundlePool::QueueCapacityMaintenance()
 void AEnemyShipBundlePool::FinishTransition(const TCHAR* Result, const FString& Reason)
 {
 	if (!Transition) return;
+	LogQueueEvent(GetWorld(), Result, *Transition, TransitionShip, TransitionRequests.Num(), CountActiveBundles(), IdleBundles.Num(),
+		QueueWorkName(Transition->Kind), Reason);
 	if (FCString::Strcmp(Result, TEXT("Failed")) == 0)
 		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogEnemyShipInit, Error, TEXT("Event=PoolPreparationFailed Ship=%s Stage=%d Reason=%s"),
@@ -889,6 +956,10 @@ void AEnemyShipBundlePool::FinishTransition(const TCHAR* Result, const FString& 
 
 void AEnemyShipBundlePool::CancelTransitions(const TCHAR* Reason)
 {
+	if (EnemyShipDiagnostics::QueueLogLevel() > 0)
+		for (const FEnemyShipPoolTransition& Request : TransitionRequests)
+			LogQueueEvent(GetWorld(), TEXT("Dropped"), Request, nullptr, TransitionRequests.Num(), CountActiveBundles(), IdleBundles.Num(),
+				Transition ? QueueWorkName(Transition->Kind) : TEXT("None"), Reason);
 	TransitionRequests.Reset();
 	if (!Transition) return;
 	if (IsValid(TransitionShip) && FCString::Strcmp(Reason, TEXT("EndPlay")) != 0)
@@ -912,10 +983,43 @@ void AEnemyShipBundlePool::ProcessTransitionQueue(double Deadline)
 {
 	if (!Transition && !TransitionRequests.IsEmpty())
 	{
+		int32 SelectedIndex = 0;
+		const TCHAR* SelectionPolicy = TEXT("FIFO");
+		if (TransitionRequests[0].Kind == EEnemyShipPoolWork::Wake)
+		{
+			TArray<FVector> PlayerLocations;
+			for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+				if (!It->IsEnemyShipForEffects() && It->ActorHasTag(TEXT("Player")) && !It->ActorHasTag(TEXT("Enemy"))) PlayerLocations.Add(It->GetActorLocation());
+			if (!PlayerLocations.IsEmpty())
+			{
+				SelectionPolicy = TEXT("NearestPlayerShip");
+				double NearestDistanceSq = TNumericLimits<double>::Max();
+				for (int32 Index = 0; Index < TransitionRequests.Num(); ++Index)
+				{
+					const FEnemyShipPoolTransition& Request = TransitionRequests[Index];
+					if (Request.Kind != EEnemyShipPoolWork::Wake) continue;
+					double DistanceSq = TNumericLimits<double>::Max();
+					for (const FVector& Position : PlayerLocations) DistanceSq = FMath::Min(DistanceSq, FVector::DistSquared2D(Position, Request.Definition.HomeTransform.GetLocation()));
+					if (DistanceSq < NearestDistanceSq || (DistanceSq == NearestDistanceSq && Request.RequestedAt < TransitionRequests[SelectedIndex].RequestedAt))
+					{
+						NearestDistanceSq = DistanceSq;
+						SelectedIndex = Index;
+					}
+				}
+			}
+		}
+		// Only exchange Wake slots; cleanup and reserve work keep their existing order.
+		TransitionRequests.Swap(0, SelectedIndex);
 		Transition = MakeUnique<FEnemyShipPoolTransition>(MoveTemp(TransitionRequests[0]));
 		TransitionRequests.RemoveAt(0, 1, EAllowShrinking::No);
+		Transition->StartedAt = FPlatformTime::Seconds();
+		LogQueueEvent(GetWorld(), TEXT("Start"), *Transition, nullptr, TransitionRequests.Num(), CountActiveBundles(), IdleBundles.Num(), QueueWorkName(Transition->Kind),
+			FString::Printf(TEXT("Policy=%s SelectedIndex=%d"), SelectionPolicy, SelectedIndex));
 	}
 	if (!Transition) return;
+	const int32 QueueDiagnosticLevel = EnemyShipDiagnostics::QueueLogLevel();
+	if (QueueDiagnosticLevel > 0 && ++Transition->Frames % 30 == 0)
+		LogQueueEvent(GetWorld(), TEXT("Progress"), *Transition, TransitionShip, TransitionRequests.Num(), CountActiveBundles(), IdleBundles.Num(), QueueWorkName(Transition->Kind));
 		if (Transition->Kind == EEnemyShipPoolWork::Wake)
 		{
 			bool bInRange = false;
@@ -940,7 +1044,19 @@ void AEnemyShipBundlePool::ProcessTransitionQueue(double Deadline)
 		}
 
 		FString Error;
+		const int32 PreviousStage = Transition->Stage;
+		const double StepStartedAt = QueueDiagnosticLevel > 0 ? FPlatformTime::Seconds() : 0.0;
 		const bool bDone = StepTransition(*Transition, Error);
+		if (QueueDiagnosticLevel > 0)
+		{
+			const double StepSeconds = FPlatformTime::Seconds() - StepStartedAt;
+			Transition->WorkSeconds += StepSeconds;
+			++Transition->Steps;
+			if (StepSeconds > Transition->MaxStepSeconds) { Transition->MaxStepSeconds = StepSeconds; Transition->SlowStage = PreviousStage; }
+			if (QueueDiagnosticLevel > 1 && PreviousStage != Transition->Stage)
+				LogQueueEvent(GetWorld(), TEXT("Stage"), *Transition, TransitionShip, TransitionRequests.Num(), CountActiveBundles(), IdleBundles.Num(),
+					QueueWorkName(Transition->Kind), FString::Printf(TEXT("PreviousStage=%d StepMs=%.3f"), PreviousStage, StepSeconds * 1000.0));
+		}
 		if (!Error.IsEmpty())
 		{
 			if (bWake) LastWakeErrors.Add(Transition->Definition.StableId, Error);
@@ -1391,7 +1507,7 @@ void AEnemyShipBundlePool::OnRep_Placements()
 
 void AEnemyShipBundlePool::ProcessPresentation(double Deadline)
 {
-	if (HasAuthority()) UpdatePresentation();
+	if (HasAuthority()) { UpdatePresentation(); ForceNetUpdate(); }
 	else
 	{
 		// Subobject data and Actor references may resolve after the pointer-array notification.
@@ -1452,11 +1568,16 @@ void AEnemyShipBundlePool::ProcessPresentation(double Deadline)
 				if (Placement.ActiveShip->IsBundlePoolIdle()) Reason = TEXT("ActorIdle");
 				else if (Placement.ActivationGeneration == 0 || Placement.ActivationGeneration != Placement.ActiveShip->GetBundleActivationGeneration()) Reason = TEXT("GenerationMismatch");
 				else if (!Placement.ActivationTransform.IsValid() || Placement.ActivationLinearVelocity.ContainsNaN() || Placement.ActivationAngularVelocity.ContainsNaN()) Reason = TEXT("InvalidPose");
+				else if (!Placement.ActiveShip->IsBundlePresentationReady()) Reason = TEXT("PresentationNotReady");
 			}
 			if (!Reason.IsEmpty() && ClientActivationWaitReasons.FindRef(Placement.StableId) != Reason)
 			{
 				ClientActivationWaitReasons.Add(Placement.StableId, Reason);
-
+				if (EnemyShipDiagnostics::QueueLogLevel() > 0)
+					UE_LOG(LogEnemyShipInit, Display, TEXT("[EnemyShipQueue] Side=Client Event=ClientWait UTC=%s NowSec=%.6f GameSec=%.3f Id=%s Name=%s Assignment=%u Actor=%s Generation=%u ActorGeneration=%u Reason=%s"),
+						*FDateTime::UtcNow().ToIso8601(), FPlatformTime::Seconds(), GetWorld()->GetTimeSeconds(), *Placement.StableId.ToString(),
+						*Placement.AuthoredName.ToString(), Placement.Assignment, *GetNameSafe(Placement.ActiveShip.Get()), Placement.ActivationGeneration,
+						IsValid(Placement.ActiveShip) ? Placement.ActiveShip->GetBundleActivationGeneration() : 0u, *Reason);
 			}
 		}
 		PresentationHash = HashCombine(PresentationHash, GetTypeHash(Placement.StableId));
@@ -1495,12 +1616,20 @@ void AEnemyShipBundlePool::ProcessPresentation(double Deadline)
 		{
 			UpdatePlacementInstances(Placement, bShowISM);
 			PlacementPresentationHashes.Add(Placement.StableId, PresentationHash);
-
+			if (EnemyShipDiagnostics::QueueLogLevel() > 0 && !HasAuthority())
+				UE_LOG(LogEnemyShipInit, Display, TEXT("[EnemyShipQueue] Side=Client Event=Presentation UTC=%s NowSec=%.6f GameSec=%.3f Id=%s Name=%s Assignment=%u Actor=%s Generation=%u ISM=%d Dormant=%d Destroyed=%d Unloaded=%d StoryHidden=%d"),
+					*FDateTime::UtcNow().ToIso8601(), FPlatformTime::Seconds(), GetWorld()->GetTimeSeconds(), *Placement.StableId.ToString(),
+					*Placement.AuthoredName.ToString(), Placement.Assignment, *GetNameSafe(Placement.ActiveShip.Get()), Placement.ActivationGeneration,
+					bShowISM, Placement.bDormant, Placement.bDestroyed, Placement.bUnloaded, Placement.bStoryHidden);
 		}
 		if (bActivate)
 		{
 			Placement.ActiveShip->ActivatePreparedBundle(Placement.ActivationGeneration, Placement.ActivationLinearVelocity, Placement.ActivationAngularVelocity);
-
+			if (EnemyShipDiagnostics::QueueLogLevel() > 0)
+				UE_LOG(LogEnemyShipInit, Display, TEXT("[EnemyShipQueue] Side=Client Event=ClientActivate UTC=%s NowSec=%.6f GameSec=%.3f Id=%s Name=%s Assignment=%u Actor=%s Generation=%u Ready=%d Idle=%d Position=%s"),
+					*FDateTime::UtcNow().ToIso8601(), FPlatformTime::Seconds(), GetWorld()->GetTimeSeconds(), *Placement.StableId.ToString(),
+					*Placement.AuthoredName.ToString(), Placement.Assignment, *GetNameSafe(Placement.ActiveShip.Get()), Placement.ActivationGeneration,
+					Placement.ActiveShip->IsBundlePresentationReady(), Placement.ActiveShip->IsBundlePoolIdle(), *Placement.ActiveShip->GetActorLocation().ToCompactString());
 		}
 	}
 }
