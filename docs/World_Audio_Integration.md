@@ -4,7 +4,7 @@
 
 ## 현재 적용 상태
 
-적용 맵은 `/Game/Level/Lvl_CY`다. World Audio 자산 297개(그중 SoundWave 164개), 프로필 사건 15개를 포함한다. `CannonSolidImpact`와 `ShipCreak`는 원음이 없어 비워 둔 별도 확장 슬롯이다. 새 게임플레이 음원은 프로젝트에 포함되므로 제공자의 UE 5.8 프로젝트나 로컬 WAV 경로가 실행에 필요하지 않다.
+적용 맵은 `/Game/Level/Lvl_CY`다. World Audio 자산 299개(그중 SoundWave 166개), 프로필 사건 15개를 포함한다. `CannonSolidImpact`와 `ShipCreak`는 원음이 없어 비워 둔 별도 확장 슬롯이다. 새 게임플레이 음원은 프로젝트에 포함되므로 제공자의 UE 5.8 프로젝트나 로컬 WAV 경로가 실행에 필요하지 않다.
 
 | 범위 | 적용 내용 |
 | --- | --- |
@@ -244,3 +244,9 @@ BasePlayer는 `bUseAnimationDrivenSurfaceStrokes=true`다. 수면에서 기존 �
 실제 두 플레이어 입력의 최종 `Live/8828/SwimContactsVerified`에서 남녀 각각 전진 시 NetMode 2/3에 수면 접촉 각 16회, 좌우 교대 및 중앙 간격 0.55초를 확인했다. 옆 이동은 양쪽 각 5회, 뒤 이동은 각 13회이며 모두 대응 Notify와 제출 수가 같아 추가 거리 주기 중복은 없었다. 정지 후 1.5초 안정 구간은 수면/수중 모두 양쪽 0회다. 실제 잠수 뒤 전진은 양쪽 수중 전용 12회, 수면 찰박 0회였다. 움직인 구간의 장치별 WAV는 비무음이고 저장된 녹음의 클리핑은 0이다.
 
 초기 속도 시험은 Python 편집 속성으로 GlobalAnimRateScale을 변경한 후 후반 Notify가 멈췄으므로 합격 근거에서 제외했다. 최종 입력 시험은 그 속성 쓰기를 제거하고 새 PIE에서 재현했다. 변경된 재생 속도의 linked graph 동작은 별도 미검증이며 게임 외 편집 속성 쓰기가 섞인 시험과 실제 입력 시험을 구분한다. 샘플/실패 기록은 삭제하지 않았다. 최종 수치는 [손 접촉 검증 JSON](validation/Swim_Hand_Contacts_20261028.json), 집계는 `Scripts/summarize_swim_contacts.py`에 있다. PIE 하네스는 `AudioPIE/network_swim_contacts.py`이며 configure_network→begin→enable_both_devices→하네스→end→restore_network_settings 순서로 실행한다. 에셋 저장 후 검사하고, 마무리 때 개인 설정을 복구한다.
+
+## 포탄 입수 무게감 보강 — 2026-10-28 후속
+
+Splash4/2와 Diving1/2를 합친 CannonEntry_PlungeA/B 및 별도 CannonWaterBody로 보강했다. 사람보다 집중된 충격을 위해 1.2초로 제한하고 낮은 물살은 15~25ms 뒤 겹쳤다. 프로필 배율은 0.9→1.0, 큐 피치는 0.88이다. 합성 저음이나 폭발음을 넣지 않는다. prepare_cannon_entry.py와 author_cannon_entry.py로 제작하며 전체 재제작도 같은 레시피를 사용한다.
+
+오디오 자동화 17/17 성공. 실제 플레이어/적 함선 각각 네이티브 발사 수락과 즉시 재발사 거절, 양쪽 World의 발사/포탄 입수 각 1회를 확인했다. 네 master WAV는 비무음/클리핑 0이다. 사람 입수 Cue/body, 발사 Cue, Foley/수영 Cue 해시는 보존했다. 3개 준비 WAV와 engine export PCM은 최대 16-bit 한 단계 이내로 일치했다. [검증 수치](validation/Cannon_Entry_Weight_20261028.json)는 발사음까지 포함한 지표이며 주관적 음색 승인과 구분한다.

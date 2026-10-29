@@ -8,7 +8,7 @@ import numpy as np
 from prepare_audio_wavs import decode
 
 
-def prepare_character_entry(staging):
+def prepare_character_entry(staging, cannon=False):
     source = staging / 'ShipWaterSources'
     extra = staging / 'ShipWaveSources'
     dest = staging / 'ShipWaterPrepared'; dest.mkdir(parents=True, exist_ok=True)
@@ -37,11 +37,18 @@ def prepare_character_entry(staging):
         'CharacterEntry_PlungeB': [(source, 'Oneshot_Diving2', .98, .9, 0.), (source, 'Oneshot_Splash2', .94, .4, .008)],
         'CharacterWaterBody': [(extra, 'Oneshot_Diving_Underwater1', .94, 1., .045), (source, 'Oneshot_Splash6', .9, .6, .025)],
     }
+    if cannon:
+        recipes = {
+            'CannonEntry_PlungeA': [(source, 'Oneshot_Splash4', .9, 1., 0.), (source, 'Oneshot_Diving1', .94, .4, .008)],
+            'CannonEntry_PlungeB': [(source, 'Oneshot_Splash2', .9, 1., 0.), (source, 'Oneshot_Diving2', .94, .4, .008)],
+            'CannonWaterBody': [(extra, 'Oneshot_Diving_Underwater1', .88, 1., .025), (source, 'Oneshot_Splash6', .88, .7, .015)],
+        }
     changed = []
     for name, recipe in recipes.items():
         layers = [(layer(folder, clip, pitch) * gain, int(delay * rate)) for folder, clip, pitch, gain, delay in recipe]
         mixed = np.zeros(max(len(a) + offset for a, offset in layers))
         for a, offset in layers: mixed[offset:offset + len(a)] += a
+        if cannon: mixed = mixed[:int(rate * 1.2)]
         fade = min(int(rate * .003), len(mixed) // 10)
         mixed[:fade] *= np.linspace(0, 1, fade)
         tail = min(int(rate * .12), len(mixed) // 10)
