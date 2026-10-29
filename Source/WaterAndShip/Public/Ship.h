@@ -735,6 +735,7 @@ public:
 		TSubclassOf<ABombardment> BombardmentClass);
 	void DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability);
 	bool IsBombardmentTargeting() const { return bBombardmentTargeting; }
+	bool IsLocalBombardmentInputModeApplied() const { return bLocalBombardmentInputModeApplied; }
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnBombardmentTargetingChanged, bool);
 	FOnBombardmentTargetingChanged OnBombardmentTargetingChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
@@ -1276,7 +1277,7 @@ private:
 	FVector LocalBombardmentTarget = FVector::ZeroVector;
 	bool bLocalBombardmentTargetValid = false;
 	bool bLocalBombardmentInputModeApplied = false;
-	bool bSavedShowMouseCursor = false;
+	TWeakObjectPtr<APlayerController> BombardmentInputController;
 
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;

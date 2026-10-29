@@ -62,6 +62,24 @@ ABasePlayerController::ABasePlayerController()
 #include "HAL/PlatformMisc.h"
 #include "HAL/IConsoleManager.h"
 #include "StoryFacadeSubsystem.h"
+#include "InputKeyEventArgs.h"
+#include "WeaponInputAbilitySystemComponent.h"
+
+bool ABasePlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled()
+		&& (Params.Key == EKeys::E || Params.Key == EKeys::C)
+		&& (Params.Event == IE_Pressed || Params.Event == IE_Released))
+	{
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=RawKey Controller=%s Key=%s Pressed=%d Pawn=%s LifeCharacter=%s LifePhase=%d SessionPhase=%d CanMutate=%d UIBlocked=%d Cursor=%d IgnoreMove=%d IgnoreLook=%d ViewportIgnore=%d"),
+			*GetName(), *Params.Key.ToString(), Params.Event == IE_Pressed, *GetNameSafe(GetPawn()), *GetNameSafe(GetLifeCharacter()),
+			static_cast<int32>(DeathFlowState.Phase), static_cast<int32>(LocalSessionPhase), CanMutateGameplay(),
+			IsDevelopmentTestInputBlockedByUI(), bShowMouseCursor, IsMoveInputIgnored(), IsLookInputIgnored(),
+			GetWorld() && GetWorld()->GetGameViewport() && GetWorld()->GetGameViewport()->IgnoreInput());
+		if (const ABasePlayer* LifePawnCharacter = GetLifeCharacter()) LifePawnCharacter->LogCombatInputDiagnostic(TEXT("RawKeySnapshot"));
+	}
+	return Super::InputKey(Params);
+}
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 static TAutoConsoleVariable<int32> CVarSWShipMotionDiag(
@@ -88,6 +106,20 @@ bool ABasePlayerController::IsDevelopmentTestInputBlockedByUI() const
   || IsDevelopmentTestInputBlockedByServerUI() || bRoomSavePending || PendingRetryRequestId
   || LocalSessionPhase == ESWSessionLifePhase::GameOver || LocalSessionPhase == ESWSessionLifePhase::ReturningAfterGameOver
   || (Connection && Connection->IsLoadingPresentationVisible());
+}
+
+bool ABasePlayerController::IsSkillCursorInputBlocked() const
+{
+	return IsDevelopmentTestInputBlockedByUI()
+		|| DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn;
+}
+
+void ABasePlayerController::RestoreInputAfterSkillCursor()
+{
+	if (IsLocalController() && !IsSkillCursorInputBlocked())
+	{
+		ApplyInventoryInputMode(false);
+	}
 }
 
 void ABasePlayerController::ClientBeginRoomReturn_Implementation()
@@ -690,7 +722,6 @@ void ABasePlayerController::HandleMenuEscape()
 	UClass* RoomMenuClass = LoadClass<USWRoomMenuWidget>(nullptr, TEXT("/Game/UI/Room/WBP_RoomMenu.WBP_RoomMenu_C"));
 	RoomMenuWidget = CreateWidget<USWRoomMenuWidget>(this, RoomMenuClass ? RoomMenuClass : USWRoomMenuWidget::StaticClass());
 	if (!RoomMenuWidget) return;
-	bCursorVisibleBeforeRoomMenu = bShowMouseCursor;
 	RoomMenuWidget->AddToViewport(50);
 	ApplyInventoryInputMode(true);
 }
@@ -701,7 +732,6 @@ void ABasePlayerController::CloseRoomMenu()
 	RoomMenuWidget->RemoveFromParent();
 	RoomMenuWidget = nullptr;
 	ApplyInventoryInputMode(false);
-	bShowMouseCursor = bCursorVisibleBeforeRoomMenu;
 }
 
 void ABasePlayerController::RequestRoomSave()
@@ -1337,7 +1367,10 @@ float ABasePlayerController::GetStorageSlotSearchTime(AStorageChest* StorageChes
 
 void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 {
-	bShowMouseCursor = bOpen;
+	const AShip* Ship = Cast<AShip>(GetPawn());
+	const bool bTargeting = !bOpen && Ship && Ship->IsLocallyControlled()
+		&& Ship->IsBombardmentTargeting() && Ship->IsLocalBombardmentInputModeApplied();
+	bShowMouseCursor = bOpen || bTargeting;
 	// A chest and the facility hub are modal; keep F/game input available for closing.
 	UpdateInteractionMovementLock();
 
@@ -1362,12 +1395,20 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 	}
 	else
 	{
-		FInputModeGameOnly InputMode;
-		// Closing a UI must not consume the first mouse-down just to recapture the viewport.
-		// Forward that click to gameplay as well (attack/interact inputs use mouse buttons).
-		InputMode.SetConsumeCaptureMouseDown(false);
-		SetInputMode(InputMode);
-		UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		if (bTargeting)
+		{
+			FInputModeGameAndUI InputMode;
+			InputMode.SetHideCursorDuringCapture(false);
+			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			SetInputMode(InputMode);
+		}
+		else
+		{
+			FInputModeGameOnly InputMode;
+			InputMode.SetConsumeCaptureMouseDown(false);
+			SetInputMode(InputMode);
+			UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		}
 		FlushPressedKeys();
 
 		if (bInventoryInputModeApplied)

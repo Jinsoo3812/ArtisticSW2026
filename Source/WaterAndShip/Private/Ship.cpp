@@ -3,7 +3,10 @@
 
 #include "Ship.h"
 #include "Development/SWDevelopmentOptions.h"
+#include "WeaponInputAbilitySystemComponent.h"
 #include "MountedDamageUserInterface.h"
+#include "SkillCursorInputInterface.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "MultiGameMode.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Network/SWNetworkLog.h"
@@ -794,6 +797,11 @@ void AShip::Tick(float DeltaTime)
 				// SpeedCmPerSecond / 100.0f));
 	// }
 
+	if (bLocalBombardmentInputModeApplied && (!IsLocallyControlled() || !bBombardmentTargeting
+		|| BombardmentInputController.Get() != GetController()))
+	{
+		EndLocalBombardmentTargeting();
+	}
 	if (IsLocallyControlled() && bBombardmentTargeting)
 	{
 		UpdateLocalBombardmentPreview();
@@ -1038,6 +1046,12 @@ void AShip::Tick(float DeltaTime)
 			float ForwardPropulsionMultiplier =
 				(AttributeSet ? AttributeSet->GetForwardPropulsionMultiplier() : 1.0f)
 				* FMath::Max(0.0f, CurrentAIPropulsionScale);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+			if (!IsEnemyShipForEffects())
+			{
+				ForwardPropulsionMultiplier *= SWDevelopmentOptions::GetShipSpeedMultiplier(this);
+			}
+#endif
 			float TurnTorqueMultiplier =
 				(AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f)
 				* FMath::Max(0.0f, CurrentAITurnScale);
@@ -2056,6 +2070,9 @@ void AShip::ShipZoom(const FInputActionValue& Value)
 
 void AShip::HandleBombardmentToggle()
 {
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=ShipSkillPressed Ship=%s Authority=%d Local=%d PlayerControlled=%d Rider=%s Targeting=%d"),
+			*GetName(), HasAuthority(), IsLocallyControlled(), IsPlayerControlled(), *GetNameSafe(RidingPlayer), bBombardmentTargeting);
 	if (!IsPlayerControlled())
 	{
 		return;
@@ -2112,6 +2129,9 @@ void AShip::HandleBombardmentCancel()
 
 void AShip::ServerToggleBombardmentAbility_Implementation()
 {
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=ShipSkillRpc Ship=%s PlayerControlled=%d Rider=%s Targeting=%d"),
+			*GetName(), IsPlayerControlled(), *GetNameSafe(RidingPlayer), bBombardmentTargeting);
 	if (RidingPlayer && IsPlayerControlled())
 	{
 		ToggleBombardmentAbilityAuthoritative();
@@ -2184,6 +2204,8 @@ void AShip::ToggleBombardmentAbilityAuthoritative()
 	}
 
 	FGameplayTagContainer AbilityTags(GameplayAbility_Skill_Bombardment);
+	if (const UWeaponInputAbilitySystemComponent* InputASC = Cast<UWeaponInputAbilitySystemComponent>(ASC))
+		InputASC->LogInputDiagnostic(TEXT("ShipSkillToggle"), FString::Printf(TEXT("Ship=%s Targeting=%d"), *GetName(), bBombardmentTargeting));
 	if (bBombardmentTargeting || ASC->HasMatchingGameplayTag(GameplayAbility_Skill_Bombardment))
 	{
 		ASC->CancelAbilities(&AbilityTags);
@@ -2276,7 +2298,13 @@ void AShip::BeginLocalBombardmentTargeting()
 		return;
 	}
 
-	bSavedShowMouseCursor = PC->bShowMouseCursor;
+	if (const ISkillCursorInputInterface* CursorInput = Cast<ISkillCursorInputInterface>(PC);
+		CursorInput && CursorInput->IsSkillCursorInputBlocked())
+	{
+		return;
+	}
+
+	BombardmentInputController = PC;
 	PC->bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
 	InputMode.SetHideCursorDuringCapture(false);
@@ -2311,24 +2339,26 @@ void AShip::EndLocalBombardmentTargeting()
 	}
 	ClearLocalWaterSkillPreview();
 
-	if (bLocalBombardmentInputModeApplied)
+	APlayerController* PC = BombardmentInputController.Get();
+	const bool bRestoreInput = bLocalBombardmentInputModeApplied;
+	bLocalBombardmentInputModeApplied = false;
+	bLocalBombardmentTargetValid = false;
+	BombardmentInputController.Reset();
+	if (bRestoreInput && PC && PC->IsLocalController())
 	{
-		APlayerController* PC = Cast<APlayerController>(GetController());
-		if (!PC)
+		if (ISkillCursorInputInterface* CursorInput = Cast<ISkillCursorInputInterface>(PC))
 		{
-			PC = CachedPlayerController;
+			CursorInput->RestoreInputAfterSkillCursor();
 		}
-		if (PC)
+		else
 		{
-			PC->bShowMouseCursor = bSavedShowMouseCursor;
+			PC->bShowMouseCursor = false;
 			FInputModeGameOnly InputMode;
 			InputMode.SetConsumeCaptureMouseDown(false);
 			PC->SetInputMode(InputMode);
+			UWidgetBlueprintLibrary::SetFocusToGameViewport();
 		}
 	}
-
-	bLocalBombardmentInputModeApplied = false;
-	bLocalBombardmentTargetValid = false;
 }
 
 void AShip::UpdateLocalBombardmentPreview()
@@ -2336,6 +2366,12 @@ void AShip::UpdateLocalBombardmentPreview()
 	if (!bLocalBombardmentInputModeApplied)
 	{
 		BeginLocalBombardmentTargeting();
+		if (!bLocalBombardmentInputModeApplied)
+		{
+			bLocalBombardmentTargetValid = false;
+			ClearLocalWaterSkillPreview();
+			return;
+		}
 	}
 
 	const ABombardment* BombardmentDefaults = ActiveBombardmentClass
@@ -2802,6 +2838,10 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 void AShip::OnRep_Controller()
 {
+	if (bLocalBombardmentInputModeApplied && BombardmentInputController.Get() != Controller)
+	{
+		EndLocalBombardmentTargeting();
+	}
 	Super::OnRep_Controller();
 
 	if (NetworkPhysicsComponent)

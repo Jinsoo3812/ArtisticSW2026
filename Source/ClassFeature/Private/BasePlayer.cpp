@@ -2070,8 +2070,29 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 	}
 }
 
+void ABasePlayer::LogCombatInputDiagnostic(const TCHAR* Event, FGameplayTag InputTag) const
+{
+	if (!UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled()) return;
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	const UEnhancedInputLocalPlayerSubsystem* InputSubsystem = PC && PC->GetLocalPlayer()
+		? PC->GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const FString Detail = FString::Printf(TEXT("Player=%s Input=%s Controller=%s Local=%d LifeAllowed=%d CombatAllowed=%d CustomSwim=%d Dodging=%d HitReacting=%d EquipmentTransition=%d Movement=%d/%d DefaultIMC=%s Applied=%d QuickSlotIMC=%s Applied=%d VortexInput=%d AreaSlowInput=%d"),
+		*GetName(), *InputTag.ToString(), *GetNameSafe(GetController()), IsLocallyControlled(), CanMutateLifeGameplay(), CanPerformCombatAction(),
+		SwimmingComponent && SwimmingComponent->IsCustomSwimming(), bIsDodging, bIsHitReacting, IsEquipmentTransitioning(),
+		Movement ? static_cast<int32>(Movement->MovementMode) : -1, Movement ? Movement->CustomMovementMode : 0,
+		*GetNameSafe(DefaultIMC), InputSubsystem && DefaultIMC && InputSubsystem->HasMappingContext(DefaultIMC),
+		*GetNameSafe(QuickSlotIMC), InputSubsystem && QuickSlotIMC && InputSubsystem->HasMappingContext(QuickSlotIMC),
+		bEnableGravityVortexSkillInput, bEnableAreaSlowSkillInput);
+	if (const UWeaponInputAbilitySystemComponent* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->LogInputDiagnostic(Event, Detail);
+	else
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=%s ASC=%s %s"), Event, *GetNameSafe(CachedAbilitySystemComponent.Get()), *Detail);
+}
+
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
+	LogCombatInputDiagnostic(TEXT("ActionPressed"), InputTag);
 	if (!CanMutateLifeGameplay()) return;
 	const bool bInteractionInput = InputTag.MatchesTagExact(Key_Default_F);
 	const bool bLogInteraction = bInteractionInput && IsStorageInteractionLoggingEnabled();
@@ -2128,12 +2149,14 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
+	LogCombatInputDiagnostic(TEXT("ActionReleased"), InputTag);
 	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
 		InputASC->InputTagReleased(InputTag);
 }
 
 void ABasePlayer::OnGravityVortexSkillPressed()
 {
+	LogCombatInputDiagnostic(TEXT("VortexPressed"), Key_Skill_GravityVortex);
 	if (!bEnableGravityVortexSkillInput)
 	{
 		return;
@@ -2142,6 +2165,7 @@ void ABasePlayer::OnGravityVortexSkillPressed()
 		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex))
 	{
 		const FGameplayTagContainer SkillTags(GameplayAbility_Skill_GravityVortex);
+		LogCombatInputDiagnostic(TEXT("VortexCancelExisting"), Key_Skill_GravityVortex);
 		CachedAbilitySystemComponent->CancelAbilities(&SkillTags);
 		return;
 	}
@@ -2159,6 +2183,7 @@ void ABasePlayer::OnGravityVortexSkillReleased()
 
 void ABasePlayer::OnAreaSlowSkillPressed()
 {
+	LogCombatInputDiagnostic(TEXT("AreaSlowPressed"), Key_Skill_AreaSlow);
 	if (!bEnableAreaSlowSkillInput)
 	{
 		return;

@@ -14,6 +14,7 @@
 #include "Respawn/SWRespawnControllerInterface.h"
 #include "Room/SWRoomSaveGame.h"
 #include "Camera/CameraTypes.h"
+#include "SkillCursorInputInterface.h"
 #include "BasePlayerController.generated.h"
 
 /**
@@ -60,12 +61,15 @@ struct FStorageRevealState
 };
 
 UCLASS()
-class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController, public ISWRespawnControllerInterface
+class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController, public ISWRespawnControllerInterface, public ISkillCursorInputInterface
 {
 	GENERATED_BODY()
 
 public:
 	ABasePlayerController();
+	virtual bool IsSkillCursorInputBlocked() const override;
+	virtual void RestoreInputAfterSkillCursor() override;
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 	/** Development console request; the server always uses this controller's pawn. */
 	void RequestEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
 	virtual void UpdateCameraManager(float DeltaSeconds) override;
@@ -366,7 +370,6 @@ protected:
 	TWeakObjectPtr<UGameViewportClient> BoundRoomViewport;
 	bool HandleRoomWindowCloseRequested();
 	void HandleRoomSaveTimeout();
-	bool bCursorVisibleBeforeRoomMenu = false;
 	void ApplyInventoryInputMode(bool bOpen);
 	void UpdateInteractionMovementLock();
 	void SetStatusCharacterInputLocked(bool bLocked);

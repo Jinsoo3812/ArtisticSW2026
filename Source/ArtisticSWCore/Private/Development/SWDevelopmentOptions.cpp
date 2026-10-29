@@ -27,3 +27,29 @@ bool SWDevelopmentOptions::IsEnabled(const UObject* Context, EOption Option)
  const int32 Mask = GetMask(Context);
  return (Mask & Session) != 0 && (Mask & Option) != 0;
 }
+
+float SWDevelopmentOptions::GetShipSpeedMultiplier(const UObject* Context)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ UWorld* World = Context ? Context->GetWorld() : nullptr;
+ if (World && World->IsGameWorld())
+  for (TActorIterator<ASWRoomReadyState> It(World); It; ++It)
+   return It->DevelopmentShipSpeedMultiplier;
+#endif
+ return 1.0f;
+}
+
+bool SWDevelopmentOptions::SetShipSpeedMultiplier(const UObject* Context, float Multiplier)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ UWorld* World = Context ? Context->GetWorld() : nullptr;
+ if (!World || !World->IsGameWorld() || World->GetNetMode() == NM_Client || !FMath::IsFinite(Multiplier)) return false;
+ for (TActorIterator<ASWRoomReadyState> It(World); It; ++It)
+ {
+  It->DevelopmentShipSpeedMultiplier = FMath::Max(0.0f, Multiplier);
+  It->ForceNetUpdate();
+  return true;
+ }
+#endif
+ return false;
+}

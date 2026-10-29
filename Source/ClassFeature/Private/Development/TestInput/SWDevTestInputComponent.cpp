@@ -323,6 +323,14 @@ void USWDevTestInputComponent::RefreshDevelopmentOptions()
   if (UShipUpgradeComponent* Upgrade = It->FindComponentByClass<UShipUpgradeComponent>()) Upgrade->OnUpgradeDataChanged.Broadcast();
 }
 
+void USWDevTestInputComponent::ServerSetShipSpeedMultiplier_Implementation(float Multiplier)
+{
+ if (!SWDevTestInput::Allowed() || !Cast<ABasePlayerController>(GetOwner())) return;
+ const bool bApplied = SWDevelopmentOptions::SetShipSpeedMultiplier(this, Multiplier);
+ UE_LOG(LogSWDevTestInput, Display, TEXT("ShipSpeedMultiplier Applied=%d Value=%g Requester=%s"),
+  bApplied, SWDevelopmentOptions::GetShipSpeedMultiplier(this), *GetNameSafe(GetOwner()));
+}
+
 void USWDevTestInputComponent::ServerSetDevelopmentOption_Implementation(FName Option, bool bEnabled)
 {
  if (!SWDevTestInput::Allowed() || !SWDevTestInput::SafeWorld(GetWorld())) return;
@@ -376,6 +384,29 @@ void SetDevelopmentOption(const TArray<FString>& Args, UWorld* World, FName Name
  if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1"))) return;
  if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetDevelopmentOption(Name, Args[0] == TEXT("1"));
 }
+FAutoConsoleCommandWithWorldAndArgs ShipSpeedMultiplier(TEXT("SW.DevTest.ShipSpeedMultiplier"),
+ TEXT("Set shared player ship propulsion multiplier through the server: [multiplier]. No argument prints the replicated value. Any development client may set it."),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  if (!World || !World->IsGameWorld()) return;
+  if (Args.IsEmpty())
+  {
+   UE_LOG(LogSWDevTestInput, Display, TEXT("SW.DevTest.ShipSpeedMultiplier = %g"), SWDevelopmentOptions::GetShipSpeedMultiplier(World));
+   return;
+  }
+  float Multiplier = 1.0f;
+  if (Args.Num() != 1 || !LexTryParseString(Multiplier, *Args[0]) || !FMath::IsFinite(Multiplier))
+  {
+   UE_LOG(LogSWDevTestInput, Warning, TEXT("Usage: SW.DevTest.ShipSpeedMultiplier <finite multiplier>"));
+   return;
+  }
+  if (World->GetNetMode() != NM_Client)
+  {
+   const bool bApplied = SWDevelopmentOptions::SetShipSpeedMultiplier(World, Multiplier);
+   UE_LOG(LogSWDevTestInput, Display, TEXT("ShipSpeedMultiplier Applied=%d Value=%g"), bApplied, SWDevelopmentOptions::GetShipSpeedMultiplier(World));
+  }
+  else if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetShipSpeedMultiplier(Multiplier);
+  else UE_LOG(LogSWDevTestInput, Warning, TEXT("ShipSpeedMultiplier requires one local player controller."));
+ }));
 FAutoConsoleCommandWithWorldAndArgs FreeUpgrade(TEXT("SW.DevTest.ShipUpgradeFree"), TEXT("Ignore ship materials 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("ShipUpgradeFree")); }));
 FAutoConsoleCommandWithWorldAndArgs FreeCrafting(TEXT("SW.DevTest.CraftingFree"), TEXT("Ignore recipes and materials 0|1"),

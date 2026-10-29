@@ -8,4 +8,7 @@ namespace SWDevelopmentOptions
  enum EOption : int32 { ShipUpgradeFree = 1, CraftingFree = 2, SkillFree = 4, SkillNoCooldown = 8, Session = 16, All = 15 };
  ARTISTICSWCORE_API int32 GetMask(const UObject* Context);
  ARTISTICSWCORE_API bool IsEnabled(const UObject* Context, EOption Option);
+ ARTISTICSWCORE_API float GetShipSpeedMultiplier(const UObject* Context);
+ /** Development only; changes the current world's replicated value on authority. */
+ ARTISTICSWCORE_API bool SetShipSpeedMultiplier(const UObject* Context, float Multiplier);
 }
