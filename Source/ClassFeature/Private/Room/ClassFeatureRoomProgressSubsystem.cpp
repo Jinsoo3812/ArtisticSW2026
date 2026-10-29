@@ -641,7 +641,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
   bCampaignRestorePending = false;
   CampaignPreparedRoom = nullptr; CampaignRollbackRoom = nullptr; CampaignTarget = NAME_None;
   for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
-   if (APlayerController* PC = It->Get()) PC->ClientMessage(TEXT("Campaign checkpoint restored. Rewards and skills applied."));
+   if (APlayerController* PC = It->Get()) PC->ClientMessage(TEXT("Campaign story checkpoint restored."));
  }
 	Room->CompleteWorldRecovery();
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=WorldRestore RoomId=%s Result=Ready ReturnPending=%d"),

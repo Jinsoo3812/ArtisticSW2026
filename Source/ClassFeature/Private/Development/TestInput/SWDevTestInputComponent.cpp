@@ -421,7 +421,7 @@ FAutoConsoleCommandWithWorldAndArgs SkipCampaign(TEXT("SW.DevTest.Campaign.Skip"
  }));
 FAutoConsoleCommandWithWorldAndArgs CampaignList(TEXT("SW.DevTest.Campaign.List"), TEXT("List supported dialogue checkpoints"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld*) {
-  UE_LOG(LogSWDevTestInput, Display, TEXT("After Yi dialogue: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending. Includes prior side branches; forward only."));
+  UE_LOG(LogSWDevTestInput, Display, TEXT("After Yi dialogue: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending. Replaces story progress and restarts the level regardless of current progress. Does not grant items or skills."));
  }));
 FAutoConsoleCommandWithWorldAndArgs DevelopmentStatus(TEXT("SW.DevTest.Status"), TEXT("Print active development option mask and campaign targets"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* W) {

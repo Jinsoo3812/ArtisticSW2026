@@ -16,12 +16,12 @@ struct FPlayerSkillDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill", meta = (Categories = "GameplayAbility.Skill"))
 	FGameplayTag SkillTag;
 
-	/** Item.Id.Skill.* identity used by UI and as the permanent-unlock recipe result. */
+	/** Crafted Item.Id.Skill.* charge consumed on each use. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill", meta = (Categories = "Item.Id.Skill"))
 	FGameplayTag SkillItemTag;
 
 	/** One inventory item is consumed for each completed skill use. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill", meta = (Categories = "Item.Id.Material"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill", meta = (Categories = "Item.Id"))
 	FGameplayTag UsageMaterialTag;
 
 	/** Story skills are locked by default; enable only for prototypes or migrated saves. */
@@ -62,6 +62,7 @@ public:
 	UPlayerSkillComponent();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Skill")
@@ -126,6 +127,9 @@ protected:
 	void OnRep_SkillStates();
 
 private:
+	UFUNCTION()
+	void HandleStoryChanged();
+
 	void InitializeSkillStates();
 	UInventoryComponent* ResolveInventory() const;
 	FPlayerSkillState* FindMutableSkillState(FGameplayTag SkillTag);

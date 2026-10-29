@@ -79,9 +79,20 @@ bool UStoryFacadeSubsystem::CompleteStoryNode(EStoryNode Node)
 	}
 
 	const FGameplayTag NodeTag = GetInternalTag(Node);
-	return NodeTag.IsValid()
-		&& ArePrerequisitesReached(Node)
-		&& Story->AddFact(NodeTag);
+	if (!NodeTag.IsValid() || !ArePrerequisitesReached(Node)) return false;
+	FGameplayTagContainer CompletedFacts;
+	CompletedFacts.AddTag(NodeTag);
+	switch (Node)
+	{
+	case EStoryNode::SupplyPatrolQuestAccepted:
+		CompletedFacts.AddTag(GetInternalTag(EStoryNode::CurrentGeneratorUnlocked)); break;
+	case EStoryNode::SuppressJapaneseForcesQuestAccepted:
+		CompletedFacts.AddTag(GetInternalTag(EStoryNode::WaterBombUnlocked)); break;
+	case EStoryNode::UldolmokBattleQuestAccepted:
+		CompletedFacts.AddTag(GetInternalTag(EStoryNode::BombardmentUnlocked)); break;
+	default: break;
+	}
+	return Story->AddFacts(CompletedFacts);
 }
 
 bool UStoryFacadeSubsystem::IsStoryNodeReached(EStoryNode Node) const
@@ -239,21 +250,8 @@ UStorySaveGame* UStoryFacadeSubsystem::BuildDevelopmentCheckpoint(FName Target, 
  const int32 Index = GetDevelopmentCheckpointIndex(Target);
  UStorySubsystem* Story = ResolveStory();
  if (Index == INDEX_NONE || !Story || !Story->HasStoryAuthority()) return nullptr;
- const EStoryNode Checkpoints[] = { EStoryNode::ReconQuestAccepted, EStoryNode::SupplyPatrolQuestAccepted,
-  EStoryNode::DecipherQuestAccepted, EStoryNode::SuppressJapaneseForcesQuestAccepted,
-  EStoryNode::UldolmokBattleQuestAccepted, EStoryNode::EndingDialogueCompleted };
- for (int32 Later = Index; Later < UE_ARRAY_COUNT(Checkpoints); ++Later)
-  if (IsStoryNodeReached(Checkpoints[Later]))
-  { OutError = TEXT("That dialogue has already been reached. Campaign skip only moves forward."); return nullptr; }
- // Boss completion also makes a preceding dialogue checkpoint a backwards move.
- if ((Index == 0 && IsStoryNodeReached(EStoryNode::MiddleBoss1Defeated))
-  || (Index <= 1 && IsStoryNodeReached(EStoryNode::MiddleBoss2Defeated))
-  || (Index <= 3 && IsStoryNodeReached(EStoryNode::MiddleBoss3Defeated))
-  || (Index <= 4 && IsStoryNodeReached(EStoryNode::FinalBossDefeated)))
- { OutError = TEXT("Cannot move backwards past a defeated boss."); return nullptr; }
- UStorySaveGame* Prepared = Story->BuildRoomProgress();
- if (!Prepared)
- { OutError = TEXT("Cannot capture authoritative campaign progress."); return nullptr; }
+ // Build the requested state independently of the current campaign.
+ UStorySaveGame* Prepared = NewObject<UStorySaveGame>();
  auto Add = [this, Prepared](EStoryNode Node) { Prepared->Facts.AddTag(GetInternalTag(Node)); };
  Add(EStoryNode::GameStarted); Add(EStoryNode::FirstSailingCompleted); Add(EStoryNode::ReconQuestAccepted);
  Add(EStoryNode::StoryClue1Acquired); Add(EStoryNode::CipherBookAcquired);

@@ -212,7 +212,9 @@ bool FStoryDevelopmentCheckpointTest::RunTest(const FString& Parameters)
   TestTrue(TEXT("Checkpoint restores without a definition"), Story->ApplyRoomProgress(Checkpoint));
   TestTrue(TEXT("Requested dialogue is reached"), Facade->IsStoryNodeReached(Nodes[Index]));
   if (Index < UE_ARRAY_COUNT(NextBoss)) TestFalse(TEXT("Next boss remains alive"), Facade->IsStoryNodeReached(NextBoss[Index]));
-  TestNull(TEXT("Repeated target is rejected"), Facade->BuildDevelopmentCheckpoint(Targets[Index], Error));
+  UStorySaveGame* Repeated = Facade->BuildDevelopmentCheckpoint(Targets[Index], Error);
+  TestNotNull(TEXT("Current checkpoint can be reapplied"), Repeated);
+  if (Index > 0) TestNotNull(TEXT("Earlier dialogue can be selected"), Facade->BuildDevelopmentCheckpoint(Targets[Index - 1], Error));
  }
  Facade->StartNewCampaign();
  UStorySaveGame* Prepared = Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error);
@@ -224,13 +226,33 @@ bool FStoryDevelopmentCheckpointTest::RunTest(const FString& Parameters)
   EStoryNode::DecipherQuestAccepted, EStoryNode::UldolmokBattleQuestAccepted };
  for (EStoryNode Node : Required) TestTrue(TEXT("Prior main and branch nodes restored"), Facade->IsStoryNodeReached(Node));
  TestFalse(TEXT("Final boss remains alive"), Facade->IsStoryNodeReached(EStoryNode::FinalBossDefeated));
- TestNull(TEXT("Repeated checkpoint rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error));
- TestNull(TEXT("Backward checkpoint rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Recon"), Error));
+ TestNotNull(TEXT("Current final battle checkpoint can be reapplied"), Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error));
+ TestNotNull(TEXT("Backward checkpoint accepted"), Facade->BuildDevelopmentCheckpoint(TEXT("Recon"), Error));
  Prepared = Facade->BuildDevelopmentCheckpoint(TEXT("Ending"), Error);
  if (!TestNotNull(TEXT("Ending can follow final checkpoint"), Prepared)) return false;
  TestTrue(TEXT("Ending restored"), Story->ApplyRoomProgress(Prepared));
  TestTrue(TEXT("Ending includes final defeat"), Facade->IsStoryNodeReached(EStoryNode::FinalBossDefeated));
  TestTrue(TEXT("Ending dialogue complete"), Facade->IsStoryNodeReached(EStoryNode::EndingDialogueCompleted));
+ for (int32 Index = UE_ARRAY_COUNT(Targets) - 1; Index >= 0; --Index)
+ {
+  UStorySaveGame* Previous = Story->BuildRoomProgress();
+  if (!TestNotNull(TEXT("Previous state captured"), Previous)) return false;
+  Previous->Facts.AddTag(StoryTests::TestGranted);
+  FStoryCounterValue& OldCounter = Previous->Counters.AddDefaulted_GetRef();
+  OldCounter.CounterTag = StoryTests::TestKillCounter; OldCounter.Value = 10;
+  Previous->AppliedActionKeys.Add(TEXT("PreviousCampaignAction"));
+  TestTrue(TEXT("Previous campaign history seeded"), Story->ApplyRoomProgress(Previous));
+  Prepared = Facade->BuildDevelopmentCheckpoint(Targets[Index], Error);
+  if (!TestNotNull(TEXT("Any checkpoint can follow later progress"), Prepared)) return false;
+  TestFalse(TEXT("Previous facts cleared"), Prepared->Facts.HasTagExact(StoryTests::TestGranted));
+  TestTrue(TEXT("Selected state restores"), Story->ApplyRoomProgress(Prepared));
+  TestTrue(TEXT("Selected dialogue reached"), Facade->IsStoryNodeReached(Nodes[Index]));
+  for (int32 Later = Index + 1; Later < UE_ARRAY_COUNT(Nodes); ++Later)
+   TestFalse(TEXT("Later dialogue cleared"), Facade->IsStoryNodeReached(Nodes[Later]));
+  if (Index < UE_ARRAY_COUNT(NextBoss)) TestFalse(TEXT("Next boss defeat cleared"), Facade->IsStoryNodeReached(NextBoss[Index]));
+  TestTrue(TEXT("Old counters cleared"), Prepared->Counters.IsEmpty());
+  TestTrue(TEXT("Old action history cleared"), Prepared->AppliedActionKeys.IsEmpty());
+ }
  return true;
 }
 #endif
