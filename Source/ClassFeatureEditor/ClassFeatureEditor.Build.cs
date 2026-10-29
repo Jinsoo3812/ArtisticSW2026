@@ -31,6 +31,8 @@ public class ClassFeatureEditor : ModuleRules
 			"LevelEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
+			"AnimGraph",
+			"AnimGraphRuntime",
 			"ArtisticSWCore",
 			"ClassFeature",
 			"GASCore",

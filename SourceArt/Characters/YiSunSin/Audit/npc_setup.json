@@ -1,0 +1,35 @@
+{
+  "idle_root_bind_restored": true,
+  "idle_root_scale": [
+    100.0,
+    99.99999237060547,
+    99.99999237060547
+  ],
+  "idle": "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/AS_YiSunSin_NPC_Idle_Upright.AS_YiSunSin_NPC_Idle_Upright",
+  "idle_duration_seconds": 4.840000152587891,
+  "blend_space": "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/BS_YiSunSin_NPC_Ground.BS_YiSunSin_NPC_Ground",
+  "samples": [
+    {
+      "animation": "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/AS_YiSunSin_NPC_Idle_Upright.AS_YiSunSin_NPC_Idle_Upright",
+      "value": "<Struct 'Vector' (0x0000022A2FF47708) {x: 0.000000, y: 0.000000, z: 0.000000}>"
+    },
+    {
+      "animation": "/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Walk.AS_YiSunSin_Walk",
+      "value": "<Struct 'Vector' (0x0000022A2FF44CC8) {x: 150.000000, y: 0.000000, z: 0.000000}>"
+    },
+    {
+      "animation": "/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Run.AS_YiSunSin_Run",
+      "value": "<Struct 'Vector' (0x0000022A2FF477C8) {x: 450.000000, y: 0.000000, z: 0.000000}>"
+    }
+  ],
+  "animation_blueprint": "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/ABP_YiSunSin_NPC.ABP_YiSunSin_NPC",
+  "modified_blendspace_nodes": [
+    "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/ABP_YiSunSin_NPC.ABP_YiSunSin_NPC:AnimGraph.YS_Blend"
+  ],
+  "npc_blueprint": "/Game/Chae_Asset/YiSunSinContent/NPC/Blueprints/BP_YiSunSin_NPC.BP_YiSunSin_NPC",
+  "npc_parent_class": "Character",
+  "mesh_relative_rotation": "<Struct 'Rotator' (0x00000229F4FF6598) {pitch: 0.000000, yaw: -90.000000, roll: 0.000000}>",
+  "auto_possess_player": "<AutoReceiveInput.DISABLED: 0>",
+  "auto_possess_ai": "<AutoPossessAI.PLACED_IN_WORLD_OR_SPAWNED: 3>",
+  "references_original_walk_run": true
+}

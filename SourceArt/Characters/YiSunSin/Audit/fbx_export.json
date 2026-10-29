@@ -1,0 +1,18 @@
+{
+  "files": [
+    {
+      "file": "SK_YiSunSin_UnchangedControl.fbx",
+      "bytes": 12021068
+    },
+    {
+      "file": "SK_YiSunSin_NPC.fbx",
+      "bytes": 12043180
+    }
+  ],
+  "bones_including_root": 83,
+  "root": "spine",
+  "leaf_bones": false,
+  "all_bones": true,
+  "animation_exported": false,
+  "scene_unit_m": 1.0
+}
