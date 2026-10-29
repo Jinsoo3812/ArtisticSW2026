@@ -8,6 +8,7 @@ class UEnhancedInputComponent;
 class UEnhancedInputLocalPlayerSubsystem;
 class USWDevTestInputWidget;
 class ABasePlayer;
+class UAbilitySystemComponent;
 UENUM()
 enum class ESWDevTestAction : uint8 { KillSelf, KillBoth, SinkPlayerShip, EnterFinalEncounter };
 UCLASS()
@@ -39,9 +40,11 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
  friend class FPlayerDeathDevelopmentTest;
+ friend class FDevelopmentPlayerInvulnerabilityTest;
 #endif
  void RefreshDevelopmentOptions();
  int32 LastDevelopmentMask = INDEX_NONE;
+ TWeakObjectPtr<UAbilitySystemComponent> DevelopmentInvulnerableASC;
  bool MatchesCurrentLife(ABasePlayer* ExpectedLifeCharacter, int32 ExpectedWaitingGeneration) const;
  UFUNCTION() void OnRep_SessionEnabled();
  UFUNCTION() void OnRep_ServerRestoreGeneration();

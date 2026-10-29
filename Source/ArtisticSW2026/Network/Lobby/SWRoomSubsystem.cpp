@@ -31,9 +31,9 @@ namespace
 constexpr uint16 RoomPort = 7777;
 constexpr float ServerStartTimeoutSeconds = 90.0f;
 const TCHAR* LobbyMap = TEXT("/Game/Level/ConnectionLobby");
-TAutoConsoleVariable<int32> CVarRoomServerBackend(TEXT("sw.Room.ServerBackend"), 0,
+TAutoConsoleVariable<int32> CVarRoomServerBackend(TEXT("sw.Room.ServerBackend"), 1,
 	TEXT("Local room server: 0=UnrealEditor, 1=packaged dedicated server. Applies to the next hosting request."));
-FString GRoomServerExeOverride;
+FString GRoomServerExeOverride = TEXT("C:/Unreal Projects/ArtisticSW2026/Packaged/Server/WindowsServer/ArtisticSW2026/Binaries/Win64/ArtisticSW2026Server.exe");
 FAutoConsoleVariableRef CVarRoomServerExe(TEXT("sw.Room.ServerExe"), GRoomServerExeOverride,
 	TEXT("Packaged server internal executable path. Empty uses SWRoomServerExe or SWLocalPackagedServer settings."));
 
