@@ -1,0 +1,13 @@
+{
+  "npc_mesh": "/Game/Chae_Asset/YiSunSinContent/NPC/Characters/SK_YiSunSin_NPC_Sash.SK_YiSunSin_NPC_Sash",
+  "npc_skeleton": "/Game/Chae_Asset/YiSunSinContent/NPC/Characters/SK_YiSunSin_NPC_Sash_Skeleton.SK_YiSunSin_NPC_Sash_Skeleton",
+  "original_bones_unchanged": 83,
+  "npc_bones": 87,
+  "blend_space": "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/BS_YiSunSin_NPC_Sash.BS_YiSunSin_NPC_Sash",
+  "animation_blueprint": "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/ABP_YiSunSin_NPC_Sash.ABP_YiSunSin_NPC_Sash",
+  "clips": [
+    "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/AS_YiSunSin_NPC_Sash_Idle_Upright.AS_YiSunSin_NPC_Sash_Idle_Upright",
+    "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/AS_YiSunSin_NPC_Sash_Walk.AS_YiSunSin_NPC_Sash_Walk",
+    "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/AS_YiSunSin_NPC_Sash_Run.AS_YiSunSin_NPC_Sash_Run"
+  ]
+}

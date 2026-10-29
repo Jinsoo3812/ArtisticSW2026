@@ -1,0 +1,10 @@
+{
+  "max_world_surface_error_m": 2.5682896875878214e-07,
+  "mean_world_surface_error_m": 8.983246574206791e-08,
+  "source_vertices": 64211,
+  "ue_roundtrip_vertices": 64211,
+  "within_0_01mm": true,
+  "max_skin_weight_error": 2.1159648895263672e-05,
+  "mean_skin_weight_error": 4.7402637408534306e-07,
+  "weight_error_above_0_005_vertices": 0
+}

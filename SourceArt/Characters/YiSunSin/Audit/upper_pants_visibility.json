@@ -1,0 +1,131 @@
+{
+  "note": "Four orthographic directions, every fifth upper-pants triangle centroid above 0.68m in reference pose. Includes legitimate slit exposure; visibility diagnostic, not a general collision proof.",
+  "rows": [
+    {
+      "action": "Idle",
+      "frame": 1,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Idle",
+      "frame": 31,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Idle",
+      "frame": 61,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Idle",
+      "frame": 91,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Idle",
+      "frame": 122,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Walk",
+      "frame": 1,
+      "before_visible_upper_pants_samples": 134,
+      "after_visible_upper_pants_samples": 32
+    },
+    {
+      "action": "Walk",
+      "frame": 5,
+      "before_visible_upper_pants_samples": 92,
+      "after_visible_upper_pants_samples": 2
+    },
+    {
+      "action": "Walk",
+      "frame": 10,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Walk",
+      "frame": 18,
+      "before_visible_upper_pants_samples": 2,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Walk",
+      "frame": 27,
+      "before_visible_upper_pants_samples": 49,
+      "after_visible_upper_pants_samples": 2
+    },
+    {
+      "action": "Walk",
+      "frame": 36,
+      "before_visible_upper_pants_samples": 131,
+      "after_visible_upper_pants_samples": 34
+    },
+    {
+      "action": "Run",
+      "frame": 1,
+      "before_visible_upper_pants_samples": 23,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Run",
+      "frame": 7,
+      "before_visible_upper_pants_samples": 5,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Run",
+      "frame": 13,
+      "before_visible_upper_pants_samples": 10,
+      "after_visible_upper_pants_samples": 2
+    },
+    {
+      "action": "Run",
+      "frame": 20,
+      "before_visible_upper_pants_samples": 154,
+      "after_visible_upper_pants_samples": 25
+    },
+    {
+      "action": "Run",
+      "frame": 26,
+      "before_visible_upper_pants_samples": 32,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Jump",
+      "frame": 1,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Jump",
+      "frame": 7,
+      "before_visible_upper_pants_samples": 2,
+      "after_visible_upper_pants_samples": 0
+    },
+    {
+      "action": "Jump",
+      "frame": 12,
+      "before_visible_upper_pants_samples": 5,
+      "after_visible_upper_pants_samples": 2
+    },
+    {
+      "action": "Jump",
+      "frame": 18,
+      "before_visible_upper_pants_samples": 3,
+      "after_visible_upper_pants_samples": 1
+    },
+    {
+      "action": "Jump",
+      "frame": 23,
+      "before_visible_upper_pants_samples": 0,
+      "after_visible_upper_pants_samples": 0
+    }
+  ]
+}

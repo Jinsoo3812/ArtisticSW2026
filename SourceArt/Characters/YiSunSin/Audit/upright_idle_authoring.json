@@ -1,0 +1,20 @@
+{
+  "action": "NPC_Idle_Upright",
+  "frames": [
+    1,
+    122
+  ],
+  "fps": 25.0,
+  "spine_world_x_offsets_degrees": {
+    "spine_001": 1.2,
+    "spine_002": 2.0,
+    "spine_003": 2.0,
+    "spine_004": -1.0,
+    "spine_006": -3.0
+  },
+  "symmetric_planted_legs": true,
+  "ground_lift_m": 0.006984594743698835,
+  "original_bind_skeleton_unchanged": true,
+  "original_idle_action_unchanged": true,
+  "loop_end_matches_start": true
+}

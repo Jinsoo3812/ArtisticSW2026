@@ -1,0 +1,75 @@
+{
+  "engine": "5.7.4-51494982+++UE5+Release-5.7",
+  "mesh": "/Game/Chae_Asset/YiSunSinContent/Characters/SK_YiSunSin_Latest.SK_YiSunSin_Latest",
+  "skeleton": "/Game/Chae_Asset/YiSunSinContent/Characters/SK_YiSunSin_Latest_Skeleton.SK_YiSunSin_Latest_Skeleton",
+  "materials": [
+    {
+      "slot": "MI_Battle_Sash",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/MI_Battle_Sash.MI_Battle_Sash"
+    },
+    {
+      "slot": "M_Body_001",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/M_Body.M_Body"
+    },
+    {
+      "slot": "M_Hair_001",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/M_Hair.M_Hair"
+    },
+    {
+      "slot": "MI_Dongdari",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/MI_Dongdari.MI_Dongdari"
+    },
+    {
+      "slot": "MI_Jeonbok01b",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/MI_Jeonbok01b.MI_Jeonbok01b"
+    },
+    {
+      "slot": "MI_Leg_Wraps",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/MI_Leg_Wraps.MI_Leg_Wraps"
+    },
+    {
+      "slot": "MI_Beoseon01a",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/MI_Beoseon01a.MI_Beoseon01a"
+    },
+    {
+      "slot": "MI_Black_Shoes",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/MI_Black_Shoes.MI_Black_Shoes"
+    },
+    {
+      "slot": "MI_Military_Hat",
+      "material": "/Game/Chae_Asset/MT/YiSunSin/MI_Military_Hat.MI_Military_Hat"
+    }
+  ],
+  "exports": [
+    {
+      "asset": "/Game/Chae_Asset/YiSunSinContent/Characters/SK_YiSunSin_Latest.SK_YiSunSin_Latest",
+      "file": "SK_YiSunSin_Latest.fbx",
+      "bytes": 2939264,
+      "exporter": "SkeletalMeshExporterFBX"
+    },
+    {
+      "asset": "/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Idle.AS_YiSunSin_Idle",
+      "file": "AS_YiSunSin_Idle.fbx",
+      "bytes": 1572624,
+      "exporter": "AnimSequenceExporterFBX"
+    },
+    {
+      "asset": "/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Walk.AS_YiSunSin_Walk",
+      "file": "AS_YiSunSin_Walk.fbx",
+      "bytes": 801712,
+      "exporter": "AnimSequenceExporterFBX"
+    },
+    {
+      "asset": "/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Run.AS_YiSunSin_Run",
+      "file": "AS_YiSunSin_Run.fbx",
+      "bytes": 712080,
+      "exporter": "AnimSequenceExporterFBX"
+    },
+    {
+      "asset": "/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Jump.AS_YiSunSin_Jump",
+      "file": "AS_YiSunSin_Jump.fbx",
+      "bytes": 685184,
+      "exporter": "AnimSequenceExporterFBX"
+    }
+  ]
+}
