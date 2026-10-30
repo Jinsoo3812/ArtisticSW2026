@@ -117,6 +117,7 @@ void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 
 bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 {
+	if (NavigationComponent) NavigationComponent->ResetLocalSafety();
 	if (Part.Domain == ESWRoomDomain::Ship) return AShip::RestoreRoomDomain(Part, OutError);
 	FSWRoomEnemyShipState State;
 	if (Part.Domain != ESWRoomDomain::Enemy || (Part.Version != 2 && Part.Version != 3 && Part.Version != 4)
@@ -911,7 +912,7 @@ void AEnemyShip::SetSquadAssignedIdealDistance(float IdealDistance)
 	NavigationComponent->SetNavigationProfile(Profile);
 }
 
-void AEnemyShip::ResetAfterReturnToSpawn()
+void AEnemyShip::ResetAfterReturnToSpawn(bool bRestoreHomeTransform)
 {
 	if (!HasAuthority() || bDeathHandled || IsSinking())
 	{
@@ -920,7 +921,7 @@ void AEnemyShip::ResetAfterReturnToSpawn()
 
 	SetAIControlInput(0.0f, 0.0f);
 	FTransform SpawnTransform;
-	if (NavigationComponent && NavigationComponent->GetSpawnHomeTransform(SpawnTransform))
+	if (bRestoreHomeTransform && NavigationComponent && NavigationComponent->GetSpawnHomeTransform(SpawnTransform))
 	{
 		SetActorLocationAndRotation(
 			SpawnTransform.GetLocation(),

@@ -252,6 +252,23 @@ void UShipSwarmSubsystem::EvaluateDistanceOptimization()
 	}
 }
 
+void UShipSwarmSubsystem::GatherSafetyPeers(const AEnemyShip* Ship, TArray<TWeakObjectPtr<AEnemyShip>>& Out) const
+{
+	Out.Reset();
+	for (const auto& Pair : SquadMap)
+	{
+		for (const TWeakObjectPtr<AEnemyShip>& Weak : Pair.Value)
+		{
+			AEnemyShip* Other = Weak.Get();
+			if (Other && Other != Ship && !Other->IsBundlePoolIdle() && Other->GetActorEnableCollision()
+				&& Other->BuoyancyRoot && Other->BuoyancyRoot->IsPhysicsCollisionEnabled())
+			{
+				Out.AddUnique(Weak);
+			}
+		}
+	}
+}
+
 void UShipSwarmSubsystem::RegisterShip(AEnemyShip* Ship)
 {
 	if (!Ship) return;

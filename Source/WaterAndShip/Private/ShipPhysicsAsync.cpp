@@ -152,6 +152,8 @@ void FShipPhysicsAsync::BuildInput_Internal(FNetInputShip& Input) const
 	Input.bHasAuthoritativeBuoyancyState = bAuthoritativeBuoyancyWriter_Internal;
 	Input.bIsAnchorDropped = bAnchorDropped_Internal;
 	Input.AnchorOriginXY = CachedAnchorOriginXY;
+	Input.AISafety = AISafety_Internal;
+	Input.bHasAuthoritativeAISafety = bAuthoritativeAISafetyWriter_Internal;
 }
 
 void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
@@ -167,12 +169,18 @@ void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
 	}
 	bAnchorDropped_Internal = Input.bIsAnchorDropped;
 	CachedAnchorOriginXY = Input.AnchorOriginXY;
+	if (Input.bHasAuthoritativeAISafety)
+	{
+		AISafety_Internal = Input.AISafety;
+		AISafety_Internal.Sanitize();
+	}
 }
 
 void FShipPhysicsAsync::ValidateInput_Internal(FNetInputShip& Input) const
 {
 	Input.MovementInput = FMath::Clamp(Input.MovementInput, -1.f, 1.f);
 	Input.SteeringInput = FMath::Clamp(Input.SteeringInput, -1.f, 1.f);
+	Input.AISafety.Sanitize();
 	if (Input.bIsAnchorDropped)
 	{
 		Input.MovementInput = 0.0f;
@@ -267,6 +275,12 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				}
 
 				bAnchorDropped_Internal = AsyncInput->bIsAnchorDropped;
+				if (AsyncInput->bApplyAuthoritativeAISafety)
+				{
+					AISafety_Internal = AsyncInput->AISafety;
+					AISafety_Internal.Sanitize();
+					bAuthoritativeAISafetyWriter_Internal = true;
+				}
 				CachedAnchorOriginXY = AsyncInput->AnchorOriginXY;
 				CachedAnchorStiffness = AsyncInput->AnchorStiffness;
 				CachedAnchorDamping = AsyncInput->AnchorDamping;
@@ -346,6 +360,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 
 	if (!bStaticDataReady)
 	{
+		ApplyAISafety_Internal(ParticleHandle, GetDeltaTime_Internal());
 		return;
 	}
 
@@ -528,6 +543,38 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			ParticleHandle->AddTorque(BlastTorque);
 		}
 	}
+	ApplyAISafety_Internal(ParticleHandle, GetDeltaTime_Internal());
+}
+
+void FShipPhysicsAsync::ApplyAISafety_Internal(Chaos::FPBDRigidParticleHandle* Particle, float DeltaTime) const
+{
+	if (AISafety_Internal.Mode == EShipAISafetyMode::Disabled) return;
+	FVector V = Particle->GetV();
+	FVector W = Particle->GetW();
+	FVector A = Particle->Acceleration();
+	FVector AngularA = Particle->AngularAcceleration();
+	if (AISafety_Internal.Mode == EShipAISafetyMode::Hold)
+	{
+		V.X = V.Y = A.X = A.Y = 0.0;
+		W.Z = AngularA.Z = 0.0;
+	}
+	else
+	{
+		const float Dt = FMath::Max(DeltaTime, UE_SMALL_NUMBER);
+		const FVector2D LimitedV = FVector2D(V.X, V.Y).GetClampedToMaxSize(AISafety_Internal.MaximumSpeed);
+		V.X = LimitedV.X;
+		V.Y = LimitedV.Y;
+		const FVector2D NextV = (LimitedV + FVector2D(A.X, A.Y) * Dt).GetClampedToMaxSize(AISafety_Internal.MaximumSpeed);
+		A.X = (NextV.X - V.X) / Dt;
+		A.Y = (NextV.Y - V.Y) / Dt;
+		const float YawLimit = FMath::DegreesToRadians(AISafety_Internal.MaximumYawRate);
+		W.Z = FMath::Clamp(W.Z, -static_cast<double>(YawLimit), static_cast<double>(YawLimit));
+		AngularA.Z = (FMath::Clamp(W.Z + AngularA.Z * Dt, -static_cast<double>(YawLimit), static_cast<double>(YawLimit)) - W.Z) / Dt;
+	}
+	Particle->SetV(V);
+	Particle->SetW(W);
+	Particle->SetAcceleration(A);
+	Particle->SetAngularAcceleration(AngularA);
 }
 
 void FShipPhysicsAsync::OnPreSimulate_Internal()
