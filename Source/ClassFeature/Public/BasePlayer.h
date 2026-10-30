@@ -208,7 +208,10 @@ protected:
 	bool bInitialLifeRestoreSuccessful = true;
 	bool RestoreProgressForNewLife(const FSWRoomPlayerProgress& Progress, FString& OutError);
 	bool CanMutateLifeGameplay() const;
-	protected:
+	/** Mouse-input RPC allowlist, independent of gameplay outcome event tags. */
+	static bool IsAllowedRemoteInputEvent(FGameplayTag EventTag);
+
+  protected:
 	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */

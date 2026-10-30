@@ -461,20 +461,18 @@ bool UInventoryComponent::RemoveMaterial(const FGameplayTag& ItemTag, int32 Amou
 
 int32 UInventoryComponent::GetMaterialCount(const FGameplayTag& ItemTag) const
 {
-    int32 TotalCount = 0;
-
-    for (const FInventoryTabPage& Page : InventoryPages)
-    {
-        for (const FInventorySlot& Slot : Page.Slots)
-        {
-            if (Slot.ItemTag == ItemTag)
-            {
-                TotalCount += Slot.Count;
-            }
-        }
-    }
-
-    return TotalCount;
+	if (!ItemTag.IsValid())
+		return 0;
+	int64 TotalCount = 0;
+	for (const FInventoryTabPage& Page : InventoryPages)
+		for (const FInventorySlot& Slot : Page.Slots)
+			if (Slot.ItemTag == ItemTag)
+			{
+				TotalCount += FMath::Max(0, Slot.Count);
+				if (TotalCount >= MAX_int32)
+					return MAX_int32;
+			}
+	return static_cast<int32>(TotalCount);
 }
 
 void UInventoryComponent::BroadcastShipUpgradeInventoryChanged()

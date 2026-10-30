@@ -69,14 +69,12 @@ ECraftingAvailability UCraftingComponent::EvaluateAvailability(const FCraftingRe
 	{
 		return ECraftingAvailability::MissingIngredients;
 	}
-	for (const FCraftingItemStack& Ingredient : Recipe.Ingredients)
-	{
-		const int64 Required = static_cast<int64>(Ingredient.Quantity) * CraftCount;
-		if (Required > MAX_int32 || GetOwnedItemCount(Ingredient.ItemTag) < Required)
-		{
+	TArray<FCraftingItemStack> Costs;
+	if (!BuildCosts(Recipe, CraftCount, Costs))
+		return ECraftingAvailability::Disabled;
+	for (const FCraftingItemStack& Cost : Costs)
+		if (GetOwnedItemCount(Cost.ItemTag) < Cost.Quantity)
 			return ECraftingAvailability::MissingIngredients;
-		}
-	}
 	return ECraftingAvailability::Available;
 }
 
@@ -189,11 +187,12 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 	{
 		OutDetails.bIngredientsVisible = true;
 	}
-	int32 MaxCraftable = MAX_int32;
-	if (Recipe->bConsumeRecipeItem && Recipe->RequiredRecipeItemTag.IsValid())
-	{
-		MaxCraftable = GetOwnedItemCount(Recipe->RequiredRecipeItemTag);
-	}
+	TArray<FCraftingItemStack> UnitCosts;
+	if (!BuildCosts(*Recipe, 1, UnitCosts))
+		return false;
+	int32 MaxCraftable = FMath::Max(1, MaxCraftCountPerRequest);
+	for (const FCraftingItemStack& Cost : UnitCosts)
+		MaxCraftable = FMath::Min(MaxCraftable, GetOwnedItemCount(Cost.ItemTag) / Cost.Quantity);
 	for (const FCraftingItemStack& Ingredient : Recipe->Ingredients)
 	{
 		FCraftingIngredientView View;
@@ -210,7 +209,7 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 			MaxCraftable = FMath::Min(MaxCraftable, GetOwnedItemCount(Ingredient.ItemTag) / Ingredient.Quantity);
 		}
 	}
-	OutDetails.MaxCraftableCount = MaxCraftable == MAX_int32 ? MaxCraftCountPerRequest : MaxCraftable;
+	OutDetails.MaxCraftableCount = MaxCraftable;
 	return true;
 }
 

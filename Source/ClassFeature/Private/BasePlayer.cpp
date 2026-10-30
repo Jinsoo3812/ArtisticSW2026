@@ -2406,7 +2406,10 @@ void ABasePlayer::HandleEquipmentAttachNotify()
 
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
 {
-	if (!CanMutateLifeGameplay()) return;
+	if (!CanMutateLifeGameplay() || !IsAllowedRemoteInputEvent(EventTag))
+		return;
+	Payload.Instigator = this;
+	Payload.Target = nullptr;
 	// 서버의 ASC에서 이벤트를 발생시켜 WaitGameplayEvent 태스크를 깨웁니다.
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventTag, Payload);
 }
@@ -4028,4 +4031,14 @@ void ABasePlayer::PrepareForHealthDeath()
  else if (AShip* Ship = Cast<AShip>(GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == this) Ship->ForceDisembark();
  SetMountedDamageMode(false);
  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=MountedLethalExitComplete Player=%s Controller=%s Parent=%s"), *GetName(), *GetNameSafe(GetController()), *GetNameSafe(GetAttachParentActor()));
+}
+
+bool ABasePlayer::IsAllowedRemoteInputEvent(FGameplayTag EventTag)
+{
+	// This RPC forwards mouse input, never client-authored gameplay outcomes.
+	return EventTag.MatchesTagExact(Key_Default_Mouse_LeftClick) ||
+	       EventTag.MatchesTagExact(Key_Default_Mouse_LeftClick_Released) ||
+	       EventTag.MatchesTagExact(Key_Default_Mouse_RightClick) ||
+	       EventTag.MatchesTagExact(Key_Default_Mouse_RightClick_Released) ||
+	       EventTag.MatchesTagExact(Key_Default_Mouse_WheelUp) || EventTag.MatchesTagExact(Key_Default_Mouse_WheelDown);
 }

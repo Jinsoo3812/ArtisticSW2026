@@ -22,8 +22,8 @@ void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle H
       AvailableSubMunitions.Empty();
 
       // Find available sub-munitions from Inventory
-      const TArray<FInventorySlot>& Materials = Inv->GetSlots();
-      for (const FInventorySlot& Entry : Materials)
+	  const TArray<FInventorySlot>& Materials = Inv->GetSlots(EInventoryTab::Material);
+	  for (const FInventorySlot& Entry : Materials)
       {
           if (Entry.ItemTag.MatchesTag(Item_Material_Submunition) && Entry.Count > 0)
           {
@@ -170,80 +170,81 @@ void UGA_ThrowClusterGrenade::DrawTrajectory() {
 }
 
 void UGA_ThrowClusterGrenade::OnThrowEventReceived(FGameplayEventData Payload) {
-  ABasePlayer *Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-  UAbilitySystemComponent *ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!IsActive() || !bReleaseRequested || bProjectileCommitted)
+		return;
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 
-  if (!Player || !ASC || !IsValid(Player->EquippedItem))
-    return;
+	if (!Player || !ASC || !IsValid(Player->EquippedItem))
+		return;
 
-  if (Player->HasAuthority()) {
-    UClass *SpawnClass = Player->EquippedItem->GetSpawnClass();
-    UStaticMesh *ItemMesh = Player->EquippedItem->GetStaticMesh();
+	if (Player->HasAuthority())
+	{
+		UClass* SpawnClass = Player->EquippedItem->GetSpawnClass();
+		UStaticMesh* ItemMesh = Player->EquippedItem->GetStaticMesh();
 
-    if (!SpawnClass ||
-        !SpawnClass->IsChildOf(AGrenadeProjectile::StaticClass()))
-      return;
+		if (!SpawnClass || !SpawnClass->IsChildOf(AGrenadeProjectile::StaticClass()))
+			return;
 
-    FVector LaunchDir = Player->GetBaseAimRotation().Vector();
-    LaunchDir.Z += Upper;
-    LaunchDir.Normalize();
-    FVector LaunchVelocity = LaunchDir * ThrowSpeed;
+		UInventoryComponent* Inventory = Player->GetInventoryComponent();
+		if (!Inventory || !AvailableSubMunitions.IsValidIndex(CurrentSelectionIndex))
+			return;
+		const FGameplayTag SelectedTag = AvailableSubMunitions[CurrentSelectionIndex];
+		const TSubclassOf<ASubMunitionProjectile>* SubClass = SubMunitionClassMap.Find(SelectedTag);
+		if (!SubClass || !*SubClass || Inventory->GetItemCount(SelectedTag) < 1 ||
+		    !SpawnClass->IsChildOf(AClusterGrenadeProjectile::StaticClass()))
+			return;
+		FVector LaunchDir = Player->GetBaseAimRotation().Vector();
+		LaunchDir.Z += Upper;
+		LaunchDir.Normalize();
+		FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-    FVector SpawnLocation = Player->EquippedItem->GetActorLocation();
-    FTransform SpawnTransform(LaunchVelocity.Rotation(), SpawnLocation);
+		FVector SpawnLocation = Player->EquippedItem->GetActorLocation();
+		FTransform SpawnTransform(LaunchVelocity.Rotation(), SpawnLocation);
 
-    FGameplayEffectSpecHandle DamageSpecHandle;
-    if (DamageEffectClass) {
-      FGameplayEffectContextHandle ContextHandle =
-          USWCombatEffectContextLibrary::MakeCombatEffectContext(ASC, Player, Player);
-      DamageSpecHandle =
-          ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
-    }
+		FGameplayEffectSpecHandle DamageSpecHandle;
+		if (DamageEffectClass)
+		{
+			FGameplayEffectContextHandle ContextHandle =
+			    USWCombatEffectContextLibrary::MakeCombatEffectContext(ASC, Player, Player);
+			DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
+		}
 
-    AGrenadeProjectile *Grenade =
-        GetWorld()->SpawnActorDeferred<AGrenadeProjectile>(
-            SpawnClass, SpawnTransform, Player, Player,
-            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		AGrenadeProjectile* Grenade = GetWorld()->SpawnActorDeferred<AGrenadeProjectile>(
+		    SpawnClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
-    if (Grenade) {
-      // Set SubMunition Class via Selected Tag and Consume from Inventory
-      AClusterGrenadeProjectile* ClusterGrenade = Cast<AClusterGrenadeProjectile>(Grenade);
-      if (ClusterGrenade && AvailableSubMunitions.IsValidIndex(CurrentSelectionIndex))
-      {
-          FGameplayTag SelectedTag = AvailableSubMunitions[CurrentSelectionIndex];
-          UE_LOG(LogTemp, Log, TEXT("UGA_ThrowClusterGrenade::OnThrowEventReceived : Firing with Submunition Tag: %s"), *SelectedTag.ToString());
-          
-          if (Player->HasAuthority())
-          {
-              Player->GetInventoryComponent()->RemoveMaterial(SelectedTag, 1);
-          }
+		if (Grenade)
+		{
+			if (!Inventory->RemoveMaterial(SelectedTag, 1))
+			{
+				Grenade->Destroy();
+				return;
+			}
+			bProjectileCommitted = true;
+			CastChecked<AClusterGrenadeProjectile>(Grenade)->SetSubMunitionClass(*SubClass);
 
-          TSubclassOf<ASubMunitionProjectile>* SubClassPtr = SubMunitionClassMap.Find(SelectedTag);
-          if (SubClassPtr && *SubClassPtr)
-          {
-              UE_LOG(LogTemp, Log, TEXT("UGA_ThrowClusterGrenade::OnThrowEventReceived : Found class %s in map. Injecting..."), *(*SubClassPtr)->GetName());
-              ClusterGrenade->SetSubMunitionClass(*SubClassPtr);
-          }
-          else
-          {
-              UE_LOG(LogTemp, Warning, TEXT("UGA_ThrowClusterGrenade::OnThrowEventReceived : Could NOT find class for Tag %s in SubMunitionClassMap!"), *SelectedTag.ToString());
-          }
-      }
+			Grenade->SetInstigator(Player);
+			Grenade->SetOwner(Player);
+			Grenade->DamageEffectSpecHandle = DamageSpecHandle;
+			Grenade->SetGrenadeMesh(ItemMesh);
 
-      Grenade->SetInstigator(Player);
-      Grenade->SetOwner(Player);
-      Grenade->DamageEffectSpecHandle = DamageSpecHandle;
-      Grenade->SetGrenadeMesh(ItemMesh);
+			// === 추가된 부분 ===
+			// GA에서 설정한 PredictedSplitTime을 투사체의 실제 폭발 타이머인
+			// ExplosionDelay에 주입
+			Grenade->ExplosionDelay = PredictedSplitTime;
 
-      // === 추가된 부분 ===
-      // GA에서 설정한 PredictedSplitTime을 투사체의 실제 폭발 타이머인
-      // ExplosionDelay에 주입
-      Grenade->ExplosionDelay = PredictedSplitTime;
+			Grenade->FinishSpawning(SpawnTransform);
+			if (!IsValid(Grenade))
+			{
+				Inventory->AddMaterial(SelectedTag, 1);
+				EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+				return;
+			}
+			Grenade->LaunchProjectile(LaunchVelocity);
+			Player->UseEquippedItem(true);
+		}
 
-      Grenade->FinishSpawning(SpawnTransform);
-      Grenade->LaunchProjectile(LaunchVelocity);
-    }
-
-    Player->UseEquippedItem(true);
-  }
+		if (!Grenade)
+			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	}
 }

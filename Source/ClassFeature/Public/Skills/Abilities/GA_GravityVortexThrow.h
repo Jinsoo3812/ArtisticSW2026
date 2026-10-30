@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "Skills/PlayerSkillGameplayAbility.h"
 #include "GA_GravityVortexThrow.generated.h"
 
@@ -155,4 +156,7 @@ private:
 	FVector LastWaterPreviewCenter = FVector::ZeroVector;
 	float LastWaterPreviewRadius = 0.0f;
 	bool bWaterPreviewEnabled = false;
+
+  private:
+	FSWOwnedLooseGameplayTags OwnedStateTags;
 };

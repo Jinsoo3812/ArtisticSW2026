@@ -92,7 +92,7 @@ bool FSwimmingCabinFeetIntegrationTest::RunTest(const FString& Parameters)
 	Movement->SetMovementMode(MOVE_Custom, uint8(ECustomMovementMode::CMOVE_Swimming));
 	Movement->Velocity.Z = 200.0f;
 	Swim->SetVerticalSwimInput(-1.0f);
-	ASC->AddLooseGameplayTag(State_Swimming);
+	Swim->ApplySwimmingGameplayState(true);
 	Swim->CheckWaterTransitions(0);
 	TestFalse(TEXT("Feet entering cabin stops existing swimming without floor contact"), Swim->IsCustomSwimming());
 	TestFalse(TEXT("Cabin does not impose shallow water slowdown"), Swim->IsInShallowWater());

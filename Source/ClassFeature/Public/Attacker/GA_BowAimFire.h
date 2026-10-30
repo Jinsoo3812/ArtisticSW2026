@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
 #include "Combat/PlayerAimComponent.h"
 #include "Item/Projectiles/ProjectileShotComponent.h"
@@ -156,4 +157,7 @@ protected:
 	bool bHasFiredCurrentShot = false;
 	bool bHasReceivedNockNotify = false;
 	bool bOwnsServerPoseRefresh = false;
+
+  private:
+	FSWOwnedLooseGameplayTags OwnedStateTags;
 };

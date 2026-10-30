@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
 #include "GameplayEffectTypes.h"
 #include "GA_PlayerBasicAttack.generated.h"
@@ -106,4 +107,7 @@ private:
 	bool bHitScanActive = false;
 	bool bAttackFinished = false;
 	bool bServerCombatPoseRefreshAcquired = false;
+
+  private:
+	FSWOwnedLooseGameplayTags OwnedStateTags;
 };

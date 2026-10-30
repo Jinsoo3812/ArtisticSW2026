@@ -20,6 +20,7 @@ public class ClassFeatureEditor : ModuleRules
 			"EnhancedInput",
 			"InputCore",
 			"GameplayTags",
+			"GameplayAbilities",
 			"UnrealEd",
 			"Kismet",
 			"BlueprintGraph",
