@@ -1822,9 +1822,9 @@ void ABasePlayerController::ApplyLocalDeathFlow()
  }
  if (bBlocked)
  {
-  if (!DeathFlowWidget && GetLocalPlayer() && GetWorld()->GetGameViewport())
+  if (!DeathFlowWidget && DeathFlowWidgetClass && GetLocalPlayer() && GetWorld()->GetGameViewport())
   {
-   DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, USWDeathFlowWidget::StaticClass());
+   DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, DeathFlowWidgetClass);
    if (DeathFlowWidget) DeathFlowWidget->AddToViewport(1000);
   }
   if (bGameOver)

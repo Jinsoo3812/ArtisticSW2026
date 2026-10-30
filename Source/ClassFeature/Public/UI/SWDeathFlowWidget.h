@@ -12,8 +12,9 @@ public:
 protected:
  virtual void NativeOnInitialized() override;
  UFUNCTION() void RetryClicked();
- UPROPERTY() TObjectPtr<class UTextBlock> WaitingText;
- UPROPERTY() TObjectPtr<class UBorder> GameOverPanel;
- UPROPERTY() TObjectPtr<class UTextBlock> StatusText;
- UPROPERTY() TObjectPtr<class UButton> RetryButton;
+ UPROPERTY(meta = (BindWidget)) TObjectPtr<class UTextBlock> WaitingText;
+ UPROPERTY(meta = (BindWidget)) TObjectPtr<class UBorder> PersonalDeathPanel;
+ UPROPERTY(meta = (BindWidget)) TObjectPtr<class UBorder> GameOverPanel;
+ UPROPERTY(meta = (BindWidget)) TObjectPtr<class UTextBlock> StatusText;
+ UPROPERTY(meta = (BindWidget)) TObjectPtr<class UButton> RetryButton;
 };

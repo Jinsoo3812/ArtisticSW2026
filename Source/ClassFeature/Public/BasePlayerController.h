@@ -151,6 +151,9 @@ private:
 	uint32 CameraRebufferCount = 0;
 	uint32 CameraCutCount = 0;
 	int32 LocalObservedRestoreGeneration = -1;
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Death")
+	TSubclassOf<class USWDeathFlowWidget> DeathFlowWidgetClass;
+
 	UPROPERTY(Transient) TObjectPtr<class USWDeathFlowWidget> DeathFlowWidget;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;
 	ESWSessionLifePhase LocalSessionPhase = ESWSessionLifePhase::Playing;
