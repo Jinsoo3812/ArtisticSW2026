@@ -1,0 +1,147 @@
+{
+  "date": "2026-10-28",
+  "engine": "5.7.4",
+  "profile_volume_before": 0.55,
+  "profile_volume_after": 0.72,
+  "full_entries": {
+    "BP_Player_Woman_C_0/NetMode2": 1,
+    "BP_Player_Woman_C_0/NetMode3": 1,
+    "BP_Player_Man_C_0/NetMode3": 1,
+    "BP_Player_Man_C_0/NetMode2": 1
+  },
+  "recordings": [
+    {
+      "file": "network_verified_character0_entry_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 2.7093333333333334,
+      "rms": 0.0136425431609085,
+      "peak": 0.186798095703125,
+      "clipped_samples": 0,
+      "active_samples": 171166
+    },
+    {
+      "file": "network_verified_character0_entry_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 3.456,
+      "rms": 0.012634217007878212,
+      "peak": 0.16375732421875,
+      "clipped_samples": 0,
+      "active_samples": 230298
+    },
+    {
+      "file": "network_verified_character1_entry_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 2.432,
+      "rms": 0.01545564762736357,
+      "peak": 0.162139892578125,
+      "clipped_samples": 0,
+      "active_samples": 192208
+    },
+    {
+      "file": "network_verified_character1_entry_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 1.9626666666666666,
+      "rms": 0.01586679242165871,
+      "peak": 0.165496826171875,
+      "clipped_samples": 0,
+      "active_samples": 148432
+    }
+  ],
+  "imported_pcm": [
+    {
+      "wave": "CharacterEntry_PlungeA",
+      "frames": 67428,
+      "pcm_max_error_lsb": 1.0,
+      "peak": 0.68463134765625
+    },
+    {
+      "wave": "CharacterEntry_PlungeB",
+      "frames": 85174,
+      "pcm_max_error_lsb": 1.0,
+      "peak": 0.819976806640625
+    },
+    {
+      "wave": "CharacterWaterBody",
+      "frames": 67586,
+      "pcm_max_error_lsb": 1.0,
+      "peak": 0.819976806640625
+    }
+  ],
+  "preserved_cannon_foley_swim_hashes": true,
+  "automation": [
+    {
+      "name": "SW.Audio.AuthoredAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.CoverageAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.EnemyAuthoredContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.ShipMotionAndAssets",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.SurfaceAuthoring",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Audio.SurfaceSwimContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.AuthoredAnimationPlayback",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.ContactPolicies",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.CrowdAdmission",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.DedicatedServer",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.EventFallbackRouting",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.LifetimeAndMissingContent",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.LocomotionAssetContacts",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.ProfileValidation",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceFallback",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceSwimAdmission",
+      "result": "Success"
+    },
+    {
+      "name": "SW.Foley.SurfaceTraceAndSelection",
+      "result": "Success"
+    }
+  ],
+  "scope": "Controlled live falls of both players in two-peer PIE; not a subjective timbre approval or all environmental mixes.",
+  "saved_assets_cold_reloaded": true
+}

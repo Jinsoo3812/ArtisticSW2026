@@ -2,6 +2,12 @@
 
 
 #include "BasePlayer.h"
+#include "GAS/Ability/GA_UseConsumable.h"
+#include "Effects/ConsumableGameplayEffects.h"
+#include "UObject/StrongObjectPtr.h"
+#include "Development/SWDevelopmentOptions.h"
+#include "Components/SWFoleyComponent.h"
+#include "Audio/SWFoleyAudioProfile.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
 #include "Components/CapsuleComponent.h"
 #include "Combat/PlayerAimComponent.h"
@@ -115,6 +121,11 @@ int32 ABasePlayer::ResolveDefaultMappingPriority(
 ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
+	FoleyComponent = CreateDefaultSubobject<USWFoleyComponent>(TEXT("Foley"));
+	FoleyComponent->bUseAnimationDrivenSurfaceStrokes = true;
+	FoleyComponent->ProfileOverride = TSoftObjectPtr<USWFoleyAudioProfile>(FSoftObjectPath(
+		TEXT("/Game/Audio/Foley/DA_Mannequin_Foley.DA_Mannequin_Foley")));
+
 	// 카메라 붐(SpringArm) 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -203,7 +214,7 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
 {
 	if (!CanMutateLifeGameplay()) return false;
-	if (bBypassSkillRequirementsForTesting)
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillFree))
 	{
 		return GetPlayerSkillComponent()
 			&& GetPlayerSkillComponent()->FindSkillDefinition(SkillTag) != nullptr;
@@ -217,7 +228,7 @@ bool ABasePlayer::TryConsumeSkillUse(const FGameplayTag& SkillTag)
 {
 	if (!CanMutateLifeGameplay()) return false;
 	UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
-	if (bBypassSkillRequirementsForTesting)
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillFree))
 	{
 		return HasAuthority() && SkillComponent && SkillComponent->FindSkillDefinition(SkillTag) != nullptr;
 	}
@@ -246,7 +257,10 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	if (HasAuthority() && DialogueComponent)
+	{
 		DialogueComponent->OnFinalDepartureRequested.BindUObject(this, &ABasePlayer::HandleFinalDepartureRequested);
+		DialogueComponent->OnBossQuestAccepted.BindUObject(this, &ABasePlayer::HandleBossQuestAccepted);
+	}
 	InitializeSwimmingAnimLayers();
 
 	// Apply presentation-only smoothing after Blueprint defaults are loaded.
@@ -299,7 +313,8 @@ void ABasePlayer::BeginPlay()
 
 void ABasePlayer::GiveStartingItemsForTest()
 {
-	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent)
+	const USWDevelopmentSettings* Settings = GetDefault<USWDevelopmentSettings>();
+	if (!HasAuthority() || !Settings->bGiveStartingItems || !InventoryComponent)
 	{
 		return;
 	}
@@ -313,7 +328,7 @@ void ABasePlayer::GiveStartingItemsForTest()
 	}
 
 	TSet<FGameplayTag> ProcessedTags;
-	for (const FStartingInventoryItemForTest& StartingItem : StartingItemsForTest)
+	for (const FStartingInventoryItemForTest& StartingItem : Settings->StartingItems)
 	{
 		if (!StartingItem.ItemTag.IsValid() || StartingItem.Count <= 0)
 		{
@@ -369,6 +384,7 @@ void ABasePlayer::GiveStartingItemsForTest()
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (DialogueComponent) DialogueComponent->OnFinalDepartureRequested.Unbind();
+	if (DialogueComponent) DialogueComponent->OnBossQuestAccepted.Unbind();
 	ResetAutomaticSwimDiveInput();
 
 	if (InventoryComponent)
@@ -393,6 +409,18 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 		GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
 		return Progress->TryFinalDeparture(GetWorld(), this);
 	return false;
+}
+
+void ABasePlayer::HandleBossQuestAccepted(AActor* Requester)
+{
+	if (!HasAuthority() || Requester != this || !GetGameInstance()) return;
+	UClassFeatureRoomProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>();
+	if (!Progress || !Progress->TryReturn(GetWorld(), this))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Boss quest accepted, but return could not start for %s"), *GetName());
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			PC->ClientMessage(TEXT("Quest accepted. Return failed; retry returning before departure."));
+	}
 }
 
 bool ABasePlayer::IsMoveInputIgnored() const
@@ -1054,6 +1082,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.LandStartGroundSpeed = AnimStateComponent->LandStartGroundSpeed;
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
+	NewSnapshot.EventServerTimeSeconds = LocomotionStateSnapshot.EventServerTimeSeconds;
 	NewSnapshot.LastLocomotionEvent = LocomotionStateSnapshot.LastLocomotionEvent;
 	NewSnapshot.bShouldTurnInPlace = AnimStateComponent->bShouldTurnInPlace;
 	NewSnapshot.DesiredFacingDeltaYaw = AnimStateComponent->DesiredFacingDeltaYaw;
@@ -1095,7 +1124,7 @@ void ABasePlayer::ApplyShipUpgradeTestFlags()
 		if (UShipUpgradeComponent* UpgradeComponent = BasePlayerState->GetShipUpgradeComponent())
 		{
 			UpgradeComponent->SetIgnoreMaterialCostsForTesting(
-				bIgnoreShipUpgradeMaterialCostsForTest);
+				false); // Legacy component flag is no longer a player BP setting.
 		}
 	}
 }
@@ -1105,7 +1134,7 @@ bool ABasePlayer::IsIgnoringShipUpgradeMaterialCostsForTest() const
 #if UE_BUILD_SHIPPING
 	return false;
 #else
-	return bIgnoreShipUpgradeMaterialCostsForTest;
+	return SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::ShipUpgradeFree);
 #endif
 }
 
@@ -1150,6 +1179,7 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			if (PreviousLife != this && PreviousLife->GetHealthComponent()) PreviousLife->GetHealthComponent()->UninitializeFromAbilitySystem();
 	}
 	Super::PossessedBy(NewController);
+	if (FoleyComponent) { FoleyComponent->PrepareLocalAudio(); }
 	ResetAutomaticSwimDiveInput();
 
 	if (AnimStateComponent)
@@ -1367,6 +1397,7 @@ void ABasePlayer::OnRep_PlayerState()
 void ABasePlayer::PawnClientRestart()
 {
 	Super::PawnClientRestart();
+	if (FoleyComponent) { FoleyComponent->PrepareLocalAudio(); }
 
 	// 현재 폰을 조종하는 컨트롤러
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -1569,22 +1600,47 @@ void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
 	}
 
 	const FInventoryCursorItem& CursorItem = InventoryComponent->GetCursorItem();
-	if (!CursorItem.IsValid() || !CanQuickSlotAcceptItem(QuickSlotIndex, CursorItem.ItemTag))
+	if (!CursorItem.IsValid())
 	{
 		return;
 	}
 
-	const FGameplayTag AssignedItemTag = CursorItem.ItemTag;
+	AssignQuickSlotItem(QuickSlotIndex, CursorItem.ItemTag);
+}
+
+void ABasePlayer::AssignQuickSlotItem(int32 QuickSlotIndex, FGameplayTag ItemTag)
+{
+	if (!HasAuthority())
+	{
+		ServerAssignQuickSlotItem(QuickSlotIndex, ItemTag);
+		return;
+	}
+
+	if (!InventoryComponent || !CanQuickSlotAcceptItem(QuickSlotIndex, ItemTag))
+	{
+		return;
+	}
+
+	const FInventoryCursorItem& CursorItem = InventoryComponent->GetCursorItem();
+	const bool bMatchesCursorItem = CursorItem.IsValid() && CursorItem.ItemTag == ItemTag;
+	if (!bMatchesCursorItem && InventoryComponent->GetMaterialCount(ItemTag) <= 0)
+	{
+		return;
+	}
+
 	for (FQuickSlotReference& Slot : QuickSlots)
 	{
-		if (Slot.ItemTag == AssignedItemTag)
+		if (Slot.ItemTag == ItemTag)
 		{
 			Slot.ItemTag = FGameplayTag();
 		}
 	}
 
-	QuickSlots[QuickSlotIndex].ItemTag = AssignedItemTag;
-	InventoryComponent->ReturnCursorToOriginalSlot();
+	QuickSlots[QuickSlotIndex].ItemTag = ItemTag;
+	if (bMatchesCursorItem)
+	{
+		InventoryComponent->ReturnCursorToOriginalSlot();
+	}
 	OnQuickSlotsChanged.Broadcast();
 
 	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
@@ -1597,6 +1653,12 @@ void ABasePlayer::ServerAssignQuickSlotFromInventory_Implementation(int32 QuickS
 {
 	if (!CanMutateLifeGameplay()) return;
 	AssignQuickSlotFromInventory(QuickSlotIndex);
+}
+
+void ABasePlayer::ServerAssignQuickSlotItem_Implementation(int32 QuickSlotIndex, FGameplayTag ItemTag)
+{
+	if (!CanMutateLifeGameplay()) return;
+	AssignQuickSlotItem(QuickSlotIndex, ItemTag);
 }
 
 void ABasePlayer::ClearQuickSlot(int32 QuickSlotIndex)
@@ -1800,6 +1862,21 @@ bool ABasePlayer::HasSelectedQuickSlotConsumable() const
 		&& Items && Items->GetCategoryTag(Slot.ItemTag).MatchesTag(Item_Category_Consumable);
 }
 
+float ABasePlayer::GetConsumableCooldownRemaining(FGameplayTag ItemTag) const
+{
+    if (!CachedAbilitySystemComponent.IsValid() || !GetWorld()) return 0.f;
+    const UItemSubsystem* Items = GetWorld()->GetSubsystem<UItemSubsystem>();
+    const FItemDefinition* Item = Items ? Items->GetItemDefinition(ItemTag) : nullptr;
+    FConsumableDefinition Definition;
+    if (!Item || !FConsumableDefinition::Resolve(ItemTag, Item->Consumable, Definition)) return 0.f;
+    const FGameplayTag Tag = Definition.IsRecovery() ? ConsumableTags::CooldownRecovery : ConsumableTags::CooldownUtility;
+    float Remaining = 0.f;
+    for (float Time : CachedAbilitySystemComponent->GetActiveEffectsTimeRemaining(
+        FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(Tag))))
+        Remaining = FMath::Max(Remaining, Time);
+    return Remaining;
+}
+
 void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
 {
 	if (!CanPerformCombatAction())
@@ -1911,31 +1988,16 @@ bool ABasePlayer::EquipInventoryItem(FGameplayTag ItemTag)
 
 bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
 {
-	if (!HasAuthority() || !InventoryComponent || !CachedAbilitySystemComponent.IsValid())
-	{
-		return false;
-	}
+    if (!HasAuthority() || !CanPerformCombatAction() || !InventoryComponent
+        || InventoryComponent->IsItemUseInProgress() || InventoryComponent->GetItemCount(ItemTag) < 1
+        || !CachedAbilitySystemComponent.IsValid()) return false;
 
-	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
-	if (!ItemSubsystem || !ItemSubsystem->GetCategoryTag(ItemTag).MatchesTag(Item_Category_Consumable))
-	{
-		return false;
-	}
-
-	TSubclassOf<UGameplayAbility> AbilityClass = ItemSubsystem->GetGrantedAbilityClass(ItemTag).LoadSynchronous();
-	if (!AbilityClass)
-	{
-		return false;
-	}
-
-	FGameplayAbilitySpec AbilitySpec(AbilityClass, 1, INDEX_NONE, this);
-	const FGameplayAbilitySpecHandle Handle = CachedAbilitySystemComponent->GiveAbilityAndActivateOnce(AbilitySpec);
-	if (!Handle.IsValid())
-	{
-		return false;
-	}
-
-	return InventoryComponent->RemoveMaterial(ItemTag, 1);
+    // A per-request source preserves identity even if selection changes during an effect callback.
+    TStrongObjectPtr<UConsumableUseRequest> Request(NewObject<UConsumableUseRequest>(this));
+    Request->ItemTag = ItemTag;
+    FGameplayAbilitySpec Spec(UGA_UseConsumable::StaticClass(), 1, INDEX_NONE, Request.Get());
+    CachedAbilitySystemComponent->GiveAbilityAndActivateOnce(Spec);
+    return Request->bSucceeded;
 }
 
 void ABasePlayer::HandleInventoryContentsChanged()
@@ -2042,8 +2104,29 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 	}
 }
 
+void ABasePlayer::LogCombatInputDiagnostic(const TCHAR* Event, FGameplayTag InputTag) const
+{
+	if (!UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled()) return;
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	const UEnhancedInputLocalPlayerSubsystem* InputSubsystem = PC && PC->GetLocalPlayer()
+		? PC->GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const FString Detail = FString::Printf(TEXT("Player=%s Input=%s Controller=%s Local=%d LifeAllowed=%d CombatAllowed=%d CustomSwim=%d Dodging=%d HitReacting=%d EquipmentTransition=%d Movement=%d/%d DefaultIMC=%s Applied=%d QuickSlotIMC=%s Applied=%d VortexInput=%d AreaSlowInput=%d"),
+		*GetName(), *InputTag.ToString(), *GetNameSafe(GetController()), IsLocallyControlled(), CanMutateLifeGameplay(), CanPerformCombatAction(),
+		SwimmingComponent && SwimmingComponent->IsCustomSwimming(), bIsDodging, bIsHitReacting, IsEquipmentTransitioning(),
+		Movement ? static_cast<int32>(Movement->MovementMode) : -1, Movement ? Movement->CustomMovementMode : 0,
+		*GetNameSafe(DefaultIMC), InputSubsystem && DefaultIMC && InputSubsystem->HasMappingContext(DefaultIMC),
+		*GetNameSafe(QuickSlotIMC), InputSubsystem && QuickSlotIMC && InputSubsystem->HasMappingContext(QuickSlotIMC),
+		bEnableGravityVortexSkillInput, bEnableAreaSlowSkillInput);
+	if (const UWeaponInputAbilitySystemComponent* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->LogInputDiagnostic(Event, Detail);
+	else
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=%s ASC=%s %s"), Event, *GetNameSafe(CachedAbilitySystemComponent.Get()), *Detail);
+}
+
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
+	LogCombatInputDiagnostic(TEXT("ActionPressed"), InputTag);
 	if (!CanMutateLifeGameplay()) return;
 	const bool bInteractionInput = InputTag.MatchesTagExact(Key_Default_F);
 	const bool bLogInteraction = bInteractionInput && IsStorageInteractionLoggingEnabled();
@@ -2100,12 +2183,14 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
+	LogCombatInputDiagnostic(TEXT("ActionReleased"), InputTag);
 	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
 		InputASC->InputTagReleased(InputTag);
 }
 
 void ABasePlayer::OnGravityVortexSkillPressed()
 {
+	LogCombatInputDiagnostic(TEXT("VortexPressed"), Key_Skill_GravityVortex);
 	if (!bEnableGravityVortexSkillInput)
 	{
 		return;
@@ -2114,6 +2199,7 @@ void ABasePlayer::OnGravityVortexSkillPressed()
 		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex))
 	{
 		const FGameplayTagContainer SkillTags(GameplayAbility_Skill_GravityVortex);
+		LogCombatInputDiagnostic(TEXT("VortexCancelExisting"), Key_Skill_GravityVortex);
 		CachedAbilitySystemComponent->CancelAbilities(&SkillTags);
 		return;
 	}
@@ -2131,6 +2217,7 @@ void ABasePlayer::OnGravityVortexSkillReleased()
 
 void ABasePlayer::OnAreaSlowSkillPressed()
 {
+	LogCombatInputDiagnostic(TEXT("AreaSlowPressed"), Key_Skill_AreaSlow);
 	if (!bEnableAreaSlowSkillInput)
 	{
 		return;
@@ -2685,6 +2772,7 @@ void ABasePlayer::DoJumpStart()
 	{
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
+		LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 	}
 	else
 	{
@@ -2961,6 +3049,7 @@ void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 	// 이벤트 통보 (Multicast 대신 Snapshot에 변수 세팅)
 	LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 	LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
+	LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 }
 
 void ABasePlayer::Server_SetTurnInPlace_Implementation(bool bInTurnInPlace, float InFacingDeltaYaw, float InTargetActorYaw)
@@ -2989,6 +3078,7 @@ void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 	{
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::FallOff;
+		LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 	}
 }
 
@@ -3239,6 +3329,12 @@ void ABasePlayer::OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterru
 	bPendingCombatModeFromIntro = false;
 }
 
+void ABasePlayer::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+	if (FoleyComponent) { FoleyComponent->PlayJump(GetVelocity().Size2D()); }
+}
+
 void ABasePlayer::Landed(const FHitResult& Hit)
 {
 	const float ImpactFallSpeed = FMath::Max((AnimStateComponent ? AnimStateComponent->LastFallSpeed : 0.f), FMath::Abs(GetVelocity().Z));
@@ -3270,6 +3366,7 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 	{
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Landed;
+		LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 		// FallSpeed는 UpdateLocomotionStateSnapshot 시점에 LastFallSpeed로 복제됨
 	}
 }

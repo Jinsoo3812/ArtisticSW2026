@@ -1,0 +1,2176 @@
+{
+  "sash_minimum_front_gap_m": 0.01707214117050171,
+  "sash_behind_front_samples_total": 0,
+  "sash_vertices_tested_per_pose": 939,
+  "sash_face_centroids_per_pose": 1652,
+  "sash_edge_midpoints_per_pose": 2587,
+  "attachment_zone_reference_height_m": 1.15,
+  "samples": 240,
+  "using_actual_ue_component_bone_transforms": true,
+  "visibility_test": "Four directions; every fifth pants triangle centroid with reference height >0.68m. Does not prove all garment surfaces never intersect.",
+  "upper_pants_visible_total": 0,
+  "worst_upper_pants_visible": 0,
+  "rows": [
+    {
+      "sash_front_gap_m": 0.023819416761398315,
+      "sash_behind_front_samples": 0,
+      "time": 0.4000000059604645,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0123531404324653
+    },
+    {
+      "sash_front_gap_m": 0.023546278476715088,
+      "sash_behind_front_samples": 0,
+      "time": 0.5492202006280422,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0160560702046335
+    },
+    {
+      "sash_front_gap_m": 0.02340400218963623,
+      "sash_behind_front_samples": 0,
+      "time": 0.6251510977745056,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0174612061392043
+    },
+    {
+      "sash_front_gap_m": 0.023073017597198486,
+      "sash_behind_front_samples": 0,
+      "time": 0.7001521997153759,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.019023040118261
+    },
+    {
+      "sash_front_gap_m": 0.022872567176818848,
+      "sash_behind_front_samples": 0,
+      "time": 0.7751532979309559,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0204644594673775
+    },
+    {
+      "sash_front_gap_m": 0.022738993167877197,
+      "sash_behind_front_samples": 0,
+      "time": 0.8501543998718262,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0219041767300028
+    },
+    {
+      "sash_front_gap_m": 0.023280858993530273,
+      "sash_behind_front_samples": 0,
+      "time": 0.9251554980874062,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0232034415389584
+    },
+    {
+      "sash_front_gap_m": 0.02788570523262024,
+      "sash_behind_front_samples": 0,
+      "time": 1.0001567974686623,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0233282745984464
+    },
+    {
+      "sash_front_gap_m": 0.028250455856323242,
+      "sash_behind_front_samples": 0,
+      "time": 1.0751578994095325,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.02391431637781
+    },
+    {
+      "sash_front_gap_m": 0.02949538826942444,
+      "sash_behind_front_samples": 0,
+      "time": 1.1501586996018887,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0244899323813446
+    },
+    {
+      "sash_front_gap_m": 0.029304146766662598,
+      "sash_behind_front_samples": 0,
+      "time": 1.2251597978174686,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0250550676120613
+    },
+    {
+      "sash_front_gap_m": 0.02912077307701111,
+      "sash_behind_front_samples": 0,
+      "time": 1.3001607991755009,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0245673594749785
+    },
+    {
+      "sash_front_gap_m": 0.028940051794052124,
+      "sash_behind_front_samples": 0,
+      "time": 1.3751912973821163,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0238110038886195
+    },
+    {
+      "sash_front_gap_m": 0.028600752353668213,
+      "sash_behind_front_samples": 0,
+      "time": 1.4501923993229866,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0222554217530817
+    },
+    {
+      "sash_front_gap_m": 0.028467953205108643,
+      "sash_behind_front_samples": 0,
+      "time": 1.5252282992005348,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.021028322597763
+    },
+    {
+      "sash_front_gap_m": 0.028730005025863647,
+      "sash_behind_front_samples": 0,
+      "time": 1.8337743990123272,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.013933365960491
+    },
+    {
+      "sash_front_gap_m": 0.028491735458374023,
+      "sash_behind_front_samples": 0,
+      "time": 1.9087754003703594,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.011543380854698
+    },
+    {
+      "sash_front_gap_m": 0.028246372938156128,
+      "sash_behind_front_samples": 0,
+      "time": 1.9837764985859394,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.00913755016333
+    },
+    {
+      "sash_front_gap_m": 0.028208881616592407,
+      "sash_behind_front_samples": 0,
+      "time": 2.0587776005268097,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.007744277197114
+    },
+    {
+      "sash_front_gap_m": 0.02838730812072754,
+      "sash_behind_front_samples": 0,
+      "time": 2.1337786987423897,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0071458138418783
+    },
+    {
+      "sash_front_gap_m": 0.02837371826171875,
+      "sash_behind_front_samples": 0,
+      "time": 2.20877980068326,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.005809122092388
+    },
+    {
+      "sash_front_gap_m": 0.02835935354232788,
+      "sash_behind_front_samples": 0,
+      "time": 2.283780999481678,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0045939584506667
+    },
+    {
+      "sash_front_gap_m": 0.02834141254425049,
+      "sash_behind_front_samples": 0,
+      "time": 2.358781900256872,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0045642853950865
+    },
+    {
+      "sash_front_gap_m": 0.028329908847808838,
+      "sash_behind_front_samples": 0,
+      "time": 2.4337841980159283,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0054169435655487
+    },
+    {
+      "sash_front_gap_m": 0.028319954872131348,
+      "sash_behind_front_samples": 0,
+      "time": 2.5087852999567986,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.00625366850471
+    },
+    {
+      "sash_front_gap_m": 0.028326600790023804,
+      "sash_behind_front_samples": 0,
+      "time": 2.5837861001491547,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.006580739037694
+    },
+    {
+      "sash_front_gap_m": 0.02835783362388611,
+      "sash_behind_front_samples": 0,
+      "time": 2.6587871983647346,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.006852916880196
+    },
+    {
+      "sash_front_gap_m": 0.02831101417541504,
+      "sash_behind_front_samples": 0,
+      "time": 2.733788300305605,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.007645473436582
+    },
+    {
+      "sash_front_gap_m": 0.027923256158828735,
+      "sash_behind_front_samples": 0,
+      "time": 2.808809097856283,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0092984066175794
+    },
+    {
+      "sash_front_gap_m": 0.028194904327392578,
+      "sash_behind_front_samples": 0,
+      "time": 2.8838100992143154,
+      "speed": 1,
+      "actual_speed": 1.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.010719771113956
+    },
+    {
+      "sash_front_gap_m": 0.03607150912284851,
+      "sash_behind_front_samples": 0,
+      "time": 3.233815100044012,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.021380197162498
+    },
+    {
+      "sash_front_gap_m": 0.03634181618690491,
+      "sash_behind_front_samples": 0,
+      "time": 3.30881629884243,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.022726085001777
+    },
+    {
+      "sash_front_gap_m": 0.03658464550971985,
+      "sash_behind_front_samples": 0,
+      "time": 3.383817497640848,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0237458182853243
+    },
+    {
+      "sash_front_gap_m": 0.037134915590286255,
+      "sash_behind_front_samples": 0,
+      "time": 3.4588184989988804,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.024901228775461
+    },
+    {
+      "sash_front_gap_m": 0.0374474823474884,
+      "sash_behind_front_samples": 0,
+      "time": 3.5338196977972984,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0255969200576756
+    },
+    {
+      "sash_front_gap_m": 0.037755876779556274,
+      "sash_behind_front_samples": 0,
+      "time": 3.6088207997381687,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.025768923122614
+    },
+    {
+      "sash_front_gap_m": 0.03807613253593445,
+      "sash_behind_front_samples": 0,
+      "time": 3.683822199702263,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0256195593615107
+    },
+    {
+      "sash_front_gap_m": 0.03833135962486267,
+      "sash_behind_front_samples": 0,
+      "time": 3.758823499083519,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.024740890510796
+    },
+    {
+      "sash_front_gap_m": 0.03719612956047058,
+      "sash_behind_front_samples": 0,
+      "time": 3.83383259922266,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0234099289598526
+    },
+    {
+      "sash_front_gap_m": 0.03742137551307678,
+      "sash_behind_front_samples": 0,
+      "time": 3.908833798021078,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0216694619310065
+    },
+    {
+      "sash_front_gap_m": 0.032942235469818115,
+      "sash_behind_front_samples": 0,
+      "time": 3.9838347993791103,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.020228458828071
+    },
+    {
+      "sash_front_gap_m": 0.03283524513244629,
+      "sash_behind_front_samples": 0,
+      "time": 4.0588361993432045,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0181644597789696
+    },
+    {
+      "sash_front_gap_m": 0.03294810652732849,
+      "sash_behind_front_samples": 0,
+      "time": 4.133837498724461,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.016289279741326
+    },
+    {
+      "sash_front_gap_m": 0.03302690386772156,
+      "sash_behind_front_samples": 0,
+      "time": 4.208838399499655,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.01434996631978
+    },
+    {
+      "sash_front_gap_m": 0.03308230638504028,
+      "sash_behind_front_samples": 0,
+      "time": 4.283842500299215,
+      "speed": 10,
+      "actual_speed": 10.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0129448708028974
+    },
+    {
+      "sash_front_gap_m": 0.05119398236274719,
+      "sash_behind_front_samples": 0,
+      "time": 4.633848398923874,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.011934782690649
+    },
+    {
+      "sash_front_gap_m": 0.051141202449798584,
+      "sash_behind_front_samples": 0,
+      "time": 4.708849500864744,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0119402782475797
+    },
+    {
+      "sash_front_gap_m": 0.050743669271469116,
+      "sash_behind_front_samples": 0,
+      "time": 4.783850800246,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0122268461908646
+    },
+    {
+      "sash_front_gap_m": 0.05024439096450806,
+      "sash_behind_front_samples": 0,
+      "time": 4.858851600438356,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0127580634041906
+    },
+    {
+      "sash_front_gap_m": 0.04984760284423828,
+      "sash_behind_front_samples": 0,
+      "time": 4.933852598071098,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.013349391378642
+    },
+    {
+      "sash_front_gap_m": 0.04953563213348389,
+      "sash_behind_front_samples": 0,
+      "time": 5.008853800594807,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.014039536215584
+    },
+    {
+      "sash_front_gap_m": 0.04898098111152649,
+      "sash_behind_front_samples": 0,
+      "time": 5.083855099976063,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0156645404626508
+    },
+    {
+      "sash_front_gap_m": 0.04832378029823303,
+      "sash_behind_front_samples": 0,
+      "time": 5.158855900168419,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0181447105921753
+    },
+    {
+      "sash_front_gap_m": 0.04793307185173035,
+      "sash_behind_front_samples": 0,
+      "time": 5.233856998383999,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0199380601681325
+    },
+    {
+      "sash_front_gap_m": 0.046321749687194824,
+      "sash_behind_front_samples": 0,
+      "time": 5.308857999742031,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0216032363847467
+    },
+    {
+      "sash_front_gap_m": 0.0451333224773407,
+      "sash_behind_front_samples": 0,
+      "time": 5.383859299123287,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0232510226010794
+    },
+    {
+      "sash_front_gap_m": 0.044332802295684814,
+      "sash_behind_front_samples": 0,
+      "time": 5.458860300481319,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0249024787736616
+    },
+    {
+      "sash_front_gap_m": 0.04619070887565613,
+      "sash_behind_front_samples": 0,
+      "time": 5.536020997911692,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.027868397840874
+    },
+    {
+      "sash_front_gap_m": 0.047784268856048584,
+      "sash_behind_front_samples": 0,
+      "time": 5.611022099852562,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0300713826705494
+    },
+    {
+      "sash_front_gap_m": 0.048021018505096436,
+      "sash_behind_front_samples": 0,
+      "time": 5.686023198068142,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0325417752185375
+    },
+    {
+      "sash_front_gap_m": 0.07229489088058472,
+      "sash_behind_front_samples": 0,
+      "time": 6.036027900874615,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0341473138487647
+    },
+    {
+      "sash_front_gap_m": 0.07275962829589844,
+      "sash_behind_front_samples": 0,
+      "time": 6.111028999090195,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0271946787409028
+    },
+    {
+      "sash_front_gap_m": 0.07189065217971802,
+      "sash_behind_front_samples": 0,
+      "time": 6.186030101031065,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0209142687720054
+    },
+    {
+      "sash_front_gap_m": 0.07222810387611389,
+      "sash_behind_front_samples": 0,
+      "time": 6.261030897498131,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.018179796723771
+    },
+    {
+      "sash_front_gap_m": 0.07129156589508057,
+      "sash_behind_front_samples": 0,
+      "time": 6.336031697690487,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0155118652233703
+    },
+    {
+      "sash_front_gap_m": 0.06999856233596802,
+      "sash_behind_front_samples": 0,
+      "time": 6.411032598465681,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.01329179119438
+    },
+    {
+      "sash_front_gap_m": 0.06861311197280884,
+      "sash_behind_front_samples": 0,
+      "time": 6.486033499240875,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0117168230267053
+    },
+    {
+      "sash_front_gap_m": 0.06733524799346924,
+      "sash_behind_front_samples": 0,
+      "time": 6.561034798622131,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.012854745437021
+    },
+    {
+      "sash_front_gap_m": 0.06610363721847534,
+      "sash_behind_front_samples": 0,
+      "time": 6.6360356993973255,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.014821617594616
+    },
+    {
+      "sash_front_gap_m": 0.06498643755912781,
+      "sash_behind_front_samples": 0,
+      "time": 6.71103660017252,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.017264252040576
+    },
+    {
+      "sash_front_gap_m": 0.0639687180519104,
+      "sash_behind_front_samples": 0,
+      "time": 6.7860376983881,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.018907545503263
+    },
+    {
+      "sash_front_gap_m": 0.062744140625,
+      "sash_behind_front_samples": 0,
+      "time": 6.861038599163294,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0195629069270495
+    },
+    {
+      "sash_front_gap_m": 0.06145694851875305,
+      "sash_behind_front_samples": 0,
+      "time": 6.936039499938488,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.020860082110551
+    },
+    {
+      "sash_front_gap_m": 0.06062743067741394,
+      "sash_behind_front_samples": 0,
+      "time": 7.01104049757123,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.023567397347797
+    },
+    {
+      "sash_front_gap_m": 0.06243517994880676,
+      "sash_behind_front_samples": 0,
+      "time": 7.086041297763586,
+      "speed": 50,
+      "actual_speed": 50.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0243872714092506
+    },
+    {
+      "sash_front_gap_m": 0.09087163209915161,
+      "sash_behind_front_samples": 0,
+      "time": 7.436046499758959,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0643839746359136
+    },
+    {
+      "sash_front_gap_m": 0.09339118003845215,
+      "sash_behind_front_samples": 0,
+      "time": 7.511047497391701,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0699814465895936
+    },
+    {
+      "sash_front_gap_m": 0.09579852223396301,
+      "sash_behind_front_samples": 0,
+      "time": 7.586050897836685,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0691427264331534
+    },
+    {
+      "sash_front_gap_m": 0.09665444493293762,
+      "sash_behind_front_samples": 0,
+      "time": 7.661051698029041,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.061772186541769
+    },
+    {
+      "sash_front_gap_m": 0.09631872177124023,
+      "sash_behind_front_samples": 0,
+      "time": 7.736052799969912,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0504197730228255
+    },
+    {
+      "sash_front_gap_m": 0.09595757722854614,
+      "sash_behind_front_samples": 0,
+      "time": 7.811053898185492,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0365695470290723
+    },
+    {
+      "sash_front_gap_m": 0.09785938262939453,
+      "sash_behind_front_samples": 0,
+      "time": 7.886055000126362,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.020982819980387
+    },
+    {
+      "sash_front_gap_m": 0.09985271096229553,
+      "sash_behind_front_samples": 0,
+      "time": 7.961056098341942,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0077498662355167
+    },
+    {
+      "sash_front_gap_m": 0.10173672437667847,
+      "sash_behind_front_samples": 0,
+      "time": 8.036057200282812,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0066218156854068
+    },
+    {
+      "sash_front_gap_m": 0.10376891493797302,
+      "sash_behind_front_samples": 0,
+      "time": 8.111058101058006,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.011857445712612
+    },
+    {
+      "sash_front_gap_m": 0.10340994596481323,
+      "sash_behind_front_samples": 0,
+      "time": 8.18605899810791,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0142847493865563
+    },
+    {
+      "sash_front_gap_m": 0.10268887877464294,
+      "sash_behind_front_samples": 0,
+      "time": 8.261060200631618,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0153827603427152
+    },
+    {
+      "sash_front_gap_m": 0.10212516784667969,
+      "sash_behind_front_samples": 0,
+      "time": 8.33606119826436,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.017293908103223
+    },
+    {
+      "sash_front_gap_m": 0.10023149847984314,
+      "sash_behind_front_samples": 0,
+      "time": 8.411062199622393,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.019087464112602
+    },
+    {
+      "sash_front_gap_m": 0.09824708104133606,
+      "sash_behind_front_samples": 0,
+      "time": 8.486063297837973,
+      "speed": 75,
+      "actual_speed": 75.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.020029101528226
+    },
+    {
+      "sash_front_gap_m": 0.10335829854011536,
+      "sash_behind_front_samples": 0,
+      "time": 8.836068399250507,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0318024396590695
+    },
+    {
+      "sash_front_gap_m": 0.10188257694244385,
+      "sash_behind_front_samples": 0,
+      "time": 8.911072697490454,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0405492101658558
+    },
+    {
+      "sash_front_gap_m": 0.10644233226776123,
+      "sash_behind_front_samples": 0,
+      "time": 8.986073400825262,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.046344671885171
+    },
+    {
+      "sash_front_gap_m": 0.10866600275039673,
+      "sash_behind_front_samples": 0,
+      "time": 9.06107459962368,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0426630094756653
+    },
+    {
+      "sash_front_gap_m": 0.11151787638664246,
+      "sash_behind_front_samples": 0,
+      "time": 9.13607569783926,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0310185579125433
+    },
+    {
+      "sash_front_gap_m": 0.11494359374046326,
+      "sash_behind_front_samples": 0,
+      "time": 9.211076900362968,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.019351412552745
+    },
+    {
+      "sash_front_gap_m": 0.11498251557350159,
+      "sash_behind_front_samples": 0,
+      "time": 9.286077998578548,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.017970934743666
+    },
+    {
+      "sash_front_gap_m": 0.11489653587341309,
+      "sash_behind_front_samples": 0,
+      "time": 9.361079398542643,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.013473668579033
+    },
+    {
+      "sash_front_gap_m": 0.11137795448303223,
+      "sash_behind_front_samples": 0,
+      "time": 9.436080601066351,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0091952943542535
+    },
+    {
+      "sash_front_gap_m": 0.10755902528762817,
+      "sash_behind_front_samples": 0,
+      "time": 9.511081900447607,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.003743722556198
+    },
+    {
+      "sash_front_gap_m": 0.10402417182922363,
+      "sash_behind_front_samples": 0,
+      "time": 9.586083099246025,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0045011416802794
+    },
+    {
+      "sash_front_gap_m": 0.10057520866394043,
+      "sash_behind_front_samples": 0,
+      "time": 9.661084197461605,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.011892617487981
+    },
+    {
+      "sash_front_gap_m": 0.09744125604629517,
+      "sash_behind_front_samples": 0,
+      "time": 9.736085399985313,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0166557428549035
+    },
+    {
+      "sash_front_gap_m": 0.09490260481834412,
+      "sash_behind_front_samples": 0,
+      "time": 9.811086799949408,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.02372018451228
+    },
+    {
+      "sash_front_gap_m": 0.0959329605102539,
+      "sash_behind_front_samples": 0,
+      "time": 9.88608779758215,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.029728298420257
+    },
+    {
+      "sash_front_gap_m": 0.13853153586387634,
+      "sash_behind_front_samples": 0,
+      "time": 10.23609310016036,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0601369243705516
+    },
+    {
+      "sash_front_gap_m": 0.15411418676376343,
+      "sash_behind_front_samples": 0,
+      "time": 10.311094298958778,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.035190057241712
+    },
+    {
+      "sash_front_gap_m": 0.1462690532207489,
+      "sash_behind_front_samples": 0,
+      "time": 10.38609530031681,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.007350775688721
+    },
+    {
+      "sash_front_gap_m": 0.15196338295936584,
+      "sash_behind_front_samples": 0,
+      "time": 10.461096297949553,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9978652747050196
+    },
+    {
+      "sash_front_gap_m": 0.15789344906806946,
+      "sash_behind_front_samples": 0,
+      "time": 10.53609750047326,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9900157566185925
+    },
+    {
+      "sash_front_gap_m": 0.15583476424217224,
+      "sash_behind_front_samples": 0,
+      "time": 10.61109859868884,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9920770221110962
+    },
+    {
+      "sash_front_gap_m": 0.15397214889526367,
+      "sash_behind_front_samples": 0,
+      "time": 10.686099898070097,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0015432985251973
+    },
+    {
+      "sash_front_gap_m": 0.14850753545761108,
+      "sash_behind_front_samples": 0,
+      "time": 10.761101000010967,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0107789565321377
+    },
+    {
+      "sash_front_gap_m": 0.14255839586257935,
+      "sash_behind_front_samples": 0,
+      "time": 10.836102098226547,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.015411961693393
+    },
+    {
+      "sash_front_gap_m": 0.13791954517364502,
+      "sash_behind_front_samples": 0,
+      "time": 10.911102999001741,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.023585317903132
+    },
+    {
+      "sash_front_gap_m": 0.12911057472229004,
+      "sash_behind_front_samples": 0,
+      "time": 10.986104298382998,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.025743606678295
+    },
+    {
+      "sash_front_gap_m": 0.1184588074684143,
+      "sash_behind_front_samples": 0,
+      "time": 11.061105500906706,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.027077544381037
+    },
+    {
+      "sash_front_gap_m": 0.12384665012359619,
+      "sash_behind_front_samples": 0,
+      "time": 11.13610639795661,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0340715362020543
+    },
+    {
+      "sash_front_gap_m": 0.12876969575881958,
+      "sash_behind_front_samples": 0,
+      "time": 11.211107399314642,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.029476948645727
+    },
+    {
+      "sash_front_gap_m": 0.13457518815994263,
+      "sash_behind_front_samples": 0,
+      "time": 11.28610859811306,
+      "speed": 125,
+      "actual_speed": 125.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0123530629284385
+    },
+    {
+      "sash_front_gap_m": 0.1278986930847168,
+      "sash_behind_front_samples": 0,
+      "time": 11.63611339777708,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9997084668285612
+    },
+    {
+      "sash_front_gap_m": 0.13120907545089722,
+      "sash_behind_front_samples": 0,
+      "time": 11.71111449971795,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0264022028904005
+    },
+    {
+      "sash_front_gap_m": 0.14405861496925354,
+      "sash_behind_front_samples": 0,
+      "time": 11.786115497350693,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0389973471499108
+    },
+    {
+      "sash_front_gap_m": 0.15259957313537598,
+      "sash_behind_front_samples": 0,
+      "time": 11.861116498708725,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.047669174723967
+    },
+    {
+      "sash_front_gap_m": 0.15991294384002686,
+      "sash_behind_front_samples": 0,
+      "time": 11.936117697507143,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0445932296147227
+    },
+    {
+      "sash_front_gap_m": 0.16561436653137207,
+      "sash_behind_front_samples": 0,
+      "time": 12.01111900061369,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0127645520439326
+    },
+    {
+      "sash_front_gap_m": 0.1757437288761139,
+      "sash_behind_front_samples": 0,
+      "time": 12.086119998246431,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9924919036185844
+    },
+    {
+      "sash_front_gap_m": 0.17983144521713257,
+      "sash_behind_front_samples": 0,
+      "time": 12.161120798438787,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9799586319526485
+    },
+    {
+      "sash_front_gap_m": 0.15018761157989502,
+      "sash_behind_front_samples": 0,
+      "time": 12.23612179979682,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9788627435291741
+    },
+    {
+      "sash_front_gap_m": 0.17281049489974976,
+      "sash_behind_front_samples": 0,
+      "time": 12.311122797429562,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.000144573097072
+    },
+    {
+      "sash_front_gap_m": 0.16208645701408386,
+      "sash_behind_front_samples": 0,
+      "time": 12.386126600205898,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0138807122080666
+    },
+    {
+      "sash_front_gap_m": 0.1498699188232422,
+      "sash_behind_front_samples": 0,
+      "time": 12.466349799185991,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.022419015176491
+    },
+    {
+      "sash_front_gap_m": 0.1365293264389038,
+      "sash_behind_front_samples": 0,
+      "time": 12.541350800544024,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0294858122208606
+    },
+    {
+      "sash_front_gap_m": 0.14633575081825256,
+      "sash_behind_front_samples": 0,
+      "time": 12.616351697593927,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.018216855834767
+    },
+    {
+      "sash_front_gap_m": 0.15372270345687866,
+      "sash_behind_front_samples": 0,
+      "time": 12.691352598369122,
+      "speed": 149,
+      "actual_speed": 149.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0054512768935604
+    },
+    {
+      "sash_front_gap_m": 0.12637829780578613,
+      "sash_behind_front_samples": 0,
+      "time": 13.041357699781656,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.010330770864098
+    },
+    {
+      "sash_front_gap_m": 0.1386227309703827,
+      "sash_behind_front_samples": 0,
+      "time": 13.116358697414398,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0340869590404886
+    },
+    {
+      "sash_front_gap_m": 0.14823147654533386,
+      "sash_behind_front_samples": 0,
+      "time": 13.191359799355268,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0407615168415982
+    },
+    {
+      "sash_front_gap_m": 0.15836185216903687,
+      "sash_behind_front_samples": 0,
+      "time": 13.266360599547625,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.049543662957292
+    },
+    {
+      "sash_front_gap_m": 0.16392377018928528,
+      "sash_behind_front_samples": 0,
+      "time": 13.341361798346043,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.031081708069821
+    },
+    {
+      "sash_front_gap_m": 0.17082488536834717,
+      "sash_behind_front_samples": 0,
+      "time": 13.416363000869751,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.002670184555736
+    },
+    {
+      "sash_front_gap_m": 0.18009400367736816,
+      "sash_behind_front_samples": 0,
+      "time": 13.491364099085331,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9868797655312656
+    },
+    {
+      "sash_front_gap_m": 0.14820456504821777,
+      "sash_behind_front_samples": 0,
+      "time": 13.566365398466587,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9784646754148612
+    },
+    {
+      "sash_front_gap_m": 0.1590057611465454,
+      "sash_behind_front_samples": 0,
+      "time": 13.641366500407457,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9900691162739201
+    },
+    {
+      "sash_front_gap_m": 0.1685647964477539,
+      "sash_behind_front_samples": 0,
+      "time": 13.7163674980402,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0053543640214335
+    },
+    {
+      "sash_front_gap_m": 0.15896213054656982,
+      "sash_behind_front_samples": 0,
+      "time": 13.791368797421455,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0196693473278264
+    },
+    {
+      "sash_front_gap_m": 0.14189600944519043,
+      "sash_behind_front_samples": 0,
+      "time": 13.866369798779488,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.024000679145975
+    },
+    {
+      "sash_front_gap_m": 0.14240938425064087,
+      "sash_behind_front_samples": 0,
+      "time": 13.941371098160744,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.029595688364763
+    },
+    {
+      "sash_front_gap_m": 0.15211975574493408,
+      "sash_behind_front_samples": 0,
+      "time": 14.016372200101614,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0045666233531407
+    },
+    {
+      "sash_front_gap_m": 0.15651559829711914,
+      "sash_behind_front_samples": 0,
+      "time": 14.091382700949907,
+      "speed": 150,
+      "actual_speed": 150.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0075155417886013
+    },
+    {
+      "sash_front_gap_m": 0.14148733019828796,
+      "sash_behind_front_samples": 0,
+      "time": 14.441388200968504,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0279211396682175
+    },
+    {
+      "sash_front_gap_m": 0.1523004174232483,
+      "sash_behind_front_samples": 0,
+      "time": 14.516388900578022,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.022247187702371
+    },
+    {
+      "sash_front_gap_m": 0.16210472583770752,
+      "sash_behind_front_samples": 0,
+      "time": 14.591389797627926,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.028214036253237
+    },
+    {
+      "sash_front_gap_m": 0.1579555869102478,
+      "sash_behind_front_samples": 0,
+      "time": 14.666391000151634,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.021429320270513
+    },
+    {
+      "sash_front_gap_m": 0.17433416843414307,
+      "sash_behind_front_samples": 0,
+      "time": 14.741392098367214,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.007847219246907
+    },
+    {
+      "sash_front_gap_m": 0.06594574451446533,
+      "sash_behind_front_samples": 0,
+      "time": 14.816392999142408,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9967573238112175
+    },
+    {
+      "sash_front_gap_m": 0.01707214117050171,
+      "sash_behind_front_samples": 0,
+      "time": 14.891394101083279,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9922733675989812
+    },
+    {
+      "sash_front_gap_m": 0.053479790687561035,
+      "sash_behind_front_samples": 0,
+      "time": 14.966394998133183,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.005840325278349
+    },
+    {
+      "sash_front_gap_m": 0.16987192630767822,
+      "sash_behind_front_samples": 0,
+      "time": 15.041396398097277,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0146907024909853
+    },
+    {
+      "sash_front_gap_m": 0.161108136177063,
+      "sash_behind_front_samples": 0,
+      "time": 15.116397697478533,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0112763127521838
+    },
+    {
+      "sash_front_gap_m": 0.15467941761016846,
+      "sash_behind_front_samples": 0,
+      "time": 15.191398900002241,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.019392897113783
+    },
+    {
+      "sash_front_gap_m": 0.1623634696006775,
+      "sash_behind_front_samples": 0,
+      "time": 15.266399700194597,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0058870128903696
+    },
+    {
+      "sash_front_gap_m": 0.1619235873222351,
+      "sash_behind_front_samples": 0,
+      "time": 15.34140069782734,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0146127629690262
+    },
+    {
+      "sash_front_gap_m": 0.16589391231536865,
+      "sash_behind_front_samples": 0,
+      "time": 15.41640179976821,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.006843007255779
+    },
+    {
+      "sash_front_gap_m": 0.1571369469165802,
+      "sash_behind_front_samples": 0,
+      "time": 15.491402797400951,
+      "speed": 225,
+      "actual_speed": 225.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9911871942078698
+    },
+    {
+      "sash_front_gap_m": 0.17196708917617798,
+      "sash_behind_front_samples": 0,
+      "time": 15.841408099979162,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9981594255714508
+    },
+    {
+      "sash_front_gap_m": 0.14192718267440796,
+      "sash_behind_front_samples": 0,
+      "time": 15.916409198194742,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0041866783303197
+    },
+    {
+      "sash_front_gap_m": 0.14393848180770874,
+      "sash_behind_front_samples": 0,
+      "time": 15.991410300135612,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.01443036943127
+    },
+    {
+      "sash_front_gap_m": 0.17792484164237976,
+      "sash_behind_front_samples": 0,
+      "time": 16.066411398351192,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.003996748920533
+    },
+    {
+      "sash_front_gap_m": 0.17824649810791016,
+      "sash_behind_front_samples": 0,
+      "time": 16.141412500292063,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9915435460529913
+    },
+    {
+      "sash_front_gap_m": 0.1754857301712036,
+      "sash_behind_front_samples": 0,
+      "time": 16.216413598507643,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0018697256958125
+    },
+    {
+      "sash_front_gap_m": 0.17565318942070007,
+      "sash_behind_front_samples": 0,
+      "time": 16.291414700448513,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.003400825877788
+    },
+    {
+      "sash_front_gap_m": 0.17405635118484497,
+      "sash_behind_front_samples": 0,
+      "time": 16.36641589924693,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9969076898346103
+    },
+    {
+      "sash_front_gap_m": 0.1672307848930359,
+      "sash_behind_front_samples": 0,
+      "time": 16.442073300480843,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9943606645335112
+    },
+    {
+      "sash_front_gap_m": 0.16766774654388428,
+      "sash_behind_front_samples": 0,
+      "time": 16.51707449927926,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9974125382455703
+    },
+    {
+      "sash_front_gap_m": 0.17349350452423096,
+      "sash_behind_front_samples": 0,
+      "time": 16.592075500637293,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0149530173517185
+    },
+    {
+      "sash_front_gap_m": 0.18747076392173767,
+      "sash_behind_front_samples": 0,
+      "time": 16.667076498270035,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.004139574925972
+    },
+    {
+      "sash_front_gap_m": 0.16691085696220398,
+      "sash_behind_front_samples": 0,
+      "time": 16.74207779765129,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.986439156611223
+    },
+    {
+      "sash_front_gap_m": 0.15560728311538696,
+      "sash_behind_front_samples": 0,
+      "time": 16.817078799009323,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0064875020310837
+    },
+    {
+      "sash_front_gap_m": 0.14421603083610535,
+      "sash_behind_front_samples": 0,
+      "time": 16.89207999780774,
+      "speed": 300,
+      "actual_speed": 300.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.007882297410526
+    },
+    {
+      "sash_front_gap_m": 0.175279438495636,
+      "sash_behind_front_samples": 0,
+      "time": 17.24208479747176,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.958337600510585
+    },
+    {
+      "sash_front_gap_m": 0.1761053204536438,
+      "sash_behind_front_samples": 0,
+      "time": 17.317086700350046,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0150411693580508
+    },
+    {
+      "sash_front_gap_m": 0.1896432638168335,
+      "sash_behind_front_samples": 0,
+      "time": 17.392087798565626,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.984878853912988
+    },
+    {
+      "sash_front_gap_m": 0.1987496316432953,
+      "sash_behind_front_samples": 0,
+      "time": 17.467088997364044,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9347256294089539
+    },
+    {
+      "sash_front_gap_m": 0.16384387016296387,
+      "sash_behind_front_samples": 0,
+      "time": 17.542089998722076,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9423365514782962
+    },
+    {
+      "sash_front_gap_m": 0.1760156750679016,
+      "sash_behind_front_samples": 0,
+      "time": 17.61709100008011,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.994865273386341
+    },
+    {
+      "sash_front_gap_m": 0.24517357349395752,
+      "sash_behind_front_samples": 0,
+      "time": 17.69209209829569,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9557121112328129
+    },
+    {
+      "sash_front_gap_m": 0.22152352333068848,
+      "sash_behind_front_samples": 0,
+      "time": 17.76709309965372,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0004464296694056
+    },
+    {
+      "sash_front_gap_m": 0.16258344054222107,
+      "sash_behind_front_samples": 0,
+      "time": 17.842094000428915,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0032045179145794
+    },
+    {
+      "sash_front_gap_m": 0.17867690324783325,
+      "sash_behind_front_samples": 0,
+      "time": 17.917095098644495,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9649621014518575
+    },
+    {
+      "sash_front_gap_m": 0.1895645260810852,
+      "sash_behind_front_samples": 0,
+      "time": 17.99209599941969,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9427521540754982
+    },
+    {
+      "sash_front_gap_m": 0.10236090421676636,
+      "sash_behind_front_samples": 0,
+      "time": 18.06709700077772,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9850226141407539
+    },
+    {
+      "sash_front_gap_m": 0.15405941009521484,
+      "sash_behind_front_samples": 0,
+      "time": 18.142098300158978,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9704356533254572
+    },
+    {
+      "sash_front_gap_m": 0.17410516738891602,
+      "sash_behind_front_samples": 0,
+      "time": 18.217099398374557,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 1.9621698274752073
+    },
+    {
+      "sash_front_gap_m": 0.1787605881690979,
+      "sash_behind_front_samples": 0,
+      "time": 18.292100500315428,
+      "speed": 450,
+      "actual_speed": 450.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0181552344234954
+    },
+    {
+      "sash_front_gap_m": 0.10291871428489685,
+      "sash_behind_front_samples": 0,
+      "time": 18.64210569858551,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.044205840307354
+    },
+    {
+      "sash_front_gap_m": 0.10737836360931396,
+      "sash_behind_front_samples": 0,
+      "time": 18.71710680052638,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0467664646794215
+    },
+    {
+      "sash_front_gap_m": 0.10975006222724915,
+      "sash_behind_front_samples": 0,
+      "time": 18.792108099907637,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.037682917683281
+    },
+    {
+      "sash_front_gap_m": 0.1143886148929596,
+      "sash_behind_front_samples": 0,
+      "time": 18.867109399288893,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0237096854474754
+    },
+    {
+      "sash_front_gap_m": 0.11549562215805054,
+      "sash_behind_front_samples": 0,
+      "time": 18.942110400646925,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0201797819844596
+    },
+    {
+      "sash_front_gap_m": 0.11621174216270447,
+      "sash_behind_front_samples": 0,
+      "time": 19.017111498862505,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.015785447824868
+    },
+    {
+      "sash_front_gap_m": 0.11361813545227051,
+      "sash_behind_front_samples": 0,
+      "time": 19.092112600803375,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0113243524673683
+    },
+    {
+      "sash_front_gap_m": 0.10947930812835693,
+      "sash_behind_front_samples": 0,
+      "time": 19.167113598436117,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0072284380109418
+    },
+    {
+      "sash_front_gap_m": 0.10585048794746399,
+      "sash_behind_front_samples": 0,
+      "time": 19.242114800959826,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0010030459071264
+    },
+    {
+      "sash_front_gap_m": 0.10239404439926147,
+      "sash_behind_front_samples": 0,
+      "time": 19.317115999758244,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0083390074362946
+    },
+    {
+      "sash_front_gap_m": 0.09899455308914185,
+      "sash_behind_front_samples": 0,
+      "time": 19.39211719855666,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.014577819734386
+    },
+    {
+      "sash_front_gap_m": 0.09611707925796509,
+      "sash_behind_front_samples": 0,
+      "time": 19.467118199914694,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0190530847356154
+    },
+    {
+      "sash_front_gap_m": 0.09439447522163391,
+      "sash_behind_front_samples": 0,
+      "time": 19.542119398713112,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0269904925310405
+    },
+    {
+      "sash_front_gap_m": 0.09928610920906067,
+      "sash_behind_front_samples": 0,
+      "time": 19.61712059751153,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0350620980398477
+    },
+    {
+      "sash_front_gap_m": 0.10330116748809814,
+      "sash_behind_front_samples": 0,
+      "time": 19.692121598869562,
+      "speed": 100,
+      "actual_speed": 100.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0460321585435195
+    },
+    {
+      "sash_front_gap_m": 0.05054423213005066,
+      "sash_behind_front_samples": 0,
+      "time": 20.042137999087572,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0378025762998244
+    },
+    {
+      "sash_front_gap_m": 0.051174312829971313,
+      "sash_behind_front_samples": 0,
+      "time": 20.117139000445604,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0381756990901585
+    },
+    {
+      "sash_front_gap_m": 0.051593631505966187,
+      "sash_behind_front_samples": 0,
+      "time": 20.1921404004097,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.037147488685293
+    },
+    {
+      "sash_front_gap_m": 0.05187806487083435,
+      "sash_behind_front_samples": 0,
+      "time": 20.267141599208117,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0351309349568534
+    },
+    {
+      "sash_front_gap_m": 0.05181792378425598,
+      "sash_behind_front_samples": 0,
+      "time": 20.342142798006535,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0319119682789664
+    },
+    {
+      "sash_front_gap_m": 0.04986128211021423,
+      "sash_behind_front_samples": 0,
+      "time": 20.417143899947405,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0284395784893294
+    },
+    {
+      "sash_front_gap_m": 0.048525065183639526,
+      "sash_behind_front_samples": 0,
+      "time": 20.492532398551702,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.025068935305935
+    },
+    {
+      "sash_front_gap_m": 0.04910022020339966,
+      "sash_behind_front_samples": 0,
+      "time": 20.567533399909735,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.021355993376915
+    },
+    {
+      "sash_front_gap_m": 0.049651265144348145,
+      "sash_behind_front_samples": 0,
+      "time": 20.64253430068493,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0173474680762653
+    },
+    {
+      "sash_front_gap_m": 0.0501844584941864,
+      "sash_behind_front_samples": 0,
+      "time": 20.717535499483347,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.014698096017492
+    },
+    {
+      "sash_front_gap_m": 0.05073323845863342,
+      "sash_behind_front_samples": 0,
+      "time": 20.792536597698927,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0131510757768747
+    },
+    {
+      "sash_front_gap_m": 0.05133545398712158,
+      "sash_behind_front_samples": 0,
+      "time": 20.867537900805473,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0126582592073112
+    },
+    {
+      "sash_front_gap_m": 0.051494479179382324,
+      "sash_behind_front_samples": 0,
+      "time": 20.942538898438215,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.011959896942808
+    },
+    {
+      "sash_front_gap_m": 0.05122968554496765,
+      "sash_behind_front_samples": 0,
+      "time": 21.017544999718666,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0119347828802137
+    },
+    {
+      "sash_front_gap_m": 0.05115401744842529,
+      "sash_behind_front_samples": 0,
+      "time": 21.092546097934246,
+      "speed": 25,
+      "actual_speed": 25.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0119347828802137
+    },
+    {
+      "sash_front_gap_m": 0.02382493019104004,
+      "sash_behind_front_samples": 0,
+      "time": 21.442560400813818,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.01033576421784
+    },
+    {
+      "sash_front_gap_m": 0.023874551057815552,
+      "sash_behind_front_samples": 0,
+      "time": 21.517561499029398,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0117239631570243
+    },
+    {
+      "sash_front_gap_m": 0.02366730570793152,
+      "sash_behind_front_samples": 0,
+      "time": 21.59256849810481,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0140994200500595
+    },
+    {
+      "sash_front_gap_m": 0.02356046438217163,
+      "sash_behind_front_samples": 0,
+      "time": 21.66756960004568,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0157334376761327
+    },
+    {
+      "sash_front_gap_m": 0.023486465215682983,
+      "sash_behind_front_samples": 0,
+      "time": 21.74257069826126,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.017028605040033
+    },
+    {
+      "sash_front_gap_m": 0.023175448179244995,
+      "sash_behind_front_samples": 0,
+      "time": 21.81757190078497,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0186472788550405
+    },
+    {
+      "sash_front_gap_m": 0.022907912731170654,
+      "sash_behind_front_samples": 0,
+      "time": 21.892573099583387,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0200790112033116
+    },
+    {
+      "sash_front_gap_m": 0.022774815559387207,
+      "sash_behind_front_samples": 0,
+      "time": 21.96757400035858,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0215226027595876
+    },
+    {
+      "sash_front_gap_m": 0.022641301155090332,
+      "sash_behind_front_samples": 0,
+      "time": 22.042574897408485,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.022951918600916
+    },
+    {
+      "sash_front_gap_m": 0.027816563844680786,
+      "sash_behind_front_samples": 0,
+      "time": 22.117575999349356,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.023170487602434
+    },
+    {
+      "sash_front_gap_m": 0.02813243865966797,
+      "sash_behind_front_samples": 0,
+      "time": 22.192577198147774,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0237593529806626
+    },
+    {
+      "sash_front_gap_m": 0.029546499252319336,
+      "sash_behind_front_samples": 0,
+      "time": 22.267578199505806,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0243378404725205
+    },
+    {
+      "sash_front_gap_m": 0.029355019330978394,
+      "sash_behind_front_samples": 0,
+      "time": 22.342579398304224,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.024905734283328
+    },
+    {
+      "sash_front_gap_m": 0.029168933629989624,
+      "sash_behind_front_samples": 0,
+      "time": 22.417580399662256,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0247666394154553
+    },
+    {
+      "sash_front_gap_m": 0.02898821234703064,
+      "sash_behind_front_samples": 0,
+      "time": 22.492581598460674,
+      "speed": 0,
+      "actual_speed": 0.0,
+      "upper_pants_visible_samples": 0,
+      "mesh_height_m": 2.0240133851236117
+    }
+  ],
+  "passed": true
+}

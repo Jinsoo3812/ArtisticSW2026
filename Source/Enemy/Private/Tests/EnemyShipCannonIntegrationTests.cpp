@@ -21,7 +21,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FEnemyShipCannonIntegrationTest::RunTest(const FString& Parameters)
 {
 	// The project-wide ItemSubsystem validates its current quest recipe while a game world is created.
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("EnemyShipCannonIntegrationWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))

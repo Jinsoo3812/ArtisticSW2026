@@ -73,7 +73,6 @@ void USWPackagingAssetManager::ModifyCook(TConstArrayView<const ITargetPlatform*
 			TEXT("CraftingRecipeDataTable"), TEXT("ProgressionBalanceData"), TEXT("FixedChestDropData") };
 		for (const TCHAR* Key : ItemKeys) AddConfigRoot(TEXT("/Script/ArtisticSWCore.Settings_Item"), Key);
 		AddConfigRoot(TEXT("/Script/Enemy.EnemyShipWeakeningSettings"), TEXT("WeakeningData"));
-		AddConfigRoot(TEXT("/Script/Story.StorySettings"), TEXT("DefaultStoryDefinition"));
 	}
 	else
 	{
@@ -81,7 +80,8 @@ void USWPackagingAssetManager::ModifyCook(TConstArrayView<const ITargetPlatform*
 	}
 	const TArray<FString> Folders = {
 		TEXT("/Game/StylizedWeather/Material/Sky"), TEXT("/Game/StylizedWeather/Curve/Color"),
-		TEXT("/Game/StylizedWeather/Curve/Float"), TEXT("/Game/StylizedWeather/Texture"), TEXT("/Game/GameplayCues")
+		TEXT("/Game/StylizedWeather/Curve/Float"), TEXT("/Game/StylizedWeather/Texture"), TEXT("/Game/GameplayCues"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Materials/ISM")
 	};
 	Registry.ScanPathsSynchronous(Folders, false, true);
 	const FTopLevelAssetPath RedirectorClass(TEXT("/Script/CoreUObject"), TEXT("ObjectRedirector"));

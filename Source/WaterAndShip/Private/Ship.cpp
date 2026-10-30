@@ -2,7 +2,11 @@
 
 
 #include "Ship.h"
+#include "Development/SWDevelopmentOptions.h"
+#include "WeaponInputAbilitySystemComponent.h"
 #include "MountedDamageUserInterface.h"
+#include "SkillCursorInputInterface.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "MultiGameMode.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Network/SWNetworkLog.h"
@@ -12,6 +16,7 @@
 #include "BaseAttributeSet.h"
 #include "SWRoomAbilitySystemComponent.h"
 #include "TimerManager.h"
+#include "Components/SceneComponent.h"
 
 void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
 {
@@ -24,6 +29,21 @@ void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRo
 		return;
 	}
 	FSWRoomShipState State;
+	if (HelmSeatPoint && HelmExitPoint)
+	{
+		auto CapturePoint = [](const USceneComponent* Point, FSWRoomHelmPointState& Saved)
+		{
+			Saved.RelativeTransform = Point->GetRelativeTransform();
+			Saved.ParentComponent = Point->GetAttachParent() ? Point->GetAttachParent()->GetFName() : NAME_None;
+			Saved.Socket = Point->GetAttachSocketName();
+			Saved.bAbsoluteLocation = Point->IsUsingAbsoluteLocation();
+			Saved.bAbsoluteRotation = Point->IsUsingAbsoluteRotation();
+			Saved.bAbsoluteScale = Point->IsUsingAbsoluteScale();
+		};
+		State.bHasHelmPoints = true;
+		CapturePoint(HelmSeatPoint, State.HelmSeat);
+		CapturePoint(HelmExitPoint, State.HelmExit);
+	}
 	State.Health = AttributeSet->GetHealth();
 	State.MaximumHealth = AttributeSet->GetMaxHealth();
 	State.bSinking = bIsSinking;
@@ -53,7 +73,7 @@ void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRo
 	}
 	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
 	Part.Domain = ESWRoomDomain::Ship;
-	Part.Version = 1;
+	Part.Version = 2;
 	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
 	{
 		OutParts.Pop();
@@ -66,7 +86,7 @@ void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRo
 
 bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 {
-	if (Part.Domain != ESWRoomDomain::Ship || Part.Version != 1)
+	if (Part.Domain != ESWRoomDomain::Ship || (Part.Version != 1 && Part.Version != 2))
 	{
 		OutError = TEXT("Unsupported ship domain or version");
 		return false;
@@ -84,6 +104,12 @@ bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 	if (!AbilitySystemComponent || !AttributeSet)
 	{
 		OutError = TEXT("Ship attributes unavailable");
+		return false;
+	}
+	if (Part.Version == 1) State.bHasHelmPoints = false;
+	if (State.bHasHelmPoints && (!State.HelmSeat.RelativeTransform.IsValid() || !State.HelmExit.RelativeTransform.IsValid()))
+	{
+		OutError = TEXT("Invalid saved helm point transform");
 		return false;
 	}
 	if (AbilitySystemComponent->GetSet<UBaseAttributeSet>())
@@ -123,6 +149,29 @@ bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 
 bool AShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
 {
+	if (bHasPendingRoomState && PendingRoomState.bHasHelmPoints)
+	{
+		auto RestorePoint = [&](USceneComponent* Point, const FSWRoomHelmPointState& Saved)
+		{
+			if (!Point) return false;
+			USceneComponent* Parent = nullptr;
+			TInlineComponentArray<USceneComponent*> Scenes(this);
+			for (USceneComponent* Scene : Scenes)
+				if (Scene->GetFName() == Saved.ParentComponent) { Parent = Scene; break; }
+			if (!Parent || Parent == Point || Parent->IsAttachedTo(Point)) return false;
+			if (!Point->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform, Saved.Socket)) return false;
+			Point->SetAbsolute(Saved.bAbsoluteLocation, Saved.bAbsoluteRotation, Saved.bAbsoluteScale);
+			Point->SetRelativeTransform(Saved.RelativeTransform, false, nullptr, ETeleportType::TeleportPhysics);
+			return true;
+		};
+		if (!RestorePoint(HelmSeatPoint, PendingRoomState.HelmSeat) || !RestorePoint(HelmExitPoint, PendingRoomState.HelmExit))
+		{
+			OutError = TEXT("Saved helm point attachment is unavailable");
+			return false;
+		}
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=HelmRestore Result=Applied Ship=%s Seat=%s Exit=%s"),
+			*GetName(), *HelmSeatPoint->GetRelativeLocation().ToString(), *HelmExitPoint->GetRelativeLocation().ToString());
+	}
 	if (!bHasPendingRoomState) return true;
 	bHasPendingRoomState = false;
 	if (USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(AbilitySystemComponent))
@@ -204,12 +253,11 @@ bool AShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FS
 #include "Cannonball.h"
 #include "LandscapeProxy.h"
 #include "WaterSurfaceQueryLibrary.h"
+#include "SWWaterSkillOverlaySubsystem.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "Repair/ShipLeakDamageGameplayEffect.h"
-#include "Materials/MaterialParameterCollection.h"
-#include "Materials/MaterialParameterCollectionInstance.h"
 
 bool AShip::TryGetMovementFrameVelocityAtPoint(const FVector& WorldPoint, FVector& OutVelocity) const
 {
@@ -700,6 +748,7 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+ if (bUsingHelmFirstPersonCamera && !SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session)) ResetToFollowCamera();
 
 	static const auto CVarShipBalanceDiagnostics = IConsoleManager::Get().RegisterConsoleVariable(
 		TEXT("sw.ShipBalanceDiagnostics"),
@@ -748,6 +797,11 @@ void AShip::Tick(float DeltaTime)
 				// SpeedCmPerSecond / 100.0f));
 	// }
 
+	if (bLocalBombardmentInputModeApplied && (!IsLocallyControlled() || !bBombardmentTargeting
+		|| BombardmentInputController.Get() != GetController()))
+	{
+		EndLocalBombardmentTargeting();
+	}
 	if (IsLocallyControlled() && bBombardmentTargeting)
 	{
 		UpdateLocalBombardmentPreview();
@@ -992,6 +1046,12 @@ void AShip::Tick(float DeltaTime)
 			float ForwardPropulsionMultiplier =
 				(AttributeSet ? AttributeSet->GetForwardPropulsionMultiplier() : 1.0f)
 				* FMath::Max(0.0f, CurrentAIPropulsionScale);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+			if (!IsEnemyShipForEffects())
+			{
+				ForwardPropulsionMultiplier *= SWDevelopmentOptions::GetShipSpeedMultiplier(this);
+			}
+#endif
 			float TurnTorqueMultiplier =
 				(AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f)
 				* FMath::Max(0.0f, CurrentAITurnScale);
@@ -1023,6 +1083,11 @@ void AShip::Tick(float DeltaTime)
 			if (USWShipWakeSubsystem* ShipWakeState = GetWorld()->GetSubsystem<USWShipWakeSubsystem>())
 			{
 				ShipWakeState->GetEventsSnapshot(TempShipWakeEvents);
+				// 부력도 권위 Kelvin만 사용한다. 예측/권위 중복 합산을 피하되 과거 PT 시각 평가용 이력은 보존한다.
+				TempShipWakeEvents.RemoveAll([](const FSWShipWakeEvent& Event)
+				{
+					return Event.EventId < 0;
+				});
 			}
 
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
@@ -1092,7 +1157,7 @@ void AShip::Tick(float DeltaTime)
 
 void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 {
-	if (!BuoyancyRoot || bShipRuntimePhysicsEnabled == bEnabled)
+	if (!BuoyancyRoot || (bShipRuntimePhysicsEnabled == bEnabled && BuoyancyRoot->IsSimulatingPhysics() == bEnabled))
 	{
 		return;
 	}
@@ -1121,6 +1186,39 @@ void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 		ShipPhysicsAsync->SetPhysicsObject(BuoyancyRoot->GetPhysicsObjectByName(NAME_None));
 	}
 	BuoyancyRoot->WakeAllRigidBodies();
+}
+
+bool AShip::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+	float TimeToleranceSeconds, TArray<FString>& OutFields) const
+{
+	if (Expected.Version != 1)
+		return FSWRoomStructCodec::Compare<FSWRoomShipState>(Expected, Actual, TimeToleranceSeconds, OutFields);
+	FSWRoomShipState Before, After;
+	if (!FSWRoomStructCodec::Read(Expected.Bytes, Before) || !FSWRoomStructCodec::Read(Actual.Bytes, After))
+	{
+		OutFields.Add(TEXT("Field=Payload Expected=Readable Actual=Invalid"));
+		return false;
+	}
+	Before.bHasHelmPoints = After.bHasHelmPoints = false;
+	Before.HelmSeat = After.HelmSeat = FSWRoomHelmPointState();
+	Before.HelmExit = After.HelmExit = FSWRoomHelmPointState();
+	FSWRoomDomainPart NormalizedExpected = Expected, NormalizedActual = Actual;
+	NormalizedExpected.Version = NormalizedActual.Version = 2;
+	if (!FSWRoomStructCodec::Write(Before, NormalizedExpected.Bytes) || !FSWRoomStructCodec::Write(After, NormalizedActual.Bytes)) return false;
+	return FSWRoomStructCodec::Compare<FSWRoomShipState>(NormalizedExpected, NormalizedActual, TimeToleranceSeconds, OutFields);
+}
+
+void AShip::ResetFreshEncounterControlState()
+{
+	CurrentMoveInput = CurrentTurnInput = 0.0f;
+	bIsAnchorDropped = false;
+	ReplicatedState.Location = GetActorLocation();
+	ReplicatedState.Rotation = GetActorRotation();
+	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	GetWorldTimerManager().ClearTimer(SinkingDestroyTimerHandle);
+	for (UShipRepairPointComponent* Point : {RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get()})
+		if (Point) Point->DeactivateLeak();
+	ForceNetUpdate();
 }
 
 // Called to bind functionality to input
@@ -1219,13 +1317,13 @@ void AShip::PossessedBy(AController* NewController)
 		UShipUpgradeComponent* DriverUpgrade = SharedUpgradeState
 			? SharedUpgradeState->GetUpgradeComponent()
 			: nullptr;
-		UE_LOG(LogTemp, Warning,
+/* 		UE_LOG(LogTemp, Warning,
 			TEXT("[ShipUpgradeTrace][ShipPossessed] Ship=%s Controller=%s PlayerState=%s SharedUpgrade=%s ActiveNodes=%d"),
 			*GetNameSafe(this),
 			*GetNameSafe(NewController),
 			*GetNameSafe(InPlayerState),
 			*GetNameSafe(DriverUpgrade),
-			DriverUpgrade ? DriverUpgrade->GetActiveNodeIds().Num() : -1);
+			DriverUpgrade ? DriverUpgrade->GetActiveNodeIds().Num() : -1) */;
 
 		if (PlayerController->IsLocalController() && RidingPlayer)
 		{
@@ -1972,6 +2070,9 @@ void AShip::ShipZoom(const FInputActionValue& Value)
 
 void AShip::HandleBombardmentToggle()
 {
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=ShipSkillPressed Ship=%s Authority=%d Local=%d PlayerControlled=%d Rider=%s Targeting=%d"),
+			*GetName(), HasAuthority(), IsLocallyControlled(), IsPlayerControlled(), *GetNameSafe(RidingPlayer), bBombardmentTargeting);
 	if (!IsPlayerControlled())
 	{
 		return;
@@ -2028,6 +2129,9 @@ void AShip::HandleBombardmentCancel()
 
 void AShip::ServerToggleBombardmentAbility_Implementation()
 {
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=ShipSkillRpc Ship=%s PlayerControlled=%d Rider=%s Targeting=%d"),
+			*GetName(), IsPlayerControlled(), *GetNameSafe(RidingPlayer), bBombardmentTargeting);
 	if (RidingPlayer && IsPlayerControlled())
 	{
 		ToggleBombardmentAbilityAuthoritative();
@@ -2100,6 +2204,8 @@ void AShip::ToggleBombardmentAbilityAuthoritative()
 	}
 
 	FGameplayTagContainer AbilityTags(GameplayAbility_Skill_Bombardment);
+	if (const UWeaponInputAbilitySystemComponent* InputASC = Cast<UWeaponInputAbilitySystemComponent>(ASC))
+		InputASC->LogInputDiagnostic(TEXT("ShipSkillToggle"), FString::Printf(TEXT("Ship=%s Targeting=%d"), *GetName(), bBombardmentTargeting));
 	if (bBombardmentTargeting || ASC->HasMatchingGameplayTag(GameplayAbility_Skill_Bombardment))
 	{
 		ASC->CancelAbilities(&AbilityTags);
@@ -2192,7 +2298,13 @@ void AShip::BeginLocalBombardmentTargeting()
 		return;
 	}
 
-	bSavedShowMouseCursor = PC->bShowMouseCursor;
+	if (const ISkillCursorInputInterface* CursorInput = Cast<ISkillCursorInputInterface>(PC);
+		CursorInput && CursorInput->IsSkillCursorInputBlocked())
+	{
+		return;
+	}
+
+	BombardmentInputController = PC;
 	PC->bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
 	InputMode.SetHideCursorDuringCapture(false);
@@ -2227,24 +2339,26 @@ void AShip::EndLocalBombardmentTargeting()
 	}
 	ClearLocalWaterSkillPreview();
 
-	if (bLocalBombardmentInputModeApplied)
+	APlayerController* PC = BombardmentInputController.Get();
+	const bool bRestoreInput = bLocalBombardmentInputModeApplied;
+	bLocalBombardmentInputModeApplied = false;
+	bLocalBombardmentTargetValid = false;
+	BombardmentInputController.Reset();
+	if (bRestoreInput && PC && PC->IsLocalController())
 	{
-		APlayerController* PC = Cast<APlayerController>(GetController());
-		if (!PC)
+		if (ISkillCursorInputInterface* CursorInput = Cast<ISkillCursorInputInterface>(PC))
 		{
-			PC = CachedPlayerController;
+			CursorInput->RestoreInputAfterSkillCursor();
 		}
-		if (PC)
+		else
 		{
-			PC->bShowMouseCursor = bSavedShowMouseCursor;
+			PC->bShowMouseCursor = false;
 			FInputModeGameOnly InputMode;
 			InputMode.SetConsumeCaptureMouseDown(false);
 			PC->SetInputMode(InputMode);
+			UWidgetBlueprintLibrary::SetFocusToGameViewport();
 		}
 	}
-
-	bLocalBombardmentInputModeApplied = false;
-	bLocalBombardmentTargetValid = false;
 }
 
 void AShip::UpdateLocalBombardmentPreview()
@@ -2252,6 +2366,12 @@ void AShip::UpdateLocalBombardmentPreview()
 	if (!bLocalBombardmentInputModeApplied)
 	{
 		BeginLocalBombardmentTargeting();
+		if (!bLocalBombardmentInputModeApplied)
+		{
+			bLocalBombardmentTargetValid = false;
+			ClearLocalWaterSkillPreview();
+			return;
+		}
 	}
 
 	const ABombardment* BombardmentDefaults = ActiveBombardmentClass
@@ -2291,59 +2411,24 @@ void AShip::UpdateLocalBombardmentPreview()
 
 void AShip::UpdateLocalWaterSkillPreview(const FVector& Center, float Radius)
 {
-	UWorld* World = GetWorld();
-	if (!World || World->IsNetMode(NM_DedicatedServer))
+	if (GetWorld())
 	{
-		return;
-	}
-
-	if (!WaterSkillPreviewParameterCollection)
-	{
-		WaterSkillPreviewParameterCollection = LoadObject<UMaterialParameterCollection>(
-			nullptr,
-			TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom"));
-	}
-
-	UMaterialParameterCollectionInstance* Instance = WaterSkillPreviewParameterCollection
-		? World->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection)
-		: nullptr;
-	if (!Instance)
-	{
-		return;
-	}
-
-	const float SafeRadius = FMath::Max(1.0f, Radius);
-	if (!bWaterSkillPreviewEnabled
-		|| FVector::DistSquared2D(Center, LastWaterSkillPreviewCenter) > 25.0f
-		|| !FMath::IsNearlyEqual(SafeRadius, LastWaterSkillPreviewRadius, 0.1f))
-	{
-		Instance->SetVectorParameterValue(
-			TEXT("SW_VortexPreviewCenterRadius"),
-			FLinearColor(Center.X, Center.Y, Center.Z, SafeRadius));
-		LastWaterSkillPreviewCenter = Center;
-		LastWaterSkillPreviewRadius = SafeRadius;
-	}
-
-	if (!bWaterSkillPreviewEnabled)
-	{
-		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 1.0f);
-		bWaterSkillPreviewEnabled = true;
+		if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+		{
+			Overlays->Upsert(this, Center, Radius);
+		}
 	}
 }
 
 void AShip::ClearLocalWaterSkillPreview()
 {
-	if (!bWaterSkillPreviewEnabled || !GetWorld() || !WaterSkillPreviewParameterCollection)
+	if (GetWorld())
 	{
-		return;
+		if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+		{
+			Overlays->Remove(this);
+		}
 	}
-
-	if (UMaterialParameterCollectionInstance* Instance =
-		GetWorld()->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection))
-	{
-		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 0.0f);
-	}
-	bWaterSkillPreviewEnabled = false;
 }
 
 bool AShip::ResolveBombardmentTargetFromCursor(FVector& OutLocation) const
@@ -2579,6 +2664,7 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 
 void AShip::ToggleHelmCamera()
 {
+ if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session)) return;
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC || !PC->IsLocalController() || !RidingPlayer)
 	{
@@ -2595,6 +2681,7 @@ void AShip::ResetToFollowCamera()
 
 void AShip::SetHelmFirstPersonCameraEnabled(bool bEnabled)
 {
+ if (bEnabled && !SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session)) return;
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (bEnabled && (!PC || !PC->IsLocalController() || !RidingPlayer
 		|| !RidingPlayer->GetRootComponent() || !HelmFirstPersonCamera))
@@ -2751,6 +2838,10 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 void AShip::OnRep_Controller()
 {
+	if (bLocalBombardmentInputModeApplied && BombardmentInputController.Get() != Controller)
+	{
+		EndLocalBombardmentTargeting();
+	}
 	Super::OnRep_Controller();
 
 	if (NetworkPhysicsComponent)

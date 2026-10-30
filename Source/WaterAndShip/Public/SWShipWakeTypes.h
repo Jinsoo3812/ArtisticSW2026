@@ -27,6 +27,8 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") double EndServerTime = 0.0;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") double ExpireServerTime = 0.0;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float InitialAmplitudeCm = 0.0f;
+	// 시작/종료 진폭을 연결해 구간 교체 때의 단차를 제거한다. -1은 기존 고정 진폭 이벤트 호환값이다.
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float EndAmplitudeCm = -1.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float PropagationSpeedCmPerSecond = 1200.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float DecayRate = 0.12f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float WakeLengthCm = 25000.0f;
@@ -37,9 +39,14 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float FadeInSeconds = 0.08f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") ESWKelvinFroudeProfile FroudeProfile = ESWKelvinFroudeProfile::Fr_0_50;
 
+	float GetEndAmplitudeCm() const
+	{
+		return EndAmplitudeCm >= 0.0f ? EndAmplitudeCm : InitialAmplitudeCm;
+	}
+
 	bool IsActiveAt(const double ServerTime) const
 	{
-		return InitialAmplitudeCm > 0.0f
+		return FMath::Max(InitialAmplitudeCm, GetEndAmplitudeCm()) > 0.0f
 			&& PropagationSpeedCmPerSecond > UE_SMALL_NUMBER
 			&& ServerTime >= StartServerTime
 			&& ServerTime < ExpireServerTime;
@@ -56,9 +63,23 @@ struct FSWShipWakeDebugSample
 	FString DetailLog;
 };
 
+struct FSWShipWakeEventDiagnosticSample
+{
+	float Height = 0.0f;
+	float AmplitudeCm = 0.0f;
+	float Alpha = -1.0f;
+	float Age = 0.0f;
+	float StampMask = 0.0f;
+	float FadeIn = 0.0f;
+	bool bHasRoot = false;
+};
+
 /** Identical deterministic function used by GT water queries and Async Physics. */
 struct WATERANDSHIP_API FSWShipWakeEvaluator
 {
+	static FSWShipWakeEventDiagnosticSample EvaluateEventDiagnostic(
+		const FVector2D& QueryPosition, double ServerTime, const FSWShipWakeEvent& Event);
+
 	static float EvaluateEventHeight(
 		const FVector2D& QueryPosition,
 		double ServerTime,

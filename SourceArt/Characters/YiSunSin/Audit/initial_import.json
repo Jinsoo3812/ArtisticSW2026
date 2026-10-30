@@ -1,0 +1,68 @@
+{
+  "objects": [
+    {
+      "name": "SK_YiSunSin_Latest",
+      "type": "EMPTY",
+      "parent": null,
+      "dimensions": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        0.009999999776482582,
+        0.009999999776482582,
+        0.009999999776482582
+      ],
+      "verts": null,
+      "bones": null,
+      "materials": null
+    },
+    {
+      "name": "SK_YiSunSin_Latest.001",
+      "type": "MESH",
+      "parent": "spine",
+      "dimensions": [
+        1.1187161207199097,
+        0.9645383358001709,
+        1.9591978788375854
+      ],
+      "scale": [
+        0.010000000707805157,
+        0.010000000707805157,
+        0.010000000707805157
+      ],
+      "verts": 64211,
+      "bones": null,
+      "materials": [
+        "MI_Battle_Sash",
+        "M_Body",
+        "M_Hair",
+        "MI_Dongdari",
+        "MI_Jeonbok01b",
+        "MI_Leg_Wraps",
+        "MI_Beoseon01a",
+        "MI_Black_Shoes",
+        "MI_Military_Hat"
+      ]
+    },
+    {
+      "name": "spine",
+      "type": "ARMATURE",
+      "parent": "SK_YiSunSin_Latest",
+      "dimensions": [
+        1.0969716310501099,
+        2.0052692890167236,
+        0.615761399269104
+      ],
+      "scale": [
+        100.0,
+        99.99999237060547,
+        99.99999237060547
+      ],
+      "verts": null,
+      "bones": 82,
+      "materials": null
+    }
+  ]
+}

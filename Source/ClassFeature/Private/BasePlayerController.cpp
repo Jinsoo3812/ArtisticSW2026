@@ -61,6 +61,25 @@ ABasePlayerController::ABasePlayerController()
 #include "Network/Lobby/SWRoomSubsystem.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/IConsoleManager.h"
+#include "StoryFacadeSubsystem.h"
+#include "InputKeyEventArgs.h"
+#include "WeaponInputAbilitySystemComponent.h"
+
+bool ABasePlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled()
+		&& (Params.Key == EKeys::E || Params.Key == EKeys::C)
+		&& (Params.Event == IE_Pressed || Params.Event == IE_Released))
+	{
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=RawKey Controller=%s Key=%s Pressed=%d Pawn=%s LifeCharacter=%s LifePhase=%d SessionPhase=%d CanMutate=%d UIBlocked=%d Cursor=%d IgnoreMove=%d IgnoreLook=%d ViewportIgnore=%d"),
+			*GetName(), *Params.Key.ToString(), Params.Event == IE_Pressed, *GetNameSafe(GetPawn()), *GetNameSafe(GetLifeCharacter()),
+			static_cast<int32>(DeathFlowState.Phase), static_cast<int32>(LocalSessionPhase), CanMutateGameplay(),
+			IsDevelopmentTestInputBlockedByUI(), bShowMouseCursor, IsMoveInputIgnored(), IsLookInputIgnored(),
+			GetWorld() && GetWorld()->GetGameViewport() && GetWorld()->GetGameViewport()->IgnoreInput());
+		if (const ABasePlayer* LifePawnCharacter = GetLifeCharacter()) LifePawnCharacter->LogCombatInputDiagnostic(TEXT("RawKeySnapshot"));
+	}
+	return Super::InputKey(Params);
+}
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 static TAutoConsoleVariable<int32> CVarSWShipMotionDiag(
@@ -87,6 +106,20 @@ bool ABasePlayerController::IsDevelopmentTestInputBlockedByUI() const
   || IsDevelopmentTestInputBlockedByServerUI() || bRoomSavePending || PendingRetryRequestId
   || LocalSessionPhase == ESWSessionLifePhase::GameOver || LocalSessionPhase == ESWSessionLifePhase::ReturningAfterGameOver
   || (Connection && Connection->IsLoadingPresentationVisible());
+}
+
+bool ABasePlayerController::IsSkillCursorInputBlocked() const
+{
+	return IsDevelopmentTestInputBlockedByUI()
+		|| DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn;
+}
+
+void ABasePlayerController::RestoreInputAfterSkillCursor()
+{
+	if (IsLocalController() && !IsSkillCursorInputBlocked())
+	{
+		ApplyInventoryInputMode(false);
+	}
 }
 
 void ABasePlayerController::ClientBeginRoomReturn_Implementation()
@@ -142,17 +175,17 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 	if (!SharedState)
 	{
 		SharedState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
-			*GetNameSafe(this), *GetNameSafe(SharedState));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
+// 			*GetNameSafe(this), *GetNameSafe(SharedState));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
-			*GetNameSafe(this),
-			*GetNameSafe(SharedState),
-			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
+// 			*GetNameSafe(this),
+// 			*GetNameSafe(SharedState),
+// 			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
 	}
 
 	// Preserve the designer-authored tree configured on BP_BasePlayerState. The
@@ -173,17 +206,16 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 				SharedUpgrade->PreviewBaseStats,
 				false);
 			SharedState->ForceNetUpdate();
-			UE_LOG(LogTemp, Warning,
-				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
-				*GetNameSafe(SharedState),
-				*GetNameSafe(ConfiguredUpgrade),
-				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
-				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
+// 			UE_LOG(LogTemp, Warning,
+// 				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
+// 				*GetNameSafe(SharedState),
+// 				*GetNameSafe(ConfiguredUpgrade),
+// 				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
+// 				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
 		}
 		if (SharedUpgrade)
 		{
-			SharedUpgrade->SetIgnoreMaterialCostsForTesting(
-				RequestingPlayer && RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest());
+			SharedUpgrade->SetIgnoreMaterialCostsForTesting(false); // The shared component queries the session policy.
 			SharedState->ForceNetUpdate();
 		}
 	}
@@ -204,9 +236,9 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 		{
 			SharedState->RegisterPlayerShip(FoundPlayerShip);
 		}
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
-			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
+// 		UE_LOG(LogTemp, Warning,
+// 			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
+// 			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
 	}
 
 	/* UE_LOG(LogTemp, Log,
@@ -378,10 +410,10 @@ void ABasePlayerController::ServerRequestActivateSharedShipUpgrade_Implementatio
 	if (SharedUpgrade && Inventory)
 	{
 		const bool bIgnoreCosts = RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest();
-		UE_LOG(LogTemp, Warning,
+/* 		UE_LOG(LogTemp, Warning,
 			TEXT("[ShipUpgradeTrace][SharedRequestOptions] Player=%s IgnoreMaterialCosts=%s"),
 			*GetNameSafe(RequestingPlayer),
-			bIgnoreCosts ? TEXT("true") : TEXT("false"));
+			bIgnoreCosts ? TEXT("true") : TEXT("false")) */;
 		Result = SharedUpgrade->ActivateNodeWithInventoryProvider(NodeId, Inventory, bIgnoreCosts);
 		SharedState->ForceNetUpdate();
 		if (AShip* Ship = SharedState->GetCurrentPlayerShip())
@@ -690,7 +722,6 @@ void ABasePlayerController::HandleMenuEscape()
 	UClass* RoomMenuClass = LoadClass<USWRoomMenuWidget>(nullptr, TEXT("/Game/UI/Room/WBP_RoomMenu.WBP_RoomMenu_C"));
 	RoomMenuWidget = CreateWidget<USWRoomMenuWidget>(this, RoomMenuClass ? RoomMenuClass : USWRoomMenuWidget::StaticClass());
 	if (!RoomMenuWidget) return;
-	bCursorVisibleBeforeRoomMenu = bShowMouseCursor;
 	RoomMenuWidget->AddToViewport(50);
 	ApplyInventoryInputMode(true);
 }
@@ -701,7 +732,6 @@ void ABasePlayerController::CloseRoomMenu()
 	RoomMenuWidget->RemoveFromParent();
 	RoomMenuWidget = nullptr;
 	ApplyInventoryInputMode(false);
-	bShowMouseCursor = bCursorVisibleBeforeRoomMenu;
 }
 
 void ABasePlayerController::RequestRoomSave()
@@ -718,6 +748,7 @@ void ABasePlayerController::RequestRoomSave()
 void ABasePlayerController::RequestRoomSaveAndExit()
 {
 	if (!IsLocalController()) return;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=Requested PendingSave=%d RequestId=%llu"), bRoomSavePending, PendingRoomSaveRequestId);
 	bExitAfterRoomSave = true;
 	if (!bRoomSavePending) RequestRoomSave();
 }
@@ -787,7 +818,12 @@ void ABasePlayerController::ServerRequestRoomSave_Implementation(uint64 RequestI
 
 void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId, bool bSuccess, const FString& Message)
 {
-	if (!bRoomSavePending || RequestId != PendingRoomSaveRequestId) return;
+	if (!bRoomSavePending || RequestId != PendingRoomSaveRequestId)
+	{
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=SaveAndExit Phase=ResultIgnored RequestId=%llu PendingId=%llu PendingSave=%d ExitAfterSave=%d"),
+			RequestId, PendingRoomSaveRequestId, bRoomSavePending, bExitAfterRoomSave);
+		return;
+	}
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=ManualSave Side=Client Result=%s RequestId=%llu Message=%s"), bSuccess ? TEXT("Success") : TEXT("Failed"), RequestId, *Message);
 	GetWorldTimerManager().ClearTimer(RoomSaveTimeoutHandle);
 	bRoomSavePending = false;
@@ -796,9 +832,11 @@ void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId
 	if (!bSuccess) { bExitAfterRoomSave = false; return; }
 	if (bExitAfterRoomSave)
 	{
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=LeaveRoom RequestId=%llu"), RequestId);
 		bExitAfterRoomSave = false;
 		if (USWRoomSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr)
 			Room->LeaveRoom();
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=SaveAndExit Phase=ProcessExitRequested RequestId=%llu"), RequestId);
 		FPlatformMisc::RequestExit(false);
 	}
 }
@@ -834,6 +872,23 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 	StartStorageSearch(StorageChest);
 	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Sending ClientOpenStorage. Chest=%s"), *GetNameSafe(StorageChest));
 	ClientOpenStorage(StorageChest);
+}
+
+void ABasePlayerController::HandleChestPoolAssignment(AStorageChest* Chest, const FGuid& PreviousId, const FGuid& NextId)
+{
+	if (PreviousId == NextId) return;
+	if (PreviousId.IsValid())
+		if (const FStorageRevealState* State = StorageRevealStates.Find(Chest)) PooledStorageRevealStates.Add(PreviousId, *State);
+	// The first registration adopts any search progress made before discovery.
+	if (!PreviousId.IsValid() && NextId.IsValid() && StorageRevealStates.Contains(Chest)) return;
+	if (ActiveStorageChest == Chest)
+	{
+		if (HasAuthority()) CloseStorageFromServer(Chest);
+		else CloseStorage(false);
+	}
+	StorageRevealStates.Remove(Chest);
+	if (NextId.IsValid())
+		if (const FStorageRevealState* State = PooledStorageRevealStates.Find(NextId)) StorageRevealStates.Add(Chest, *State);
 }
 
 void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
@@ -1312,7 +1367,10 @@ float ABasePlayerController::GetStorageSlotSearchTime(AStorageChest* StorageChes
 
 void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 {
-	bShowMouseCursor = bOpen;
+	const AShip* Ship = Cast<AShip>(GetPawn());
+	const bool bTargeting = !bOpen && Ship && Ship->IsLocallyControlled()
+		&& Ship->IsBombardmentTargeting() && Ship->IsLocalBombardmentInputModeApplied();
+	bShowMouseCursor = bOpen || bTargeting;
 	// A chest and the facility hub are modal; keep F/game input available for closing.
 	UpdateInteractionMovementLock();
 
@@ -1337,12 +1395,20 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 	}
 	else
 	{
-		FInputModeGameOnly InputMode;
-		// Closing a UI must not consume the first mouse-down just to recapture the viewport.
-		// Forward that click to gameplay as well (attack/interact inputs use mouse buttons).
-		InputMode.SetConsumeCaptureMouseDown(false);
-		SetInputMode(InputMode);
-		UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		if (bTargeting)
+		{
+			FInputModeGameAndUI InputMode;
+			InputMode.SetHideCursorDuringCapture(false);
+			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			SetInputMode(InputMode);
+		}
+		else
+		{
+			FInputModeGameOnly InputMode;
+			InputMode.SetConsumeCaptureMouseDown(false);
+			SetInputMode(InputMode);
+			UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		}
 		FlushPressedKeys();
 
 		if (bInventoryInputModeApplied)
@@ -1513,7 +1579,7 @@ void ABasePlayerController::TickShipMotionDiagnostics()
 bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
 {
 	if (!CanMutateGameplay()) return false;
-	if (!IsValid(Chest) || Chest->IsLocked()) return false;
+	if (!IsValid(Chest) || Chest->IsLocked() || Chest->IsPoolIdle()) return false;
 	const ASharedStorageChest* Shared = Cast<ASharedStorageChest>(Chest);
 	return !Shared || Shared->CanPlayerAccess(GetPawn());
 }
@@ -1756,9 +1822,9 @@ void ABasePlayerController::ApplyLocalDeathFlow()
  }
  if (bBlocked)
  {
-  if (!DeathFlowWidget && GetLocalPlayer() && GetWorld()->GetGameViewport())
+  if (!DeathFlowWidget && DeathFlowWidgetClass && GetLocalPlayer() && GetWorld()->GetGameViewport())
   {
-   DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, USWDeathFlowWidget::StaticClass());
+   DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, DeathFlowWidgetClass);
    if (DeathFlowWidget) DeathFlowWidget->AddToViewport(1000);
   }
   if (bGameOver)

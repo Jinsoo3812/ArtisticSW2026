@@ -2,6 +2,9 @@
 
 
 #include "BaseEnemy.h"
+#include "Engine/GameInstance.h"
+#include "Components/SWFoleyComponent.h"
+#include "Audio/SWFoleyAudioProfile.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -169,6 +172,12 @@ bool ABaseEnemy::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWR
 
 ABaseEnemy::ABaseEnemy(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
+	auto* Foley = CreateDefaultSubobject<USWFoleyComponent>(TEXT("Foley"));
+	Foley->ProfileOverride = TSoftObjectPtr<USWFoleyAudioProfile>(FSoftObjectPath(
+		TEXT("/Game/Audio/Foley/DA_Mannequin_Foley.DA_Mannequin_Foley")));
+	Foley->bUseDistanceDrivenSteps = false;
+	Foley->bPollMovementForJumpAndLand = true;
+	Foley->bDetectWaterWithoutSwimming = true;
 	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 	
@@ -410,6 +419,10 @@ void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 
 		if (HasAuthority())
 		{
+			if (bCompleteStoryNodeOnDeath)
+				if (UGameInstance* GameInstance = GetGameInstance())
+					if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+						Story->CompleteStoryNode(CompletedStoryNodeOnDeath);
 			if (WeaponComponent)
 			{
 				WeaponComponent->DeactivateForOwnerDeath();

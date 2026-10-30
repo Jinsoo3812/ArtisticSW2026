@@ -10,6 +10,7 @@
 #include "GASDamageInstantGameplayEffect.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "UObject/UObjectGlobals.h"
 #include "Misc/ScopeExit.h"
 #include "UObject/Script.h"
 
@@ -19,10 +20,13 @@ bool FBossStatusTriggersTest::RunTest(const FString& Parameters)
 {
 	// This isolated world has no BeginPlay; allow the actor's dynamic health delegate to execute.
 	FEditorScriptExecutionGuard ScriptExecutionGuard;
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
+
+	// Resolve the authored cue before this short-lived world emits status events.
+	if (!TestNotNull(TEXT("Boss stun cue is available before status delivery"), LoadClass<UObject>(nullptr,
+		TEXT("/Game/GameplayCues/Boss/Stun/GC_Boss_Stun.GC_Boss_Stun_C")))) return false;
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("BossStatusTests"));
 	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
-	ON_SCOPE_EXIT { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
+	ON_SCOPE_EXIT { FlushAsyncLoading(); World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	AShipBossEnemy* Boss = World->SpawnActor<AShipBossEnemy>(Params);

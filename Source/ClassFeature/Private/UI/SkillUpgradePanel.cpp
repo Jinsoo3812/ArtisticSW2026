@@ -22,6 +22,17 @@ namespace SkillCraftingPanel
 	constexpr int32 RecipePageIndex = 1;
 	constexpr int32 CompletePageIndex = 2;
 	constexpr int32 IngredientSlotCount = 3;
+
+	FText GetSkillName(ESkillUpgradeSelection Selection)
+	{
+		switch (Selection)
+		{
+		case ESkillUpgradeSelection::GravityVortex: return NSLOCTEXT("SkillCrafting", "CurrentGeneratorName", "해류 발생기");
+		case ESkillUpgradeSelection::WaterBomb: return NSLOCTEXT("SkillCrafting", "WaterBombName", "물폭탄");
+		case ESkillUpgradeSelection::Bombardment: return NSLOCTEXT("SkillCrafting", "BombardmentName", "포탄세례");
+		default: return FText::GetEmpty();
+		}
+	}
 }
 
 void USkillUpgradePanel::NativeConstruct()
@@ -204,12 +215,12 @@ void USkillUpgradePanel::RefreshSelectedSkillPresentation()
 	UTexture2D* SkillIcon = nullptr;
 	if (bHasSelectedSkill && SkillComponent)
 	{
+		SkillName = SkillCraftingPanel::GetSkillName(SelectedSkill);
 		const FGameplayTag SkillItemTag = GetSelectedSkillItemTag();
 		if (UWorld* World = GetWorld())
 		{
 			if (UItemSubsystem* Items = World->GetSubsystem<UItemSubsystem>())
 			{
-				SkillName = Items->GetItemName(SkillItemTag);
 				SkillIcon = Items->GetIcon2D(SkillItemTag).LoadSynchronous();
 			}
 		}
@@ -277,15 +288,12 @@ void USkillUpgradePanel::RefreshCraftingState()
 	}
 
 	SelectedRecipeHeader = MatchingRecipes[0];
+	SelectedRecipeHeader.DisplayName = FText::Format(NSLOCTEXT("SkillCrafting", "UnlockComplete", "{0} 개방 완료"), SkillCraftingPanel::GetSkillName(SelectedSkill));
 	SelectedRecipeId = SelectedRecipeHeader.RecipeId;
-	FCraftingDetailsView Details;
-	if (!CraftingComponent->GetCraftingDetails(SelectedRecipeId, 1, Details))
-	{
-		SetCraftingState(ESkillCraftingUIState::Error);
-		RefreshLockState();
-		return;
-	}
-	ApplyCraftingDetails(Details);
+	SelectedRecipeHeader.Availability = ECraftingAvailability::Available;
+	if (CraftButtonText) CraftButtonText->SetText(NSLOCTEXT("SkillCrafting", "FreeUnlock", "스킬 개방"));
+	SetCraftingState(ESkillCraftingUIState::Ready);
+	RefreshLockState();
 }
 
 void USkillUpgradePanel::ApplyCraftingDetails(const FCraftingDetailsView& Details)
@@ -396,9 +404,7 @@ void USkillUpgradePanel::HandleCraftButtonClicked()
 		return;
 	}
 
-	FCraftingDetailsView Details;
-	if (!CraftingComponent->GetCraftingDetails(SelectedRecipeId, 1, Details)
-		|| Details.Availability != ECraftingAvailability::Available)
+	if (!IsSelectedSkillUnlockConditionMet())
 	{
 		RefreshCraftingState();
 		return;

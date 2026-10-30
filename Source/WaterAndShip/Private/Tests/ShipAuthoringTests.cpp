@@ -106,8 +106,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FShipAnchorIntegrationTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("Recipe_DecipherCipher has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("Recipe_DecipherCipher contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ShipAnchorTestWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))

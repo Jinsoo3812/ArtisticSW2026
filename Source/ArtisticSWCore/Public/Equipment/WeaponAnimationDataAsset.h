@@ -128,6 +128,9 @@ public:
 
 	const FWeaponAnimationEntry* FindEntryForTag(const FGameplayTag& ItemTag) const;
 
+	/** Runtime copy: per-item speeds never mutate the shared family animation asset. */
+	UWeaponAnimationDataAsset* CreateSpeedVariant(UObject* Outer, float BasicAttackRate, float AimCycleRate) const;
+
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Animation")
 	FWeaponAnimationEntry DefaultEntry;

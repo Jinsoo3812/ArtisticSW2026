@@ -112,6 +112,11 @@ protected:
 	virtual void HandleReplicatedHostShipChanged() override;
 	void RefreshPoolNetState(bool bNewActivation = false);
 	void ReconcileClientPoolState();
+	uint32 LastCrewDiagnosticKey = 0;
+	bool bHasCrewDiagnosticKey = false;
+	double CrewDiagnosticWindow = 0.0;
+	int32 CrewDiagnosticCount = 0;
+	uint32 SuppressedCrewDiagnostics = 0;
 	void HandleRoomRestoreCompleted();
 	void ResumePoolAI();
 	void ResetInactivePresentation(bool bRestoreWeapon = true);

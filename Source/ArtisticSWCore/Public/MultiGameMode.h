@@ -52,6 +52,8 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FPlayerCorpseLifecycleTest;
 	friend class FPlayerDeathDevelopmentTest;
+	friend class FDevelopmentPlayerInvulnerabilityTest;
+	friend class FYiDialogueCVarServerApplyTest;
 #endif
 
 public:
@@ -62,6 +64,8 @@ public:
 	ESWSessionLifePhase GetSessionLifePhase() const { return SessionLifePhase; }
 	bool IsIndividualRespawnInProgress(AController* Controller) const { return IndividualRespawnInProgress.Contains(Controller); }
 	bool CanMutateGameplay(AController* Controller) const;
+	/** Global development campaign controls belong to the authenticated room host or local offline host. */
+	bool CanChangeDevelopmentCampaignState(AController* Controller) const;
 	bool CanHostRequestGameOverRetry(AController* Controller) const;
 	bool IsRoomHostController(AController* Controller) const { return IsHostController(Controller); }
 	void SetGameOverRetryTransitionPending(bool bPending);

@@ -8,6 +8,7 @@
 #include "StorySubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Misc/DataValidation.h"
+#include "HAL/IConsoleManager.h"
 
 namespace NPCDialogueTests
 {
@@ -27,6 +28,23 @@ namespace NPCDialogueTests
 		Rule.Lines.Add(MakeLine(TEXT("Line_01"), Text));
 		return Rule;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRetiredYiDialogueToggleTest,
+	"ArtisticSW.NPCDialogue.LegacySkipRemoved",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRetiredYiDialogueToggleTest::RunTest(const FString& Parameters)
+{
+	TestNull(TEXT("Legacy dialogue bypass is not registered"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("sw.Dialogue.YiSunSin.SkipRequirements")));
+	TestNull(TEXT("Legacy middle-boss campaign replacement is not registered"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("sw.Campaign.MiddleBossAndReturn")));
+	TestNull(TEXT("Local host shortcut is disabled"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("SW.DevTest.Local.Host")));
+	TestNull(TEXT("Local join shortcut is disabled"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("SW.DevTest.Local.Join")));
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -138,7 +156,7 @@ bool FNPCDialogueAuthoredTestAssetTest::RunTest(const FString& Parameters)
 {
 	UNPCDialogueData* Data = LoadObject<UNPCDialogueData>(
 		nullptr,
-		TEXT("/Game/New/NPC/Data/DA_TestNPCDialogue.DA_TestNPCDialogue"));
+		TEXT("/Game/Blueprints/NPC/Data/DA_TestNPCDialogue.DA_TestNPCDialogue"));
 	if (!TestNotNull(TEXT("DA_TestNPCDialogue loads"), Data))
 	{
 		return false;

@@ -1,0 +1,54 @@
+{
+  "passed": true,
+  "error": null,
+  "speeds": [
+    0,
+    1,
+    10,
+    25,
+    50,
+    75,
+    100,
+    125,
+    149,
+    150,
+    225,
+    300,
+    450,
+    100,
+    25,
+    0
+  ],
+  "samples": 240,
+  "actual_runtime_anim_graph": true,
+  "npc_sash_bones": 4,
+  "root_scale_range": [
+    99.99999237060547,
+    100.00000298023224
+  ],
+  "upper_body_height_range_cm": [
+    130.36750466717396,
+    152.58024526087732
+  ],
+  "raw_pose_capture": "Saved/IntegrationChecks/YiSunSin/sash_runtime_samples.json",
+  "samples_per_speed": {
+    "0": 30,
+    "1": 15,
+    "10": 15,
+    "25": 30,
+    "50": 15,
+    "75": 15,
+    "100": 30,
+    "125": 15,
+    "149": 15,
+    "150": 15,
+    "225": 15,
+    "300": 15,
+    "450": 15
+  },
+  "sash_relative_rotation_range_degrees": {
+    "idle": 2.1540908753954393,
+    "walk": 23.969848565579802,
+    "run": 22.21707778094518
+  }
+}

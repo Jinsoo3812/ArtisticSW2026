@@ -8,6 +8,17 @@
 #include "BaseGameplayTags.h"
 #include "Engine/World.h"
 
+namespace
+{
+	// Inventory identities span equipment/materials and the campaign's quest items.
+	// Category/state tags under Item are not inventory identities.
+	bool IsCraftingItemTag(const FGameplayTag& Tag)
+	{
+		return Tag.IsValid() && (Tag.MatchesTag(Item_Id)
+			|| (Tag.MatchesTag(Item_Quest) && Tag != Item_Quest));
+	}
+}
+
 void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -94,12 +105,24 @@ void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	if (UItemData* DA = Settings->ItemAssetRegistry.LoadSynchronous())
 	{
 		CachedItemData = DA;
+		for (const auto& Pair : DA->ItemDefinitions)
+		{
+			if (Pair.Value.ProgressionKind == EItemProgressionKind::Weapon || !Pair.Value.WeaponBalanceRow.IsNull())
+			{
+				FString Error;
+				if (UEquippableWeaponDefinition* Weapon = DA->CreateWeaponDefinition(Pair.Key, this, Error))
+					ResolvedWeapons.Add(Pair.Key, Weapon);
+				else
+					UE_LOG(LogTemp, Error, TEXT("[WeaponBalance] %s: %s"), *Pair.Key.ToString(), *Error);
+			}
+		}
 		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Successfully loaded Item Asset Registry."));
 	}
 }
 
 void UItemSubsystem::Deinitialize()
 {
+	ResolvedWeapons.Reset();
 	CachedItemData = nullptr;
 	CachedFeatureData.Reset();
 	CachedRecipeData.Reset();
@@ -119,8 +142,8 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 		return nullptr;
 	}
 
-	const bool bWeapon = Def->ProgressionKind == EItemProgressionKind::Weapon || !Def->WeaponDefinition.IsNull();
-	const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous();
+	const bool bWeapon = Def->ProgressionKind == EItemProgressionKind::Weapon || !Def->WeaponBalanceRow.IsNull() || !Def->WeaponDefinition.IsNull();
+	const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition(ItemTag);
 	UClass* SpawnClass = bWeapon ? (Weapon ? Weapon->ActorClass.LoadSynchronous() : nullptr) : Def->SpawnClassByCrafting.LoadSynchronous();
 	if (bWeapon && !SpawnClass)
 	{
@@ -168,6 +191,14 @@ const FItemDefinition* UItemSubsystem::GetItemDefinition(const FGameplayTag& Ite
 	return nullptr;
 }
 
+UEquippableWeaponDefinition* UItemSubsystem::GetWeaponDefinition(const FGameplayTag& ItemTag) const
+{
+	if (const auto* Weapon = ResolvedWeapons.Find(ItemTag)) return Weapon->Get();
+	const FItemDefinition* Item = GetItemDefinition(ItemTag);
+	// Never hide a bad configured DT row behind obsolete asset data.
+	return Item && Item->WeaponBalanceRow.IsNull() ? Item->WeaponDefinition.LoadSynchronous() : nullptr;
+}
+
 const FItemFeatureData* UItemSubsystem::GetItemFeature(const FGameplayTag& Tag) const
 {
 	// O(1) 해시 맵 탐색
@@ -201,7 +232,7 @@ TSoftClassPtr<ABaseItem> UItemSubsystem::GetSpawnClassByCrafting(const FGameplay
 {
 	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
 	{
-		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous()) return Weapon->ActorClass;
+		if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition(ItemTag)) return Weapon->ActorClass;
 		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClassByCrafting;
 	}
 	return nullptr;
@@ -211,7 +242,7 @@ TSoftClassPtr<AActor> UItemSubsystem::GetSpawnClass(const FGameplayTag& ItemTag)
 {
 	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
 	{
-		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous())
+		if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition(ItemTag))
 			return Weapon->CombatData ? Weapon->CombatData->ProjectileClass : TSoftClassPtr<AActor>();
 		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClass;
 	}
@@ -342,7 +373,7 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		{
 			OutErrors.Add(TEXT("A crafting recipe has an empty RowName."));
 		}
-		if (!Recipe.ResultItemTag.IsValid() || !Recipe.ResultItemTag.MatchesTag(Item_Id))
+		if (!IsCraftingItemTag(Recipe.ResultItemTag))
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s has an invalid ResultItemTag: %s"), *RecipeId.ToString(), *Recipe.ResultItemTag.ToString()));
 		}
@@ -369,7 +400,7 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 				SkillRecipeByResult.Add(Recipe.ResultItemTag, RecipeId);
 			}
 		}
-		if (Recipe.RequiredRecipeItemTag.IsValid() && !Recipe.RequiredRecipeItemTag.MatchesTag(Item_Id))
+		if (Recipe.RequiredRecipeItemTag.IsValid() && !IsCraftingItemTag(Recipe.RequiredRecipeItemTag))
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s has an invalid RequiredRecipeItemTag."), *RecipeId.ToString()));
 		}
@@ -389,7 +420,7 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		TSet<FGameplayTag> SeenIngredients;
 		for (const FCraftingItemStack& Ingredient : Recipe.Ingredients)
 		{
-			if (!Ingredient.ItemTag.IsValid() || !Ingredient.ItemTag.MatchesTag(Item_Id) || Ingredient.Quantity <= 0)
+			if (!IsCraftingItemTag(Ingredient.ItemTag) || Ingredient.Quantity <= 0)
 			{
 				OutErrors.Add(FString::Printf(TEXT("%s contains an invalid ingredient."), *RecipeId.ToString()));
 				continue;

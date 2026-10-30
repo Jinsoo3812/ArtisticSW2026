@@ -11,7 +11,7 @@
 #include "Bombardment.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
+#include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 #include "Ship.h"
 #include "Skills/PlayerSkillComponent.h"
@@ -44,7 +44,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("BombardmentAbilityShipWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
 	{
@@ -52,6 +52,7 @@ bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 	}
 	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
 	WorldContext.SetCurrentWorld(World);
+	World->InitializeActorsForPlay(FURL());
 
 	auto CleanupWorld = [World]()
 	{
@@ -60,7 +61,7 @@ bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 	};
 
 	ABasePlayerState* PlayerState = World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
 	AShip* Ship = World->SpawnActor<AShip>();
 	if (!TestNotNull(TEXT("PlayerState is spawned"), PlayerState)
@@ -74,6 +75,8 @@ bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 
 	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
+	PlayerController->PlayerState = PlayerState;
+	PlayerState->SetOwner(PlayerController);
 	PlayerController->Possess(Player);
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
 	if (!TestNotNull(TEXT("Player ASC is initialized by possession"), ASC))
@@ -96,6 +99,8 @@ bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 		SkillComponent && SkillComponent->UnlockSkill(GameplayAbility_Skill_Bombardment));
 	TestEqual(TEXT("One Bombardment material is added"),
 		Player->GetInventoryComponent()->AddItem(Item_Id_Material_SkillMaterial_LegendarySkill, 1), 1);
+	TestTrue(TEXT("Helming preserves the living player's skill permission"), Player->CanUseSkill(GameplayAbility_Skill_Bombardment));
+	TestTrue(TEXT("Helming preserves the character ASC avatar"), ASC->GetAvatarActor() == Player);
 	TestTrue(TEXT("Bombardment GA activates by ability tag"),
 		ASC->TryActivateAbilitiesByTag(AbilityTags, true));
 	TestTrue(TEXT("GA activation enters ship targeting mode"), Ship->IsBombardmentTargeting());

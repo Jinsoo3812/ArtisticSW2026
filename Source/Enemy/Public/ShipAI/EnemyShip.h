@@ -78,6 +78,27 @@ class ENEMY_API AEnemyShip : public AShip, public IIncomingDamageMultiplierInter
 
 public:
 	AEnemyShip();
+	bool IsBundlePoolIdle() const { return bBundlePoolIdle; }
+	void SetBundlePoolIdle(bool bIdle);
+	void BeginBundleActivation();
+	virtual void PostNetReceive() override;
+	virtual void OnRep_ReplicatedMovement() override;
+	uint32 GetBundleActivationGeneration() const { return BundleActivationGeneration; }
+	bool IsBundlePresentationReady() const;
+	void RefreshBundlePresentation() { OnRep_BundlePoolIdle(); }
+	bool PrepareBundlePosition(uint32 Generation, const FTransform& Transform);
+	bool IsBundlePositionPrepared() const { return BundleActivationGeneration != 0 && ClientBundlePreparedGeneration == BundleActivationGeneration; }
+	void ActivatePreparedBundle(uint32 Generation, const FVector& LinearVelocity, const FVector& AngularVelocity);
+	void PrepareFreshBundleEncounter(const FTransform& HomeTransform);
+	/** Build derived deck navigation while gameplay remains suspended. Restore never resets crew. */
+	bool PrepareBundleDeck(bool bCreateCrew, FString& Error);
+	double GetInitialBeginPlayMs() const { return InitialBeginPlayMs; }
+	void ClearCrewForIdle();
+	bool StepClearCrewForIdle();
+	void RefreshBundleStoryBindings();
+	FName GetBundleAuthoredName() const { return BundleAuthoredName.IsNone() ? GetFName() : BundleAuthoredName; }
+	void SetBundleAuthoredName(FName Name) { BundleAuthoredName = Name; }
+	void CollectBundleActors(TArray<AActor*>& OutActors) const;
 	FOnEnemyShipRuntimeStateChanged OnRuntimeStateChanged;
 	/** Client-local presentation notification, never an authority spawn command. */
 	FOnEnemyShipRuntimeStateChanged OnRuntimePresentationChanged;
@@ -99,6 +120,8 @@ public:
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
 	virtual float GetCannonCooldownMultiplier() const override;
 	virtual float GetIncomingDamageMultiplier() const override;
+	/** Authored override, otherwise the common visible BP_Storage_Chest. */
+	TSubclassOf<AStorageChest> GetDeckChestClass() const;
 	virtual bool IsProtectedFromOwnHullCannonSplash(const AActor* Candidate) const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -107,6 +130,7 @@ public:
 	TObjectPtr<USWCabinWaterCullComponent> CabinWaterCullComponent;
 
 protected:
+	double InitialBeginPlayMs = 0.0;
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
@@ -242,6 +266,15 @@ public:
 	/** May be overridden per placed instance so one BP_EnemyShip class can represent many archetypes. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
+
+	/** Used at encounter initialization when this ship's boss campaign gate is closed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
+	TObjectPtr<UEnemyShipArchetypeData> NormalFallbackArchetype;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UEnemyShipArchetypeData> AuthoredEncounterArchetype;
+
+	void NotifyCrewEnemyDeactivated(ABaseEnemy* CrewEnemy);
 
 	/** Override the archetype's normal cannon lead for this ship, including during PIE on the server. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Cannon Lead")
@@ -390,6 +423,23 @@ protected:
 
 	UPROPERTY(SaveGame, ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
 	bool bDistanceOptimizationDormant = false;
+	UPROPERTY(ReplicatedUsing = OnRep_BundlePoolIdle)
+	bool bBundlePoolIdle = false;
+	UPROPERTY(Replicated) FName BundleAuthoredName;
+	UPROPERTY(ReplicatedUsing=OnRep_BundleActivationGeneration) uint32 BundleActivationGeneration = 0;
+	uint32 ClientBundleActivationGeneration = 0;
+	uint32 ClientBundlePreparedGeneration = 0;
+	UFUNCTION() void OnRep_BundleActivationGeneration();
+	UFUNCTION() void OnRep_BundlePoolIdle();
+	struct FBundleSuspendedActor
+	{
+		TWeakObjectPtr<AActor> Actor;
+		bool bTick = false;
+		bool bCollision = false;
+		bool bHidden = false;
+		TArray<TWeakObjectPtr<UActorComponent>> TickingComponents;
+	};
+	TArray<FBundleSuspendedActor> BundleSuspendedActors;
 	UPROPERTY(ReplicatedUsing = OnRep_StoryGateOpen, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Story")
 	bool bStoryGateOpen = false;
  bool bDevelopmentStoryGateOpened = false;
@@ -416,6 +466,7 @@ protected:
 	/** Prevents an unconfigured or not-yet-deployed empty crew roster from being treated as defeated. */
 	bool bHasEverHadLivingCrew = false;
 	bool bEndingPlay = false;
+	bool bClearingCrewForIdle = false;
 	bool bCaptureCannonTagAdded = false;
 	bool bStoryGateCannonTagAdded = false;
 	bool bStorySubsystemMissingLogged = false;

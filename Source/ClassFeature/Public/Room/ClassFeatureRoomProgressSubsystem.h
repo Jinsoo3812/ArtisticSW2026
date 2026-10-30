@@ -17,6 +17,7 @@ class CLASSFEATURE_API UClassFeatureRoomProgressSubsystem : public UGameInstance
 	GENERATED_BODY()
 public:
  bool IsDevelopmentTransitionBusy() const { return bReturning || bSaving; }
+ bool TryDevelopmentCampaignSkip(UWorld* World, ABasePlayerController* Requester, FName Target, FString& OutError);
  bool TryDevelopmentFinalDeparture(UWorld* World, ABasePlayerController* Requester, FString& OutError);
 	bool TryGameOverRetry(UWorld* World, ABasePlayerController* Requester, uint64 RequestId, FString& OutError);
 	bool CaptureControllerProgress(ABasePlayerController* Controller, bool bUseFrozen, FString& OutError);
@@ -34,6 +35,14 @@ public:
 	bool TryFinalDeparture(UWorld* World, ABasePlayer* Requester);
 	void ConfirmReturnPresentation(ABasePlayerController* Controller);
 private:
+ bool PrepareDevelopmentCampaign(UWorld* World, FString& OutError);
+ bool CommitDevelopmentCampaign(UWorld* World, FString& OutError);
+ void CancelDevelopmentCampaign();
+ UPROPERTY(Transient) TObjectPtr<USWRoomSaveGame> CampaignPreparedRoom;
+ UPROPERTY(Transient) TObjectPtr<USWRoomSaveGame> CampaignRollbackRoom;
+ FName CampaignTarget;
+ bool bCampaignRestorePending = false;
+ int32 CampaignOptionMask = 0;
  bool TryFinalDepartureInternal(UWorld* World, ABasePlayer* Requester, ABasePlayerController* Controller, bool bDevelopmentTest, FString& OutError);
  bool bDevelopmentFinalDeparture = false;
 	void BeginReturnTravel();
@@ -42,13 +51,15 @@ private:
 	UFUNCTION() void HandleGameOverRestart();
 	void HandlePostLoadMap(UWorld* World);
 	bool TickRestore(float DeltaTime);
+	bool RecoverWorld(UWorld* World, const FString& Reason);
 	FDelegateHandle PostLoadHandle;
 	FTSTicker::FDelegateHandle RestoreTickerHandle;
 	TWeakObjectPtr<UWorld> PendingWorld;
 	double RestoreDeadline = 0.0;
 	double DiagnosticLastRestoreLogAt = 0.0;
+	FString LastSharedRestoreFailure;
 	bool bReturning = false;
-	enum class ERoomTransitionReason : uint8 { Return, FinalDeparture, GameOverRetry };
+	enum class ERoomTransitionReason : uint8 { Return, FinalDeparture, GameOverRetry, CampaignSkip };
 	ERoomTransitionReason TransitionReason = ERoomTransitionReason::Return;
 	int32 FinalDepartureAttemptSerial = 0;
 	int32 ActiveFinalDepartureAttemptId = 0;
@@ -59,7 +70,6 @@ private:
 	bool bFinalDepartureSharedRestored = false;
 	bool bReturnShipPlaced = false;
 	bool bReturnEntryReady = false;
-	bool bShipSafetyFallbackUsed = false;
 	double ShipSafetyCheckAt = 0.0;
 	double ShipPlacementRealTime = 0.0;
 	double ShipPlacementWorldTime = 0.0;

@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "original_skeleton_unchanged": "/Game/Chae_Asset/YiSunSinContent/Characters/SK_YiSunSin_Latest_Skeleton.SK_YiSunSin_Latest_Skeleton",
+  "npc_skeleton": "/Game/Chae_Asset/YiSunSinContent/NPC/Characters/SK_YiSunSin_NPC_Sash_Skeleton.SK_YiSunSin_NPC_Sash_Skeleton",
+  "original_bone_count": 83,
+  "npc_bone_count": 87,
+  "bind_translation_error_cm": 1.473054400986754e-06,
+  "body_animation_translation_error_cm": 1.5557547781885936e-07,
+  "body_animation_rotation_error_degrees": 8.892371199313727e-05,
+  "root_scale_error": 0,
+  "npc_bp_uses_sash_variant": true,
+  "speeds": [
+    0,
+    150,
+    450
+  ]
+}

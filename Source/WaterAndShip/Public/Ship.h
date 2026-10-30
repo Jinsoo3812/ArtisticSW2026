@@ -15,6 +15,18 @@
 #include "Ship.generated.h"
 
 USTRUCT()
+struct FSWRoomHelmPointState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FTransform RelativeTransform;
+	UPROPERTY(SaveGame) FName ParentComponent;
+	UPROPERTY(SaveGame) FName Socket;
+	UPROPERTY(SaveGame) bool bAbsoluteLocation = false;
+	UPROPERTY(SaveGame) bool bAbsoluteRotation = false;
+	UPROPERTY(SaveGame) bool bAbsoluteScale = false;
+};
+
+USTRUCT()
 struct FSWRoomShipState
 {
 	GENERATED_BODY()
@@ -29,12 +41,14 @@ struct FSWRoomShipState
 	UPROPERTY(SaveGame) bool bLeakTimerPending = false;
 	UPROPERTY(SaveGame) float LeakNextTickRemaining = 0.f;
 	UPROPERTY(SaveGame) TArray<FSWRoomGameplayEffectState> ActiveEffects;
+	UPROPERTY(SaveGame) bool bHasHelmPoints = false;
+	UPROPERTY(SaveGame) FSWRoomHelmPointState HelmSeat;
+	UPROPERTY(SaveGame) FSWRoomHelmPointState HelmExit;
 };
 
 class USWBuoyancyComponent;
 class UGameplayEffect;
 class UNiagaraSystem;
-class UMaterialParameterCollection;
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -536,8 +550,7 @@ public:
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
-		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
-	{ return FSWRoomStructCodec::Compare<FSWRoomShipState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override;
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void PostLoad() override;
@@ -616,6 +629,7 @@ public:
 	 * async callback, which SetSimulatePhysics alone does not do for this ship.
 	 */
 	void SetShipRuntimePhysicsEnabled(bool bEnabled);
+	void ResetFreshEncounterControlState();
 	bool IsShipRuntimePhysicsEnabled() const { return bShipRuntimePhysicsEnabled; }
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
@@ -721,6 +735,7 @@ public:
 		TSubclassOf<ABombardment> BombardmentClass);
 	void DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability);
 	bool IsBombardmentTargeting() const { return bBombardmentTargeting; }
+	bool IsLocalBombardmentInputModeApplied() const { return bLocalBombardmentInputModeApplied; }
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnBombardmentTargetingChanged, bool);
 	FOnBombardmentTargetingChanged OnBombardmentTargetingChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
@@ -1259,16 +1274,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ABombardmentPreview> BombardmentPreviewActor;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialParameterCollection> WaterSkillPreviewParameterCollection;
-
 	FVector LocalBombardmentTarget = FVector::ZeroVector;
-	FVector LastWaterSkillPreviewCenter = FVector::ZeroVector;
-	float LastWaterSkillPreviewRadius = 0.0f;
 	bool bLocalBombardmentTargetValid = false;
 	bool bLocalBombardmentInputModeApplied = false;
-	bool bWaterSkillPreviewEnabled = false;
-	bool bSavedShowMouseCursor = false;
+	TWeakObjectPtr<APlayerController> BombardmentInputController;
 
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;

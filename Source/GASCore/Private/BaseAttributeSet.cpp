@@ -77,6 +77,11 @@ bool UBaseAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData&
 
 	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
 	const FGameplayAttribute& Attribute = Data.EvaluatedData.Attribute;
+	// Healing must never revive a dead avatar or accept non-finite values.
+	if (Attribute == GetHealingAttribute()
+		&& (!ASC || !ASC->IsOwnerActorAuthoritative() || ASC->HasMatchingGameplayTag(State_Dead)
+			|| GetHealth() <= 0.f || !FMath::IsFinite(Data.EvaluatedData.Magnitude))) return false;
+
 	if (Attribute == GetDamageAttribute())
 	{
 		if (!ASC || !ASC->IsOwnerActorAuthoritative() || ASC->HasMatchingGameplayTag(State_Invulnerable)
@@ -139,7 +144,9 @@ void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
 
 		if (LocalHealing > 0.0f)
 		{
+			const float AppliedHealing = FMath::Min(LocalHealing, FMath::Max(0.f, GetMaxHealth() - GetHealth()));
 			SetHealth(FMath::Clamp(GetHealth() + LocalHealing, 0.0f, GetMaxHealth()));
+			OnHealingResolved.Broadcast(Data.EffectSpec.GetContext(), AppliedHealing);
 		}
 	}
 }

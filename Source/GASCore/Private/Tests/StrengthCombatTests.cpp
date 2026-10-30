@@ -64,8 +64,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FStrengthDamageSpecSnapshotTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
-		EAutomationExpectedErrorFlags::Contains, 0);
+
 	StrengthCombatTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
 	{
@@ -87,7 +86,6 @@ bool FStrengthDamageSpecSnapshotTest::RunTest(const FString& Parameters)
 
 	FStrengthDamageRequest Request;
 	Request.SourceASC = SourceASC;
-
 
 	Request.AttackCoefficient = 1.5f;
 	Request.ChargeMultiplier = 2.0f;

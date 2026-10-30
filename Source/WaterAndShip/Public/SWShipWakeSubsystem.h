@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SWShipWakeTypes.h"
+#include "SWShipWakeRenderingDiagnostics.h"
 #include "SWShipWakeSubsystem.generated.h"
 
 class ASWShipWakeReplicator;
@@ -32,6 +33,9 @@ public:
 	void GetActiveEventsSnapshot(double ServerTime, TArray<FSWShipWakeEvent>& OutEvents) const;
 	float GetWakeHeight(const FVector& WorldPosition, double ServerTime) const;
 	FVector2D GetWakeGradient(const FVector& WorldPosition, double ServerTime) const;
+	/** Water-query API: omit local prediction without changing the shared rendering/event store. */
+	float GetAuthoritativeWakeHeight(const FVector& WorldPosition, double ServerTime) const;
+	FVector2D GetAuthoritativeWakeGradient(const FVector& WorldPosition, double ServerTime) const;
 	double GetServerTime() const;
 	int32 GetEventCount() const;
 
@@ -52,6 +56,8 @@ public:
 	static int32 GetMaxCapacity();
 
 private:
+	friend class FSWShipWakeAuthoritativeQueryTest;
+	void GetActiveAuthoritativeEventsSnapshot(double ServerTime, TArray<FSWShipWakeEvent>& OutEvents) const;
 	void AddOrUpdateCapped(const FSWShipWakeEvent& Event);
 	void RemoveExpiredEvents(double ServerTime);
 	void UpdateEventTexture();
@@ -68,6 +74,9 @@ private:
 	TAtomic<uint32> Revision { 0 };
 	uint32 UploadedRevision = MAX_uint32;
 	int32 LastUploadedCount = 0;
+	int32 LastUploadedRenderMode = -1;
+	int32 LastUploadedCapacity = -1;
+	FSWShipWakeRenderingDiagnostics RenderingDiagnostics;
 	int32 NextPredictedEventId = -1;
 	float PhysicsHistoryRetentionSeconds = 2.0f;
 	float MaterialRefreshAccumulator = 0.0f;

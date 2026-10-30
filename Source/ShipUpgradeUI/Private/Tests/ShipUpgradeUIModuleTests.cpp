@@ -96,7 +96,7 @@ bool FShipUpgradeUIModulePlacementTest::RunTest(const FString& Parameters)
 
 	UClass* CraftingPanelAssetClass = LoadClass<UCraftingPanelWidget>(
 		nullptr,
-		TEXT("/Game/Blueprints/02_UI/UI_FacilityHub/Crafting/WBP_CraftingPanel.WBP_CraftingPanel_C"));
+		TEXT("/Game/Blueprints/02_UI/UI_WorkTable/UI_Crafting/WBP_CraftingPanel.WBP_CraftingPanel_C"));
 	TestNotNull(TEXT("The teammate crafting panel remains loadable"), CraftingPanelAssetClass);
 
 	UClass* FacilityActorAssetClass = LoadClass<AFacilityHubActor>(

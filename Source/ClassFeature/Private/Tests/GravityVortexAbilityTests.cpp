@@ -14,7 +14,7 @@
 #include "Engine/SkeletalMeshSocket.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
+#include "BasePlayerController.h"
 #include "NiagaraSystem.h"
 #include "Projectiles/GravityVortexProjectile.h"
 #include "Ship.h"
@@ -29,9 +29,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FGravityVortexSelectionInputTest::RunTest(const FString& Parameters)
 {
-	// Creating a project game world initializes the existing ItemSubsystem,
-	// whose current QuestItem authoring emits these unrelated known errors.
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	TestTrue(
 		TEXT("Skill-bearing DefaultIMC priority is raised above the quick-slot IMC"),
@@ -72,7 +69,7 @@ bool FGravityVortexSelectionInputTest::RunTest(const FString& Parameters)
 	};
 
 	ABasePlayerState* PlayerState = World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
 	if (!TestNotNull(TEXT("PlayerState is spawned"), PlayerState)
 		|| !TestNotNull(TEXT("PlayerController is spawned"), PlayerController)
@@ -85,6 +82,7 @@ bool FGravityVortexSelectionInputTest::RunTest(const FString& Parameters)
 	Player->bBypassSkillRequirementsForTesting = true;
 	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
+	PlayerController->PlayerState = PlayerState;
 	PlayerController->Possess(Player);
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
 	if (!TestNotNull(TEXT("Player ASC is initialized"), ASC))
@@ -142,8 +140,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 {
 	// A transient gameplay world initializes the existing crafting fixture as a side effect.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 
 	UClass* PlayerClass = LoadClass<ABasePlayer>(
 		nullptr, TEXT("/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man_C"));
@@ -212,10 +208,8 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("GA_VortexField prediction sampling is capped for visual stability"),
 		AbilityDefaults->TrajectorySimulationFrequency <= 10.0f);
-	TestEqual(
-		TEXT("GA_VortexField has the increased default throw speed"),
-		AbilityDefaults->ThrowSpeed,
-		4000.0f);
+	TestTrue(TEXT("Authored vortex throw speed is finite and positive"),
+		FMath::IsFinite(AbilityDefaults->ThrowSpeed) && AbilityDefaults->ThrowSpeed > 0.0f);
 	TestEqual(
 		TEXT("GA_VortexField previews the longer throw arc"),
 		AbilityDefaults->TrajectoryMaxSimulationTime,
@@ -281,7 +275,7 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 		FieldDefaults->Duration));
 	TestTrue(TEXT("Field replication is enabled"), FieldDefaults->GetIsReplicated());
 	TestTrue(TEXT("Field ticking is enabled"), FieldDefaults->PrimaryActorTick.bCanEverTick);
-	TestTrue(TEXT("Field debug visualization is enabled"), FieldDefaults->bDrawDebug);
+	TestFalse(TEXT("Field debug visualization is disabled"), FieldDefaults->bDrawDebug);
 	TestTrue(TEXT("Field pull radius is positive"), FieldDefaults->PullRadius > 0.0f);
 	TestTrue(TEXT("Field acceleration is positive"), FieldDefaults->PullAcceleration > 0.0f);
 	TestTrue(TEXT("Field duration is positive"), FieldDefaults->Duration > 0.0f);

@@ -31,8 +31,6 @@ namespace
 	struct FSkillUnlockRoute
 	{
 		FGameplayTag SkillTag;
-		EStoryNode RequiredNode;
-		EStoryNode CompletedNode;
 		FName SuccessLine;
 		FName UnavailableLine;
 		FName AlreadyLine;
@@ -42,20 +40,17 @@ namespace
 	{
 		if (ReplyId == TEXT("UnlockCurrentGenerator"))
 		{
-			OutRoute = { GameplayAbility_Skill_GravityVortex, EStoryNode::SupplyPatrolQuestAccepted,
-				EStoryNode::CurrentGeneratorUnlocked, TEXT("CurrentSuccess1"), TEXT("CurrentUnavailable"), TEXT("CurrentAlready") };
+			OutRoute = { GameplayAbility_Skill_GravityVortex, TEXT("CurrentSuccess1"), TEXT("CurrentUnavailable"), TEXT("CurrentAlready") };
 			return true;
 		}
 		if (ReplyId == TEXT("UnlockWaterBomb"))
 		{
-			OutRoute = { GameplayAbility_Skill_WaterBomb, EStoryNode::SuppressJapaneseForcesQuestAccepted,
-				EStoryNode::WaterBombUnlocked, TEXT("WaterBombSuccess1"), TEXT("WaterBombUnavailable"), TEXT("WaterBombAlready") };
+			OutRoute = { GameplayAbility_Skill_WaterBomb, TEXT("WaterBombSuccess1"), TEXT("WaterBombUnavailable"), TEXT("WaterBombAlready") };
 			return true;
 		}
 		if (ReplyId == TEXT("UnlockBombardment"))
 		{
-			OutRoute = { GameplayAbility_Skill_Bombardment, EStoryNode::UldolmokBattleQuestAccepted,
-				EStoryNode::BombardmentUnlocked, TEXT("BombardmentSuccess1"), TEXT("BombardmentUnavailable"), TEXT("BombardmentAlready") };
+			OutRoute = { GameplayAbility_Skill_Bombardment, TEXT("BombardmentSuccess1"), TEXT("BombardmentUnavailable"), TEXT("BombardmentAlready") };
 			return true;
 		}
 		return false;
@@ -78,15 +73,15 @@ UBaseManagerDialogueData::UBaseManagerDialogueData()
 			MakeReply(TEXT("UnlockWaterBomb"), LOCTEXT("WaterBombChoice", "물폭탄"), TEXT("WaterBombSuccess1")),
 			MakeReply(TEXT("UnlockBombardment"), LOCTEXT("BombardmentChoice", "포탄 세례"), TEXT("BombardmentSuccess1")),
 			MakeReply(TEXT("BackToRoot"), LOCTEXT("Back", "돌아간다"), TEXT("Root")) }),
-		MakeLine(TEXT("CurrentSuccess1"), LOCTEXT("CurrentSuccess1", "해류 발생기를 개방했어.")),
+		MakeLine(TEXT("CurrentSuccess1"), LOCTEXT("CurrentSuccess1", "제작대에서 해류 발생기를 무료로 개방할 수 있어.")),
 		MakeLine(TEXT("CurrentSuccess2"), LOCTEXT("CurrentSuccess2", "강한 해류를 만들어 적과 주변 물체의 움직임을 흔드는 기술이야.")),
 		MakeLine(TEXT("CurrentUnavailable"), LOCTEXT("CurrentUnavailable", "해류 발생기는 아직 개방할 수 없어.")),
 		MakeLine(TEXT("CurrentAlready"), LOCTEXT("CurrentAlready", "해류 발생기는 이미 개방한 기술이야.")),
-		MakeLine(TEXT("WaterBombSuccess1"), LOCTEXT("WaterBombSuccess1", "물폭탄을 개방했어.")),
+		MakeLine(TEXT("WaterBombSuccess1"), LOCTEXT("WaterBombSuccess1", "제작대에서 물폭탄을 무료로 개방할 수 있어.")),
 		MakeLine(TEXT("WaterBombSuccess2"), LOCTEXT("WaterBombSuccess2", "대포에 특수 포탄을 장전해 넓은 범위에 물 폭발을 일으키는 기술이야.")),
 		MakeLine(TEXT("WaterBombUnavailable"), LOCTEXT("WaterBombUnavailable", "물폭탄은 아직 개방할 수 없어.")),
 		MakeLine(TEXT("WaterBombAlready"), LOCTEXT("WaterBombAlready", "물폭탄은 이미 개방한 기술이야.")),
-		MakeLine(TEXT("BombardmentSuccess1"), LOCTEXT("BombardmentSuccess1", "포탄 세례를 개방했어.")),
+		MakeLine(TEXT("BombardmentSuccess1"), LOCTEXT("BombardmentSuccess1", "제작대에서 포탄 세례를 무료로 개방할 수 있어.")),
 		MakeLine(TEXT("BombardmentSuccess2"), LOCTEXT("BombardmentSuccess2", "지정한 해역에 여러 발의 포탄을 연속으로 쏟아붓는 기술이야.")),
 		MakeLine(TEXT("BombardmentUnavailable"), LOCTEXT("BombardmentUnavailable", "포탄 세례는 아직 개방할 수 없어.")),
 		MakeLine(TEXT("BombardmentAlready"), LOCTEXT("BombardmentAlready", "포탄 세례는 이미 개방한 기술이야."))
@@ -115,16 +110,10 @@ bool UBaseManagerDialogueData::ResolveReply(AActor* Player, UStoryFacadeSubsyste
 		OutNextLineId = Route.AlreadyLine;
 		return true;
 	}
-	if (!Story->IsStoryNodeReached(Route.RequiredNode))
+	if (!Skills->IsSkillUnlockConditionMet(Route.SkillTag))
 	{
 		OutNextLineId = Route.UnavailableLine;
 		return true;
-	}
-	if (!Story->CanCompleteStoryNode(Route.CompletedNode)
-		|| !Story->CompleteStoryNode(Route.CompletedNode)
-		|| !Skills->UnlockSkill(Route.SkillTag))
-	{
-		return false;
 	}
 	OutNextLineId = Route.SuccessLine;
 	return true;

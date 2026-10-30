@@ -7,6 +7,11 @@ public class ClassFeatureEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AssetTools",
+			"AudioEditor",
+			"RenderCore",
+			"RHI",
+			"PhysicsCore",
+			"Json",
 			"Core",
 			"CoreUObject",
 			"Engine",
@@ -26,8 +31,13 @@ public class ClassFeatureEditor : ModuleRules
 			"LevelEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
+			"AnimGraph",
+			"AnimGraphRuntime",
 			"ArtisticSWCore",
 			"ClassFeature",
+			"Enemy",
+			"NPCDialogue",
+			"Story",
 			"GASCore",
 			"WaterAndShip",
 			"Water",
@@ -36,7 +46,9 @@ public class ClassFeatureEditor : ModuleRules
 			"MeshConversion",
 			"AssetRegistry",
 			"PropertyEditor",
-			"ImageCore"
+			"ImageCore",
+			"MaterialEditor",
+			"RHI"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

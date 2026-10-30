@@ -14,6 +14,7 @@
 #include "Respawn/SWRespawnControllerInterface.h"
 #include "Room/SWRoomSaveGame.h"
 #include "Camera/CameraTypes.h"
+#include "SkillCursorInputInterface.h"
 #include "BasePlayerController.generated.h"
 
 /**
@@ -60,12 +61,15 @@ struct FStorageRevealState
 };
 
 UCLASS()
-class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController, public ISWRespawnControllerInterface
+class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController, public ISWRespawnControllerInterface, public ISkillCursorInputInterface
 {
 	GENERATED_BODY()
 
 public:
 	ABasePlayerController();
+	virtual bool IsSkillCursorInputBlocked() const override;
+	virtual void RestoreInputAfterSkillCursor() override;
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 	/** Development console request; the server always uses this controller's pawn. */
 	void RequestEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
 	virtual void UpdateCameraManager(float DeltaSeconds) override;
@@ -147,6 +151,9 @@ private:
 	uint32 CameraRebufferCount = 0;
 	uint32 CameraCutCount = 0;
 	int32 LocalObservedRestoreGeneration = -1;
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Death")
+	TSubclassOf<class USWDeathFlowWidget> DeathFlowWidgetClass;
+
 	UPROPERTY(Transient) TObjectPtr<class USWDeathFlowWidget> DeathFlowWidget;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;
 	ESWSessionLifePhase LocalSessionPhase = ESWSessionLifePhase::Playing;
@@ -188,6 +195,8 @@ public:
 	void CloseRoomMenu();
 	UFUNCTION(Server, Reliable) void ServerRequestRoomSave(uint64 RequestId);
 	UFUNCTION(Client, Reliable) void ClientRoomSaveResult(uint64 RequestId, bool bSuccess, const FString& Message);
+
+public:
 	UFUNCTION(Client, Reliable) void ClientBeginRoomReturn();
 	UFUNCTION(Client, Reliable) void ClientBeginFinalDeparture(int32 AttemptId);
 	UFUNCTION(Client, Reliable) void ClientCancelRoomReturn();
@@ -282,6 +291,8 @@ public:
 	void ServerQuickMoveInventorySlotInTab(EInventoryTab Tab, int32 Index, FGameplayTag ExpectedTag, int32 ExpectedCount);
 	bool CanAccessStorage(AStorageChest* Chest) const;
 	bool HasOpenStorage() const { return ActiveStorageChest != nullptr; }
+	bool IsStorageOpenFor(const AStorageChest* Chest) const { return ActiveStorageChest == Chest; }
+	void HandleChestPoolAssignment(AStorageChest* Chest, const FGuid& PreviousId, const FGuid& NextId);
 	/** Consume F while a chest or facility window is open, regardless of overlap. */
 	bool CloseActiveInteractionWindow();
 	bool IsStorageSlotRevealed(AStorageChest* StorageChest, int32 SlotIndex) const;
@@ -343,6 +354,7 @@ protected:
 	float LegendarySearchTime = 3.0f;
 
 	TMap<AStorageChest*, FStorageRevealState> StorageRevealStates;
+	TMap<FGuid, FStorageRevealState> PooledStorageRevealStates;
 	FTimerHandle StorageSearchTimerHandle;
 
 	void BindHUDToCurrentPlayer();
@@ -361,7 +373,6 @@ protected:
 	TWeakObjectPtr<UGameViewportClient> BoundRoomViewport;
 	bool HandleRoomWindowCloseRequested();
 	void HandleRoomSaveTimeout();
-	bool bCursorVisibleBeforeRoomMenu = false;
 	void ApplyInventoryInputMode(bool bOpen);
 	void UpdateInteractionMovementLock();
 	void SetStatusCharacterInputLocked(bool bLocked);

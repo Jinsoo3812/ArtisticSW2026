@@ -7,6 +7,7 @@
 #include "DeckAI/DeckWaypointComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Controller.h"
 #include "Interactable/InteractableComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Ship.h"
@@ -360,6 +361,8 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 		return false;
 	}
 
+	Boss->bCompleteStoryNodeOnDeath = true;
+	Boss->CompletedStoryNodeOnDeath = StopAfterStoryNode;
 	SpawnedBoss = Boss;
 	if (!HostShip->RegisterBossEnemy(Boss))
 	{
@@ -481,26 +484,49 @@ void UBossEncounterComponent::UpdateBossReservation()
 {
 	AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner());
 	if (!HostShip || !HostShip->HasAuthority()) return;
-	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	const UStoryFacadeSubsystem* Story = GameInstance
-		? GameInstance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
-	const bool bStoppedWithoutBoss = Story && Story->IsStoryNodeReached(StopAfterStoryNode)
-		&& !IsValid(SpawnedBoss);
-	const bool bReserved = bEncounterEnabled && !bStoppedWithoutBoss
-		&& (EncounterState == EBossEncounterState::Waiting
-			|| EncounterState == EBossEncounterState::Spawning);
 	TInlineComponentArray<UChildActorComponent*> Components(HostShip);
 	for (UChildActorComponent* Component : Components)
 	{
 		if (AChestSpawnPoint* Point = Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr)
 		{
-			if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->SetBossEncounterReserved(bReserved);
+			// Only actual guards lock a chest; waiting for a campaign encounter does not.
+			if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->SetBossEncounterReserved(false);
 		}
 	}
 }
 
 void UBossEncounterComponent::HandleStoryChanged()
 {
+	UpdateBossReservation();
+}
+
+void UBossEncounterComponent::ResetForNewEncounter()
+{
+	AEnemyShip* Host = Cast<AEnemyShip>(GetOwner());
+	if (!Host || !Host->HasAuthority()) return;
+	GetWorld()->GetTimerManager().ClearTimer(SightEvaluationTimerHandle);
+	if (IsValid(SpawnedBoss))
+	{
+		if (UBaseHealthComponent* Health = SpawnedBoss->GetHealthComponent())
+			Health->OnDeathStarted.RemoveDynamic(this, &UBossEncounterComponent::HandleBossDeathStarted);
+		Host->UnregisterCrewEnemy(SpawnedBoss);
+		SpawnedBoss->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+		if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(SpawnedBoss);
+		if (AController* Controller = SpawnedBoss->GetController())
+		{
+			Controller->Tags.AddUnique(TEXT("SWEnemyShipPoolReleased"));
+			if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()) Room->ReleaseActorForPooling(Controller);
+			Controller->Destroy();
+		}
+		SpawnedBoss->Destroy();
+	}
+	SpawnedBoss = nullptr;
+	bHasPendingRoomState = false;
+	UnbindItemBox();
+	EnemyItemBox = nullptr;
+	SetEncounterState(EBossEncounterState::Waiting);
+	EnemyItemBox = ResolveConfiguredEnemyItemBox();
+	BindItemBox();
 	UpdateBossReservation();
 }
 

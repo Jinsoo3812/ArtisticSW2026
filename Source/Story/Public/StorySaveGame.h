@@ -14,6 +14,7 @@ public:
 	UPROPERTY(SaveGame)
 	int32 SaveVersion = 1;
 
+	// Legacy serialization field. Ignored on restore; new saves leave it empty.
 	UPROPERTY(SaveGame)
 	FPrimaryAssetId StoryDefinitionId;
 

@@ -5,15 +5,20 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
+#include "BaseAttributeSet.h"
 #include "Crafting/CraftingAccessComponent.h"
 #include "Crafting/CraftingComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
+#include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 #include "Item/ItemData.h"
 #include "Item/ItemSubsystem.h"
 #include "Skills/PlayerSkillComponent.h"
+#include "Engine/GameInstance.h"
+#include "StoryFacadeSubsystem.h"
+#include "StorySaveGame.h"
+#include "StorySubsystem.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPlayerSkillMaterialDatabaseTest,
@@ -61,9 +66,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 {
-	// The shared ItemSubsystem currently reports three unrelated QuestItem
-	// authoring errors whenever a project game world is created.
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("PlayerSkillSystemWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
@@ -80,7 +82,7 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 	};
 
 	ABasePlayerState* PlayerState = World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
 	if (!TestNotNull(TEXT("PlayerState is spawned"), PlayerState)
 		|| !TestNotNull(TEXT("PlayerController is spawned"), PlayerController)
@@ -90,7 +92,9 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
+	PlayerController->PlayerState = PlayerState;
 	PlayerController->Possess(Player);
 
 	UPlayerSkillComponent* SkillComponent = PlayerState->GetPlayerSkillComponent();
@@ -102,15 +106,15 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	TestEqual(TEXT("Current Generator uses the RareSkill material"),
+	TestEqual(TEXT("Current Generator consumes the crafted charge"),
 		SkillComponent->GetUsageMaterialTag(GameplayAbility_Skill_GravityVortex),
-		Item_Id_Material_SkillMaterial_RareSkill.GetTag());
-	TestEqual(TEXT("Water Bomb uses the EpicSkill material"),
+		Item_Id_Skill_GravityVortex.GetTag());
+	TestEqual(TEXT("Water Bomb consumes the crafted charge"),
 		SkillComponent->GetUsageMaterialTag(GameplayAbility_Skill_WaterBomb),
-		Item_Id_Material_SkillMaterial_EpicSkill.GetTag());
-	TestEqual(TEXT("Bombardment uses the LegendarySkill material"),
+		Item_Id_Skill_WaterBomb.GetTag());
+	TestEqual(TEXT("Bombardment consumes the crafted charge"),
 		SkillComponent->GetUsageMaterialTag(GameplayAbility_Skill_Bombardment),
-		Item_Id_Material_SkillMaterial_LegendarySkill.GetTag());
+		Item_Id_Skill_Bombardment.GetTag());
 
 	TestEqual(TEXT("Two skill-use materials are added"),
 		Inventory->AddItem(Item_Id_Material_SkillMaterial_RareSkill, 2), 2);
@@ -138,9 +142,9 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 		SkillComponent->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
 
 	Player->bBypassSkillRequirementsForTesting = true;
-	TestTrue(TEXT("Common player test switch bypasses lock and material requirements"),
+	TestFalse(TEXT("Retired player test field cannot bypass progression"),
 		Player->CanUseSkill(GameplayAbility_Skill_WaterBomb));
-	TestTrue(TEXT("Bypassed use succeeds without consuming an item"),
+	TestFalse(TEXT("Retired player test field cannot create a free charge"),
 		Player->TryConsumeSkillUse(GameplayAbility_Skill_WaterBomb));
 	TestEqual(TEXT("Bypassed use does not change unrelated inventory"),
 		Inventory->GetItemCount(Item_Id_Material_SkillMaterial_RareSkill), 2);
@@ -148,12 +152,17 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("Story API unlocks the skill"),
 		SkillComponent->UnlockSkill(GameplayAbility_Skill_GravityVortex));
+	TestFalse(TEXT("Raw gimmick materials cannot fuel an unlocked skill"),
+		Player->CanUseSkill(GameplayAbility_Skill_GravityVortex));
+	Inventory->AddItem(Item_Id_Skill_GravityVortex, 2);
 	TestTrue(TEXT("Unlocked skill with material can be used"),
 		Player->CanUseSkill(GameplayAbility_Skill_GravityVortex));
 	TestTrue(TEXT("Completed skill use consumes one material"),
 		Player->TryConsumeSkillUse(GameplayAbility_Skill_GravityVortex));
 	TestEqual(TEXT("Remaining use count mirrors inventory"),
 		SkillComponent->GetSkillUseCount(GameplayAbility_Skill_GravityVortex), 1);
+	TestEqual(TEXT("Using a crafted charge preserves raw materials"),
+		Inventory->GetItemCount(Item_Id_Material_SkillMaterial_RareSkill), 2);
 
 	CleanupWorld();
 	return true;
@@ -166,9 +175,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 {
-	// The shared ItemSubsystem currently reports three unrelated QuestItem
-	// authoring errors whenever a project game world is created.
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("PlayerSkillCraftingWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
@@ -189,7 +195,7 @@ bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 
 	UItemSubsystem* Items = World->GetSubsystem<UItemSubsystem>();
 	ABasePlayerState* PlayerState = World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
 	AActor* Facility = World->SpawnActor<AActor>();
 	if (!TestNotNull(TEXT("Item subsystem exists"), Items)
@@ -202,7 +208,9 @@ bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Items->ClearCraftingRecipesForTesting();
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
+	PlayerController->PlayerState = PlayerState;
 	PlayerController->Possess(Player);
 	UCraftingAccessComponent* Access = NewObject<UCraftingAccessComponent>(Facility, TEXT("SkillCraftingAccess"));
 	Facility->AddInstanceComponent(Access);
@@ -211,6 +219,8 @@ bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 	FCraftingRecipeRow SkillRecipe;
 	SkillRecipe.ResultItemTag = Item_Id_Skill_GravityVortex;
 	SkillRecipe.ResultQuantity = 1;
+	SkillRecipe.RequiredRecipeItemTag = Item_Id_Material_SkillMaterial_RareSkill;
+	SkillRecipe.bConsumeRecipeItem = true;
 	FCraftingItemStack Ingredient;
 	Ingredient.ItemTag = Item_Id_Material_WeaponMaterial_Wood;
 	Ingredient.Quantity = 2;
@@ -261,13 +271,62 @@ bool FPlayerSkillCraftingUnlockTest::RunTest(const FString& Parameters)
 	Crafting->RequestCraft(Request);
 	TestEqual(TEXT("Skill crafting succeeds"), Crafting->GetLastCraftingResult().Reason, ECraftingFailureReason::Success);
 	TestTrue(TEXT("Crafted skill is permanently unlocked"), Skills->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
-	TestEqual(TEXT("Skill crafting consumes all required materials"), Inventory->GetItemCount(Ingredient.ItemTag), 0);
+	TestEqual(TEXT("Free skill unlock preserves materials"), Inventory->GetItemCount(Ingredient.ItemTag), 2);
 	TestEqual(TEXT("Permanent unlock does not add a removable skill item"), Inventory->GetItemCount(Item_Id_Skill_GravityVortex), 0);
 
 	Request.RequestId = FGuid::NewGuid();
 	Crafting->RequestCraft(Request);
 	TestEqual(TEXT("An unlocked skill cannot be crafted again"), Crafting->GetLastCraftingResult().Reason, ECraftingFailureReason::AlreadyUnlocked);
+	Inventory->AddItem(Item_Id_Material_SkillMaterial_RareSkill, 1);
+	Request.RequestId = FGuid::NewGuid();
+	Request.Output.Type = ECraftingOutputType::Inventory;
+	Crafting->RequestCraft(Request);
+	TestEqual(TEXT("Unlocked skill charge can be crafted"), Crafting->GetLastCraftingResult().Reason, ECraftingFailureReason::Success);
+	TestEqual(TEXT("Charge crafting consumes ordinary materials"), Inventory->GetItemCount(Ingredient.ItemTag), 0);
+	TestEqual(TEXT("Charge crafting consumes gimmick material"), Inventory->GetItemCount(Item_Id_Material_SkillMaterial_RareSkill), 0);
+	TestEqual(TEXT("Charge crafting grants one finished use item"), Skills->GetSkillUseCount(GameplayAbility_Skill_GravityVortex), 1);
+	TestTrue(TEXT("Finished item powers one skill use"), Player->TryConsumeSkillUse(GameplayAbility_Skill_GravityVortex));
+	TestEqual(TEXT("Finished item is consumed"), Skills->GetSkillUseCount(GameplayAbility_Skill_GravityVortex), 0);
 	CleanupWorld();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerSkillCampaignEligibilityTest,
+	"ArtisticSW.PlayerSkill.SharedStoryIndividualUnlock", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPlayerSkillCampaignEligibilityTest::RunTest(const FString& Parameters)
+{
+	UGameInstance* Instance = NewObject<UGameInstance>(GEngine);
+	Instance->InitializeStandalone(TEXT("SkillCampaignEligibilityWorld"));
+	UWorld* World = Instance->GetWorld();
+	UStoryFacadeSubsystem* Story = Instance->GetSubsystem<UStoryFacadeSubsystem>();
+	Story->StartNewCampaign();
+	UPlayerSkillComponent* Players[2];
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		AActor* Owner = World->SpawnActor<AActor>();
+		Players[Index] = NewObject<UPlayerSkillComponent>(Owner);
+		Owner->AddInstanceComponent(Players[Index]); Players[Index]->RegisterComponent();
+	}
+	World->InitializeActorsForPlay(FURL());
+	World->BeginPlay();
+	for (UPlayerSkillComponent* Player : Players)
+		TestFalse(TEXT("New campaign does not qualify for current generator"), Player->IsSkillUnlockConditionMet(GameplayAbility_Skill_GravityVortex));
+	FString Error;
+	UStorySaveGame* Supply = Story->BuildDevelopmentCheckpoint(TEXT("SupplyPatrol"), Error);
+	TestTrue(TEXT("Supply checkpoint applies"), Instance->GetSubsystem<UStorySubsystem>()->ApplyRoomProgress(Supply));
+	for (UPlayerSkillComponent* Player : Players)
+	{
+		TestTrue(TEXT("Shared story qualifies both players"), Player->IsSkillUnlockConditionMet(GameplayAbility_Skill_GravityVortex));
+		TestFalse(TEXT("Shared eligibility does not grant the skill"), Player->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
+	}
+	Players[0]->UnlockSkill(GameplayAbility_Skill_GravityVortex);
+	TestTrue(TEXT("First player unlock is individual"), Players[0]->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
+	TestFalse(TEXT("Second player still needs its own button"), Players[1]->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
+	UStorySaveGame* Recon = Story->BuildDevelopmentCheckpoint(TEXT("Recon"), Error);
+	TestTrue(TEXT("Earlier checkpoint applies"), Instance->GetSubsystem<UStorySubsystem>()->ApplyRoomProgress(Recon));
+	TestFalse(TEXT("Earlier story prevents using a previously unlocked skill"), Players[0]->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
+	World->EndPlay(EEndPlayReason::Quit); Instance->Shutdown(); World->DestroyWorld(false); GEngine->DestroyWorldContext(World);
 	return true;
 }
 

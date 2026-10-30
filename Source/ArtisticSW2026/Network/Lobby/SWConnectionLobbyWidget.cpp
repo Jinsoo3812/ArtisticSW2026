@@ -3,6 +3,7 @@
 #include "Components/EditableTextBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
+#include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/KismetSystemLibrary.h"
 
@@ -31,6 +32,21 @@ void USWConnectionLobbyWidget::NativeOnInitialized()
 void USWConnectionLobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// Hide legacy connectivity guidance authored in the lobby widget asset.
+	if (WidgetTree) WidgetTree->ForEachWidget([](UWidget* Widget)
+	{
+		if (UTextBlock* Text = Cast<UTextBlock>(Widget))
+		{
+			const FString Value = Text->GetText().ToString();
+			if (Value.Contains(TEXT("CGNAT"), ESearchCase::IgnoreCase)
+				|| Value.Contains(TEXT("방화벽")) || Value.Contains(TEXT("firewall"), ESearchCase::IgnoreCase)
+				|| Value.Contains(TEXT("NAT loopback"), ESearchCase::IgnoreCase))
+			{
+				Text->SetText(FText::GetEmpty());
+				Text->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+	});
 	if (USWRoomSubsystem* Room = GetRoom()) Room->OnRoomChanged.AddUniqueDynamic(this, &ThisClass::HandleRoomChanged);
 	Refresh();
 }
@@ -54,7 +70,7 @@ void USWConnectionLobbyWidget::Refresh()
 		if (Widget) Widget->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	};
 	Show(HomePanel, Panel == EPanel::Home);
-	Show(FormPanel, bHostForm || Panel == EPanel::Join);
+	Show(ConnectionPanel, bHostForm || Panel == EPanel::Join);
 	const ESlateVisibility ConfirmVisibility = Panel == EPanel::ConfirmCreate
 		? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden;
 	if (ConfirmPanel) ConfirmPanel->SetVisibility(ConfirmVisibility);
@@ -62,7 +78,7 @@ void USWConnectionLobbyWidget::Refresh()
 	if (LobbySwitcher)
 	{
 		UWidget* Page = Panel == EPanel::Home ? HomePanel.Get()
-			: Panel == EPanel::ConfirmCreate ? ConfirmPanel.Get() : FormPanel.Get();
+			: Panel == EPanel::ConfirmCreate ? ConfirmPanel.Get() : ConnectionPanel.Get();
 		// HomePanel is nested inside SizeBox/Canvas; select the direct switcher child.
 		while (Page && Page->GetParent() != LobbySwitcher) Page = Page->GetParent();
 		if (Page) LobbySwitcher->SetActiveWidget(Page);

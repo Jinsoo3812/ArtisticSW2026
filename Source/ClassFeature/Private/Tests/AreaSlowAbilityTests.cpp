@@ -12,7 +12,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
-#include "GameFramework/PlayerController.h"
+#include "BasePlayerController.h"
 #include "Misc/ScopeExit.h"
 #include "Skills/Abilities/GA_PlayerAreaSlow.h"
 #include "Skills/AreaSlowDecalActors.h"
@@ -129,7 +129,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FAreaSlowInputLifecycleTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
+
 	AreaSlowAbilityTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient input world is created"), TestWorld.World))
 	{
@@ -146,7 +146,7 @@ bool FAreaSlowInputLifecycleTest::RunTest(const FString& Parameters)
 	};
 
 	ABasePlayerState* PlayerState = TestWorld.World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = TestWorld.World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = TestWorld.World->SpawnActor<ABasePlayerController>();
 	ABasePlayer* Player = TestWorld.World->SpawnActor<ABasePlayer>();
 	if (!TestNotNull(TEXT("PlayerState is spawned"), PlayerState)
 		|| !TestNotNull(TEXT("PlayerController is spawned"), PlayerController)
@@ -156,7 +156,9 @@ bool FAreaSlowInputLifecycleTest::RunTest(const FString& Parameters)
 	}
 
 	Player->bBypassSkillRequirementsForTesting = true;
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
 	Player->SetPlayerState(PlayerState);
+	PlayerController->PlayerState = PlayerState;
 	PlayerController->Possess(Player);
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
 	if (!TestNotNull(TEXT("Player ASC is initialized"), ASC))
@@ -212,9 +214,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FAreaSlowRangeAndPolicyTest::RunTest(const FString& Parameters)
 {
-	// Creating a project game world initializes the existing ItemSubsystem,
-	// whose current QuestItem authoring emits these unrelated known errors.
-	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
+
 	AreaSlowAbilityTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient policy world is created"), TestWorld.World))
 	{

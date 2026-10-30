@@ -8,7 +8,7 @@
 #include "BaseGameplayAbility.h"
 #include "BaseGameplayTags.h"
 #include "AbilitySystemComponent.h"
-#include "GameFramework/PlayerController.h"
+#include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 #include "Item/ItemSubsystem.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
@@ -62,8 +62,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FConsumableQuickSlotSelectionTest::RunTest(const FString& Parameters)
 {
 	// Existing shared crafting data is unrelated to quick-slot input.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ItemQuickSlotHoldStateWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
 	{
@@ -129,18 +128,18 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FConsumableQuickSlotUseTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	if (!TestNotNull(TEXT("World exists"), World)) return false;
 	FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
 	Context.SetCurrentWorld(World);
 	ABasePlayerState* State = World->SpawnActor<ABasePlayerState>();
 	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
-	APlayerController* Controller = World->SpawnActor<APlayerController>();
+	ABasePlayerController* Controller = World->SpawnActor<ABasePlayerController>();
 	UAbilitySystemComponent* ASC = State->GetAbilitySystemComponent();
 	ASC->AddAttributeSetSubobject(State->GetAttributeSet());
 	Player->SetPlayerState(State);
+	Controller->PlayerState = State;
 	Controller->Possess(Player);
 	UItemData* Data = World->GetSubsystem<UItemSubsystem>()->GetItemDataAsset();
 	if (!TestNotNull(TEXT("Item registry exists"), Data))
