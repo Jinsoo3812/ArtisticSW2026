@@ -54,6 +54,7 @@ class CLASSFEATURE_API UPlayerEquipmentComponent : public UActorComponent
 {
 	GENERATED_BODY()
 	friend class FWeaponEquipmentLifecycleTest;
+	friend class FEquipmentNotifyLifecycleTest;
 
 public:
 	UPlayerEquipmentComponent();
@@ -70,7 +71,7 @@ public:
 	bool RestoreRoomEquippedItem(FGameplayTag ItemTag);
 	void UnequipCurrentItem();
 	void UseEquippedItem(bool bDestroy = true);
-	void HandleEquipmentAttachNotify();
+	void HandleEquipmentAttachNotify(UAnimSequenceBase* SourceAnimation = nullptr);
 	void OnRepOwnerEquippedItem();
 	void OnEquippedItemInitialized(ABaseItem* Item);
 
@@ -201,6 +202,8 @@ protected:
 	bool CanChangeEquipment() const;
 	double LastEquipmentRequestTime = -1.0;
 	void StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag);
+	void ReleaseEquipmentPoseRefresh();
+	bool bOwnsEquipmentPoseRefresh = false;
 	void FinalizePendingEquip();
 	void CancelPendingEquip();
 	void PlayEquipmentMontage(ABaseItem* Item, UAnimMontage* Montage, float PlayRate);

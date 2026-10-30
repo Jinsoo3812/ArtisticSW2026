@@ -896,6 +896,7 @@ void UPlayerEquipmentComponent::StartEquipItem(ABaseItem* Item, FGameplayTag Sou
 		return;
 	}
 
+	Item->SetItemState(EItemState::InItemSlot);
 	PendingEquipItem = Item;
 	PendingEquipSlotTag = SourceSlotTag;
 	EquipmentState = EEquipmentState::Equipping;
@@ -963,6 +964,7 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 		PlayerOwner->EnterCombatModeFromEquipment();
 	}
 
+	ReleaseEquipmentPoseRefresh();
 	EquipmentState = EEquipmentState::Equipped;
 	PendingEquipItem = nullptr;
 	PendingEquipSlotTag = FGameplayTag();
@@ -972,6 +974,7 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 
 void UPlayerEquipmentComponent::CancelPendingEquip()
 {
+	ReleaseEquipmentPoseRefresh();
 	ABaseItem* ItemToCancel = PendingEquipItem.Get();
 	RemoveEquippedItemAbility(ItemToCancel);
 	if (ItemToCancel)
@@ -1003,18 +1006,29 @@ void UPlayerEquipmentComponent::PlayEquipmentMontage(ABaseItem* Item, UAnimMonta
 {
 	if (!PlayerOwner || !Montage || !PlayerOwner->GetMesh())
 	{
+		CancelPendingEquip();
 		return;
 	}
 
 	UAnimInstance* AnimInstance = PlayerOwner->GetMesh()->GetAnimInstance();
 	if (!AnimInstance)
 	{
+		CancelPendingEquip();
 		return;
 	}
 
 	PendingEquipItem = Item;
 	ActiveEquipmentMontage = Montage;
-	AnimInstance->Montage_Play(Montage, PlayRate > 0.f ? PlayRate : 1.f);
+	if (PlayerOwner->HasAuthority() && !bOwnsEquipmentPoseRefresh)
+	{
+		PlayerOwner->AcquireServerCombatPoseRefresh();
+		bOwnsEquipmentPoseRefresh = true;
+	}
+	if (AnimInstance->Montage_Play(Montage, PlayRate > 0.f ? PlayRate : 1.f) <= 0.f)
+	{
+		CancelPendingEquip();
+		return;
+	}
 
 	FOnMontageEnded MontageEndedDelegate;
 	MontageEndedDelegate.BindUObject(this, &UPlayerEquipmentComponent::OnEquipmentMontageEnded);
@@ -1036,7 +1050,8 @@ void UPlayerEquipmentComponent::OnEquipmentMontageEnded(UAnimMontage* Montage, b
 
 	if (PlayerOwner && PlayerOwner->HasAuthority() && EquipmentState == EEquipmentState::Equipping && IsValid(PendingEquipItem))
 	{
-		FinalizePendingEquip();
+		UE_LOG(LogTemp, Warning, TEXT("Equipment montage %s ended without Equipment Attach Item notify; cancelling equip."), *GetNameSafe(Montage));
+		CancelPendingEquip();
 		return;
 	}
 
@@ -1045,9 +1060,10 @@ void UPlayerEquipmentComponent::OnEquipmentMontageEnded(UAnimMontage* Montage, b
 	EquipmentState = PlayerOwner && IsValid(PlayerOwner->EquippedItem) ? EEquipmentState::Equipped : EEquipmentState::None;
 }
 
-void UPlayerEquipmentComponent::HandleEquipmentAttachNotify()
+void UPlayerEquipmentComponent::HandleEquipmentAttachNotify(UAnimSequenceBase* SourceAnimation)
 {
-	if (!IsValid(PendingEquipItem))
+	if (!IsValid(PendingEquipItem) || EquipmentState != EEquipmentState::Equipping
+		|| (SourceAnimation && SourceAnimation != ActiveEquipmentMontage))
 	{
 		return;
 	}
@@ -1080,4 +1096,11 @@ bool UPlayerEquipmentComponent::CanChangeEquipment() const
 	return ASC && !ASC->HasMatchingGameplayTag(State_Dead) && !ASC->HasMatchingGameplayTag(State_Attacking)
 		&& !ASC->HasMatchingGameplayTag(State_Bow_Drawing) && !ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn)
 		&& !ASC->HasMatchingGameplayTag(State_Bow_Releasing);
+}
+
+void UPlayerEquipmentComponent::ReleaseEquipmentPoseRefresh()
+{
+	if (!bOwnsEquipmentPoseRefresh) return;
+	bOwnsEquipmentPoseRefresh = false;
+	if (PlayerOwner) PlayerOwner->ReleaseServerCombatPoseRefresh();
 }
