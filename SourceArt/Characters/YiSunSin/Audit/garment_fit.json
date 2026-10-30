@@ -1,0 +1,14 @@
+{
+  "method": "nearest triangle barycentric leg skin transfer with smooth waist transition",
+  "changed_garment_vertices": 5195,
+  "clearance_vertices": 3649,
+  "maximum_rest_clearance_m": 0.05959621827642978,
+  "waist_blend_m": [
+    1.1,
+    1.28
+  ],
+  "lower_donor_sample_height_min_m": 0.66,
+  "added_bones": 0,
+  "removed_faces": 0,
+  "reference_untouched": true
+}

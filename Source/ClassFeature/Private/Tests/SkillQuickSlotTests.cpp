@@ -158,15 +158,16 @@ bool FSkillQuickSlotAvailabilityOverlayTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(TEXT("Locked skill starts covered"), Cover->GetVisibility(), ESlateVisibility::HitTestInvisible);
 		UInventoryComponent* Inventory = Player->GetInventoryComponent();
-		Inventory->AddItem(Item_Id_Material_SkillMaterial_RareSkill, 1);
+		Inventory->AddItem(Item_Id_Skill_GravityVortex, 1);
 		TestEqual(TEXT("Material alone does not remove cover"), Cover->GetVisibility(), ESlateVisibility::HitTestInvisible);
 		State->GetPlayerSkillComponent()->UnlockSkill(GameplayAbility_Skill_GravityVortex);
 		TestEqual(TEXT("Available skill removes cover"), Cover->GetVisibility(), ESlateVisibility::Hidden);
-		Inventory->RemoveItem(Item_Id_Material_SkillMaterial_RareSkill, 1);
+		Inventory->RemoveItem(Item_Id_Skill_GravityVortex, 1);
 		TestEqual(TEXT("Depleted material restores cover"), Cover->GetVisibility(), ESlateVisibility::HitTestInvisible);
 		Player->bBypassSkillRequirementsForTesting = true;
 		Widget->RefreshSlots();
-		TestEqual(TEXT("Test bypass removes cover"), Cover->GetVisibility(), ESlateVisibility::Hidden);
+		TestEqual(TEXT("Retired test field does not remove cover"), Cover->GetVisibility(), ESlateVisibility::HitTestInvisible);
+		Inventory->AddItem(Item_Id_Skill_GravityVortex, 1);
 	}
 	UWidget* Selection = Widget->WidgetTree->FindWidget(TEXT("GravityVortexSelectedOverlay"));
 	if (TestNotNull(TEXT("Gravity Vortex selection overlay exists"), Selection))

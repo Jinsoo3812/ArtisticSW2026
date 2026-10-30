@@ -104,7 +104,9 @@ namespace BossMVPTests
 			Instance = NewObject<UGameInstance>(GEngine);
 			Instance->InitializeStandalone(TEXT("BossMVPTestWorld"));
 			World = Instance->GetWorld();
-			Instance->GetSubsystem<UStoryFacadeSubsystem>()->ActivateDevelopmentMiddleBoss(1);
+			UStoryFacadeSubsystem* Story = Instance->GetSubsystem<UStoryFacadeSubsystem>();
+			Story->StartNewCampaign();
+			Story->CompleteStoryNode(EStoryNode::ReconQuestAccepted);
 			World->InitializeActorsForPlay(FURL());
 		}
 

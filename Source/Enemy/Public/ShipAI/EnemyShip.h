@@ -120,6 +120,8 @@ public:
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
 	virtual float GetCannonCooldownMultiplier() const override;
 	virtual float GetIncomingDamageMultiplier() const override;
+	/** Authored override, otherwise the common visible BP_Storage_Chest. */
+	TSubclassOf<AStorageChest> GetDeckChestClass() const;
 	virtual bool IsProtectedFromOwnHullCannonSplash(const AActor* Candidate) const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

@@ -90,6 +90,7 @@ USTRUCT()
 struct ARTISTICSWCORE_API FSWRoomSharedProgress
 {
 	GENERATED_BODY()
+	// Legacy serialization field. Runtime progression does not require a definition ID.
 	UPROPERTY(SaveGame) FPrimaryAssetId StoryDefinitionId;
 	UPROPERTY(SaveGame) FGameplayTagContainer Facts;
 	UPROPERTY(SaveGame) TArray<FSWRoomCounterProgress> Counters;

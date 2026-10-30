@@ -95,17 +95,27 @@ bool FShipUpgradeMaterialPipelineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Duplicate activation is idempotent"), Upgrade->ActivateNodeForUseCase(TEXT("Child_AB")), EShipUpgradeActivationResult::AlreadyActive);
 	TestEqual(TEXT("Duplicate activation consumes nothing further"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_WoodenPlank), 2);
 
+	TArray<FSWInventorySlotSnapshot> RewardSnapshot;
+ TArray<FCraftingItemStack> PreviewReward = { ShipUpgradeMaterialTests::MakeCost(Item_Id_Material_ShipMaterials_WoodenPlank, 1) };
+ TestTrue(TEXT("Reward snapshot can be prepared"), Inventory->BuildSnapshotWithAddedItems(PreviewReward, RewardSnapshot));
+ TestEqual(TEXT("Preparing a reward never changes live inventory"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_WoodenPlank), 2);
+ int32 PreparedWood = 0;
+ for (const FSWInventorySlotSnapshot& Slot : RewardSnapshot)
+  if (Slot.ItemTag == Item_Id_Material_ShipMaterials_WoodenPlank) PreparedWood += Slot.Count;
+ TestEqual(TEXT("Prepared reward is included only in the snapshot"), PreparedWood, 3);
+ PreviewReward[0].Quantity = MAX_int32;
+ TestFalse(TEXT("An oversized grant is rejected before live mutation"), Inventory->BuildSnapshotWithAddedItems(PreviewReward, RewardSnapshot));
+ TestTrue(TEXT("Failed staging clears the output"), RewardSnapshot.IsEmpty());
+ TestEqual(TEXT("Failed staging leaves live inventory unchanged"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_WoodenPlank), 2);
+
 	Upgrade->SetIgnoreMaterialCostsForTesting(true);
-	TestTrue(TEXT("Ship-upgrade test bypass reports an unaffordable node as affordable"), Upgrade->HasRequiredMaterials(TEXT("Debug_Bypass"), Reason));
-	TestTrue(TEXT("Bypassed node view resolves"), Upgrade->GetNodeView(TEXT("Debug_Bypass"), View));
-	TestTrue(TEXT("Bypassed node view reports enough materials"), View.bHasEnoughMaterials);
-	TestEqual(TEXT("Bypassed node view exposes its material row"), View.MaterialCosts.Num(), 1);
-	if (View.MaterialCosts.Num() == 1)
-	{
-		TestEqual(TEXT("Bypassed node view presents required quantity as owned"), View.MaterialCosts[0].OwnedQuantity, 99);
-	}
-	TestEqual(TEXT("Bypassed activation succeeds"), Upgrade->ActivateNodeForUseCase(TEXT("Debug_Bypass")), EShipUpgradeActivationResult::Success);
-	TestEqual(TEXT("Bypassed activation consumes no inventory"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_WoodenPlank), 2);
+ TestFalse(TEXT("Legacy component flag cannot bypass a disabled session"), Upgrade->HasRequiredMaterials(TEXT("Debug_Bypass"), Reason));
+ TestTrue(TEXT("Unaffordable node view resolves"), Upgrade->GetNodeView(TEXT("Debug_Bypass"), View));
+ TestFalse(TEXT("Disabled session keeps the view unaffordable"), View.bHasEnoughMaterials);
+ TestEqual(TEXT("Disabled session rejects normal activation"), Upgrade->ActivateNodeForUseCase(TEXT("Debug_Bypass")), EShipUpgradeActivationResult::MissingMaterials);
+ TestEqual(TEXT("Explicit inventory-provider seam still supports a validated server override"),
+  Upgrade->ActivateNodeWithInventoryProvider(TEXT("Debug_Bypass"), Inventory, true), EShipUpgradeActivationResult::Success);
+ TestEqual(TEXT("Server override consumes no inventory"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_WoodenPlank), 2);
 
 	World->DestroyWorld(false);
 	GEngine->DestroyWorldContext(World);

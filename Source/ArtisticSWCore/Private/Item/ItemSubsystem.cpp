@@ -105,12 +105,24 @@ void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	if (UItemData* DA = Settings->ItemAssetRegistry.LoadSynchronous())
 	{
 		CachedItemData = DA;
+		for (const auto& Pair : DA->ItemDefinitions)
+		{
+			if (Pair.Value.ProgressionKind == EItemProgressionKind::Weapon || !Pair.Value.WeaponBalanceRow.IsNull())
+			{
+				FString Error;
+				if (UEquippableWeaponDefinition* Weapon = DA->CreateWeaponDefinition(Pair.Key, this, Error))
+					ResolvedWeapons.Add(Pair.Key, Weapon);
+				else
+					UE_LOG(LogTemp, Error, TEXT("[WeaponBalance] %s: %s"), *Pair.Key.ToString(), *Error);
+			}
+		}
 		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Successfully loaded Item Asset Registry."));
 	}
 }
 
 void UItemSubsystem::Deinitialize()
 {
+	ResolvedWeapons.Reset();
 	CachedItemData = nullptr;
 	CachedFeatureData.Reset();
 	CachedRecipeData.Reset();
@@ -130,8 +142,8 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 		return nullptr;
 	}
 
-	const bool bWeapon = Def->ProgressionKind == EItemProgressionKind::Weapon || !Def->WeaponDefinition.IsNull();
-	const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous();
+	const bool bWeapon = Def->ProgressionKind == EItemProgressionKind::Weapon || !Def->WeaponBalanceRow.IsNull() || !Def->WeaponDefinition.IsNull();
+	const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition(ItemTag);
 	UClass* SpawnClass = bWeapon ? (Weapon ? Weapon->ActorClass.LoadSynchronous() : nullptr) : Def->SpawnClassByCrafting.LoadSynchronous();
 	if (bWeapon && !SpawnClass)
 	{
@@ -179,6 +191,14 @@ const FItemDefinition* UItemSubsystem::GetItemDefinition(const FGameplayTag& Ite
 	return nullptr;
 }
 
+UEquippableWeaponDefinition* UItemSubsystem::GetWeaponDefinition(const FGameplayTag& ItemTag) const
+{
+	if (const auto* Weapon = ResolvedWeapons.Find(ItemTag)) return Weapon->Get();
+	const FItemDefinition* Item = GetItemDefinition(ItemTag);
+	// Never hide a bad configured DT row behind obsolete asset data.
+	return Item && Item->WeaponBalanceRow.IsNull() ? Item->WeaponDefinition.LoadSynchronous() : nullptr;
+}
+
 const FItemFeatureData* UItemSubsystem::GetItemFeature(const FGameplayTag& Tag) const
 {
 	// O(1) 해시 맵 탐색
@@ -212,7 +232,7 @@ TSoftClassPtr<ABaseItem> UItemSubsystem::GetSpawnClassByCrafting(const FGameplay
 {
 	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
 	{
-		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous()) return Weapon->ActorClass;
+		if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition(ItemTag)) return Weapon->ActorClass;
 		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClassByCrafting;
 	}
 	return nullptr;
@@ -222,7 +242,7 @@ TSoftClassPtr<AActor> UItemSubsystem::GetSpawnClass(const FGameplayTag& ItemTag)
 {
 	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
 	{
-		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous())
+		if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition(ItemTag))
 			return Weapon->CombatData ? Weapon->CombatData->ProjectileClass : TSoftClassPtr<AActor>();
 		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClass;
 	}

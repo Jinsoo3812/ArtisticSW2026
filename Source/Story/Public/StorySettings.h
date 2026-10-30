@@ -14,7 +14,8 @@ class STORY_API UStorySettings : public UDeveloperSettings
 public:
 	virtual FName GetCategoryName() const override { return TEXT("Game"); }
 
-	UPROPERTY(Config, EditAnywhere, Category = "Startup")
+	/** Legacy serialized setting; no longer loaded or cooked. */
+	UPROPERTY(Config, meta = (DeprecatedProperty, DeprecationMessage = "StoryDefinition is retired."))
 	TSoftObjectPtr<UStoryDefinition> DefaultStoryDefinition;
 
 	UPROPERTY(Config, EditAnywhere, Category = "Persistence")

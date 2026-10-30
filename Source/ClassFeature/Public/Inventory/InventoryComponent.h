@@ -205,6 +205,8 @@ public:
 
 	/** Exact tab/slot snapshot used by the run-level respawn persistence bridge. */
 	void CaptureProgressSnapshot(TArray<FSWInventorySlotSnapshot>& OutSlots) const;
+ /** Prepare an inventory grant without changing live inventory or broadcasting events. */
+ bool BuildSnapshotWithAddedItems(const TArray<FCraftingItemStack>& AddedItems, TArray<FSWInventorySlotSnapshot>& OutSlots) const;
 	void RestoreProgressSnapshot(const TArray<FSWInventorySlotSnapshot>& InSlots);
 
 	// 인벤토리 내 아이템 MaxStack Getter

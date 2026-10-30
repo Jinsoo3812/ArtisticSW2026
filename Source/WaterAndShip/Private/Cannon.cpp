@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannon.h"
+#include "Development/SWDevelopmentOptions.h"
+#include "WeaponInputAbilitySystemComponent.h"
 #include "Audio/SWWorldAudio.h"
 #include "CannonRiderInterface.h"
 #include "MountedDamageUserInterface.h"
@@ -397,6 +399,9 @@ void ACannon::HandleFire(const FInputActionValue& Value)
 
 void ACannon::HandleWaterBombToggle(const FInputActionValue& Value)
 {
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=CannonSkillPressed Cannon=%s Authority=%d Local=%d PlayerControlled=%d Rider=%s Mode=%d"),
+			*GetName(), HasAuthority(), IsLocallyControlled(), IsPlayerControlled(), *GetNameSafe(RidingPlayer), bWaterBombMode);
 	ToggleWaterBombAbility();
 }
 
@@ -421,7 +426,7 @@ void ACannon::ToggleWaterBombAbility()
 
 bool ACannon::FireCannon()
 {
-	if (!bCanFire) return false;
+	if (!bCanFire && !(bWaterBombMode && SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown))) return false;
 	if (bWaterBombMode)
 	{
 		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
@@ -492,6 +497,7 @@ bool ACannon::CanFireCannon() const
 
 float ACannon::GetFireCooldownRemaining() const
 {
+	if (bWaterBombMode && SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown)) return 0.f;
 	return FMath::Max(0.0f, GetWorldTimerManager().GetTimerRemaining(CooldownTimerHandle));
 }
 
@@ -703,7 +709,7 @@ void ACannon::ServerFire_Implementation(
 	FVector_NetQuantize100 ClientMuzzleLocation,
 	FRotator ClientLaunchRotation)
 {
-	if (!bCanFire) return;
+	if (!bCanFire && !(bWaterBombMode && SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown))) return;
 	if (bWaterBombMode)
 	{
 		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
@@ -839,6 +845,9 @@ void ACannon::MulticastFireSound_Implementation(FVector_NetQuantize Location)
 
 void ACannon::ServerToggleWaterBombAbility_Implementation()
 {
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=CannonSkillRpc Cannon=%s PlayerControlled=%d Rider=%s Mode=%d"),
+			*GetName(), IsPlayerControlled(), *GetNameSafe(RidingPlayer), bWaterBombMode);
 	if (!RidingPlayer || !IsPlayerControlled())
 	{
 		return;
@@ -869,6 +878,8 @@ void ACannon::ToggleWaterBombAbilityAuthoritative()
 	}
 
 	FGameplayTagContainer AbilityTags(GameplayAbility_Skill_WaterBomb);
+	if (const UWeaponInputAbilitySystemComponent* InputASC = Cast<UWeaponInputAbilitySystemComponent>(ASC))
+		InputASC->LogInputDiagnostic(TEXT("CannonSkillToggle"), FString::Printf(TEXT("Cannon=%s Mode=%d"), *GetName(), bWaterBombMode));
 	if (ASC->HasMatchingGameplayTag(GameplayAbility_Skill_WaterBomb))
 	{
 		ASC->CancelAbilities(&AbilityTags);

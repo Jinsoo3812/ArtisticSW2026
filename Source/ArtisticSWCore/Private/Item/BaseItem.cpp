@@ -364,6 +364,11 @@ FText ABaseItem::GetItemNameText() const
 
 UEquippableWeaponDefinition* ABaseItem::GetWeaponDefinition() const
 {
+	if (MyDefinition && !MyDefinition->WeaponBalanceRow.IsNull())
+	{
+		const UItemSubsystem* Items = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+		return Items ? Items->GetWeaponDefinition(ItemTag) : nullptr;
+	}
 	return MyDefinition ? MyDefinition->WeaponDefinition.LoadSynchronous() : nullptr;
 }
 

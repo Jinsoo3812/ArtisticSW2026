@@ -28,6 +28,8 @@ public:
 	virtual bool IsTickable() const override { return !IsTemplate(); }
 	virtual TStatId GetStatId() const override;
 	virtual UWorld* GetTickableGameObjectWorld() const override;
+	bool HostLocalTestRoom(const FString& Name);
+	bool JoinLocalTestRoom(const FString& Name, const FString& Address);
 	UFUNCTION(BlueprintCallable) bool CreateRoom(const FString& DisplayName, const FString& OptionalPublicIPv4);
 	UFUNCTION(BlueprintCallable) bool ContinueRoom(const FString& DisplayName, const FString& OptionalPublicIPv4);
 	UFUNCTION(BlueprintCallable) bool JoinRoom(const FString& DisplayName, const FString& RoomCode);
@@ -48,7 +50,7 @@ private:
 	void SetState(ESWRoomState NewState, const FText& NewMessage);
 	void Fail(const FText& FailureMessage);
 	void StartServer(const FString& PublicAddress);
-	bool BeginHosting(const FString& Name, const FString& OptionalPublicIPv4, bool bContinue);
+	bool BeginHosting(const FString& Name, const FString& OptionalPublicIPv4, bool bContinue, bool bLocalTest = false);
 	void StopServer();
 	void ReturnToLobby();
 	FString MarkerPath() const;
@@ -63,6 +65,7 @@ private:
 	FGuid RoomRunId;
 	FGuid SavedRoomId;
 	FGuid HostKey;
+	bool bLocalCommandHost = false;
 	bool bContinuingRoom = false;
 	bool bUsingBackup = false;
 	FProcHandle ServerHandle;
