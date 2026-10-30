@@ -1,6 +1,7 @@
 #include "Development/TestInput/SWDevTestInputComponent.h"
 #include "Development/SWDevelopmentOptions.h"
 #include "Crafting/CraftingComponent.h"
+#include "Inventory/InventoryComponent.h"
 #include "Skills/PlayerSkillComponent.h"
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
@@ -306,6 +307,42 @@ void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction
  Reply(true,TEXT("정상 사망 테스트 실행"));
 }
 
+void USWDevTestInputComponent::ServerGrantRepairPlanks_Implementation()
+{
+ GrantRepairPlanks(true);
+}
+
+void USWDevTestInputComponent::GrantRepairPlanks(bool bTopUp)
+{
+ if (!SWDevTestInput::Allowed() || !SWDevTestInput::SafeWorld(GetWorld())) return;
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ const AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>();
+ if (!PC || !Mode || !Mode->IsRoomHostController(PC)
+  || !(SWDevelopmentOptions::GetMask(this) & SWDevelopmentOptions::Session))
+ {
+  if (PC) PC->ClientMessage(TEXT("RepairPlanks: 호스트가 SW.DevTest.Session 1을 먼저 켜세요"));
+  return;
+ }
+ ABasePlayer* Player = PC->GetLifeCharacter();
+ if (!Player || !PC->IsLifeCharacterAlive()) return;
+ UInventoryComponent* Inventory = Player->GetInventoryComponent();
+ if (!Inventory) return;
+ // Claim before broadcasting inventory changes: reentrant refreshes must not grant twice.
+ if (!bTopUp)
+ {
+  if (bSessionRepairPlanksGranted) return;
+  bSessionRepairPlanksGranted = true;
+ }
+ for (const FGameplayTag Tag : TArray<FGameplayTag>{Item_Id_Material_ShipMaterials_WoodenPlank, Item_Id_Material_ShipMaterials_GoodWoodenPlank})
+ {
+  const int32 Missing = bTopUp ? FMath::Max(0, 50 - Inventory->GetItemCount(Tag)) : 50;
+  const int32 Added = Missing > 0 ? Inventory->AddItem(Tag, Missing) : 0;
+  PC->ClientMessage(FString::Printf(TEXT("RepairPlanks: %s 보유 %d (추가 %d)%s"),
+   *Tag.ToString(), Inventory->GetItemCount(Tag), Added,
+   Added < Missing ? TEXT(" — 인벤토리 공간/아이템 등록을 확인하세요") : TEXT("")));
+ }
+}
+
 void USWDevTestInputComponent::RestoreDevelopmentHealth()
 {
  for (const auto& Pair : DevelopmentHealthOverrides)
@@ -326,7 +363,11 @@ void USWDevTestInputComponent::RefreshDevelopmentOptions()
  // Session grants health once per life, without suppressing hits or refilling each tick.
  if (GetOwner()->HasAuthority())
  {
-  if (!(Mask & SWDevelopmentOptions::Session)) RestoreDevelopmentHealth();
+  if (!(Mask & SWDevelopmentOptions::Session))
+  {
+   bSessionRepairPlanksGranted = false;
+   RestoreDevelopmentHealth();
+  }
   else
   {
    TArray<UAbilitySystemComponent*> Targets;
@@ -334,6 +375,8 @@ void USWDevTestInputComponent::RefreshDevelopmentOptions()
     if (ABasePlayer* Player = PC->GetLifeCharacter()) Targets.Add(Player->GetAbilitySystemComponent());
    ABasePlayerController* Host = Cast<ABasePlayerController>(GetOwner());
    const AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>();
+   if (!bSessionRepairPlanksGranted && Host && Mode && Mode->IsRoomHostController(Host))
+    GrantRepairPlanks(false);
    if (Host && Mode && Mode->IsRoomHostController(Host))
     for (TActorIterator<AShip> It(GetWorld()); It; ++It)
      if (It->ActorHasTag(TEXT("Player")) && !It->ActorHasTag(TEXT("Enemy"))) Targets.Add(It->GetAbilitySystemComponent());
@@ -452,6 +495,10 @@ FAutoConsoleCommandWithWorldAndArgs ShipSpeedMultiplier(TEXT("SW.DevTest.ShipSpe
   }
   else if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetShipSpeedMultiplier(Multiplier);
   else UE_LOG(LogSWDevTestInput, Warning, TEXT("ShipSpeedMultiplier requires one local player controller."));
+ }));
+FAutoConsoleCommandWithWorldAndArgs RepairPlanks(TEXT("SW.DevTest.RepairPlanks"), TEXT("Top up local host's ordinary/good repair planks to 50 each; requires Session 1"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  if (Args.IsEmpty()) if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerGrantRepairPlanks();
  }));
 FAutoConsoleCommandWithWorldAndArgs FreeUpgrade(TEXT("SW.DevTest.ShipUpgradeFree"), TEXT("Ignore ship materials 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("ShipUpgradeFree")); }));

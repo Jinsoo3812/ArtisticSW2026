@@ -12,5 +12,6 @@ public class ArtisticSW2026EditorTarget : TargetRules
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_7;
 		ExtraModuleNames.Add("ArtisticSW2026");
 		ExtraModuleNames.Add("ClassFeatureEditor");
+		ExtraModuleNames.Add("ClassFeatureAnimGraph");
 	}
 }

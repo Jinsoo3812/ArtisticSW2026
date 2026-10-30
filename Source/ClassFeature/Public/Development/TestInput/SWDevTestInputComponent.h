@@ -22,6 +22,8 @@ public:
  void RequestSessionEnabled(bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerSetDevelopmentOption(FName Option, bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerSetShipSpeedMultiplier(float Multiplier);
+ /** Top up ordinary/good repair planks to 50 each; host-only, enabled test session only. */
+ UFUNCTION(Server, Reliable) void ServerGrantRepairPlanks();
  UFUNCTION(Server, Reliable) void ServerSkipCampaign(FName Target, int32 ExpectedGeneration);
  void RequestCampaignSkip(FName Target);
  /** Console and key input share the same session, UI, generation and server policy. */
@@ -43,6 +45,8 @@ private:
  friend class FDevelopmentPlayerInvulnerabilityTest;
 #endif
  void RefreshDevelopmentOptions();
+ void GrantRepairPlanks(bool bTopUp);
+ bool bSessionRepairPlanksGranted = false;
  int32 LastDevelopmentMask = INDEX_NONE;
  struct FDevelopmentHealthOverride
  {

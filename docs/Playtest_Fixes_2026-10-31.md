@@ -32,3 +32,11 @@ User approved accepting compatible functionality from both branches. Full branch
 - Visual PIE and multiplayer playthrough were not performed in this run.
 
 - Final regression run: 14 passed, 0 failed, 0 not run (5 passing tests emitted warnings).
+
+- Follow-up: SW.DevTest.RepairPlanks tops up the local host's WoodenPlank and GoodWoodenPlank to 50 each, requires a safe enabled development session and a living character, and reports partial inventory adds. It is a one-shot grant, not automatic replenishment.
+- Legacy BP test settings were deprecated by c601c0b4 (2026-10-28), before the fix-lss integration. Editor starting inventory remains in Game / SW Development Tests and applies only to fresh inventories.
+
+- Follow-up revision: enabling Session automatically adds 50 ordinary and 50 good wooden planks to the living host once per enabled session. Repeated Session 1, option refreshes, and respawns do not repeat the grant. Session 0 resets eligibility. Existing inventory counts are preserved (5 ordinary + 50 grant = 55); the manual RepairPlanks command remains a top-up to 50.
+
+- T-pose follow-up: moved AnimGraphNode_SWCannonOperator out of Editor-only ClassFeatureEditor into a minimal ClassFeatureAnimGraph UncookedOnly module (Default loading phase). Runtime pose evaluation remains in ClassFeature. Added a class redirect and recompiled/resaved both player AnimBPs. Standalone -game graph-load regression passed for both Man and Woman, with connected cannon inputs and final pose outputs; the previous missing cannon graph node errors are absent. Visual gameplay confirmation remains outstanding.
+
