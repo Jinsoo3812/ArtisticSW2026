@@ -58,8 +58,6 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/MotionMatchingAnimInstance.h"
-#include "PhysicsEngine/PhysicsAsset.h"
-#include "PhysicsEngine/SkeletalBodySetup.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Ship.h"
@@ -212,7 +210,6 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 	DOREPLIFETIME(ABasePlayer, bMountedDamageMode);
-	DOREPLIFETIME(ABasePlayer, bShipDeathMovement);
 }
 
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
@@ -294,7 +291,7 @@ void ABasePlayer::BeginPlay()
 	{
 		HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABasePlayer::HandleDeathStarted);
 		HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABasePlayer::HandleDeathFinished);
-		if (HealthComponent->IsDead()) PrepareDeathMovement();
+		if (HealthComponent->IsDead()) ApplyLocalDeathRagdoll();
 		if (HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
 		{
 			ApplyLocalDeathRagdoll();
@@ -429,33 +426,17 @@ void ABasePlayer::HandleBossQuestAccepted(AActor* Requester)
 
 bool ABasePlayer::IsMoveInputIgnored() const
 {
-	return bShipDeathMovement || (HealthComponent && HealthComponent->IsDead()) || Super::IsMoveInputIgnored();
+	return (HealthComponent && HealthComponent->IsDead()) || Super::IsMoveInputIgnored();
 }
 
 void ABasePlayer::HandleDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
-	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) PrepareDeathMovement();
-}
-
-void ABasePlayer::OnRep_ShipDeathMovement()
-{
-	if (bShipDeathMovement) PrepareDeathMovement();
+	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) ApplyLocalDeathRagdoll();
 }
 
 void ABasePlayer::PrepareDeathMovement()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	UCapsuleComponent* Capsule = GetCapsuleComponent();
-	if (!Movement || !Capsule || bShipDeathMovementPrepared) return;
-	UPrimitiveComponent* Base = GetMovementBase();
-	if (!bShipDeathMovement)
-	{
-		if (!Movement->IsMovingOnGround() || !IsValid(Base) || !IsValid(Base->GetOwner()) || !Base->GetOwner()->IsA<AShip>()
-			|| Base->GetCollisionProfileName() != TEXT("ShipDeck")) return;
-		bShipDeathMovement = true;
-		if (HasAuthority()) ForceNetUpdate();
-	}
-	bShipDeathMovementPrepared = true;
 	ConsumeMovementInputVector();
 	StopJumping();
 	bSprintInputHeld = false;
@@ -464,16 +445,13 @@ void ABasePlayer::PrepareDeathMovement()
 		AnimStateComponent->ClearMoveInput();
 		AnimStateComponent->SetSprinting(false);
 	}
-	Movement->StopMovementImmediately();
-	Movement->ClearAccumulatedForces();
-	Movement->bRunPhysicsWithNoController = true;
-	Movement->Activate();
-	Movement->SetComponentTickEnabled(true);
-	Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-	if (Movement->MovementMode == MOVE_None) Movement->SetMovementMode(MOVE_Walking);
-	UE_LOG(LogSWRoom, Display, TEXT("[PlayerDeath] ShipCMC Player=%s Authority=%d Base=%s Mode=%d"),
-		*GetName(), HasAuthority(), *GetNameSafe(Base), static_cast<int32>(Movement->MovementMode));
+	if (Movement)
+	{
+		Movement->StopMovementImmediately();
+		Movement->ClearAccumulatedForces();
+		Movement->DisableMovement();
+	}
+	SetActorEnableCollision(false);
 }
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
@@ -498,8 +476,8 @@ void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 	// GameMode must capture/register the owning controller before unpossession.
 	// Presentation must never detach the player controller on either peer.
 	ApplyLocalDeathRagdoll();
-	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollAfterApply Player=%s NetMode=%d Simulating=%d AnyBodySimulating=%d Mesh=%s"),
-		*GetName(), static_cast<int32>(GetNetMode()), GetMesh() && GetMesh()->IsSimulatingPhysics(), GetMesh() && GetMesh()->IsAnySimulatingPhysics(), *GetNameSafe(GetMesh()));
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathHidden Player=%s NetMode=%d"),
+		*GetName(), static_cast<int32>(GetNetMode()));
 	RetireLifeAbilityBindings();
 }
 
@@ -519,30 +497,26 @@ void ABasePlayer::RetireLifeAbilityBindings()
 
 void ABasePlayer::ApplyLocalDeathRagdoll()
 {
-	if (bLocalDeathRagdollApplied) return;
 	PrepareDeathMovement();
-	Super::ApplyLocalDeathRagdoll();
-	USkeletalMeshComponent* RagdollMesh = GetMesh();
-	if (!RagdollMesh) return;
-	// Blend every simulated body into the rendered pose, including bodies with
-	// an authored custom physics type. This is presentation local to each peer.
-	RagdollMesh->SetAllBodiesPhysicsBlendWeight(1.0f, false);
-	int32 SimulatedBodies = 0;
-	if (const UPhysicsAsset* RagdollAsset = RagdollMesh->GetPhysicsAsset())
+	SetActorHiddenInGame(true);
+	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{
-		for (const USkeletalBodySetup* BodySetup : RagdollAsset->SkeletalBodySetups)
-		{
-			if (BodySetup && RagdollMesh->IsSimulatingPhysics(BodySetup->BoneName)) ++SimulatedBodies;
-		}
+		CharacterMesh->SetSimulatePhysics(false);
+		CharacterMesh->SetAllBodiesSimulatePhysics(false);
+		CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		CharacterMesh->SetVisibility(false, true);
+		CharacterMesh->SetHiddenInGame(true, true);
 	}
-	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollBodies Player=%s NetMode=%d Asset=%s Bodies=%d Simulated=%d TransformMode=%d BlendPhysics=%d DedicatedPhysics=%d"),
-		*GetName(), static_cast<int32>(GetNetMode()), *GetNameSafe(RagdollMesh->GetPhysicsAsset()), RagdollMesh->Bodies.Num(), SimulatedBodies,
-		static_cast<int32>(RagdollMesh->PhysicsTransformUpdateMode), RagdollMesh->bBlendPhysics, RagdollMesh->bEnablePhysicsOnDedicatedServer);
-	if (GetNetMode() != NM_DedicatedServer && SimulatedBodies == 0)
+	// Equipment is a separate actor; hiding the pawn alone does not hide it.
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors, true, true);
+	for (AActor* AttachedActor : AttachedActors)
 	{
-		UE_LOG(LogSWRoom, Warning, TEXT("[SWLifeDiag] Event=PlayerRagdollUnavailable Player=%s Asset=%s Bodies=%d"),
-			*GetName(), *GetNameSafe(RagdollMesh->GetPhysicsAsset()), RagdollMesh->Bodies.Num());
+		AttachedActor->SetActorHiddenInGame(true);
+		AttachedActor->SetActorEnableCollision(false);
 	}
+	// Keep controller ownership until GameMode captures progress and registers death.
+	// Do not set bLocalDeathRagdollApplied: the ragdoll camera must remain inactive.
 }
 
 void ABasePlayer::CaptureRespawnProgress()

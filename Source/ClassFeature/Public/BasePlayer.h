@@ -141,17 +141,11 @@ private:
 	void RetireLifeAbilityBindings();
 	bool bLifeAbilityBindingsRetired = false;
 
-	UPROPERTY(ReplicatedUsing = OnRep_ShipDeathMovement)
-	bool bShipDeathMovement = false;
-	bool bShipDeathMovementPrepared = false;
-	UFUNCTION()
-	void OnRep_ShipDeathMovement();
-
 public:
 
+	/** Legacy ragdoll entry points now hide the player without starting physics. */
 	virtual void ApplyLocalDeathRagdoll() override;
 	virtual void PrepareDeathMovement() override;
-	virtual bool ShouldKeepCharacterMovementOnDeath() const override { return bShipDeathMovement; }
 	virtual bool IsMoveInputIgnored() const override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:
