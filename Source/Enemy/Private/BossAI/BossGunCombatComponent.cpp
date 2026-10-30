@@ -106,9 +106,9 @@ uint32 UBossGunCombatComponent::BeginAttack(AActor* Target)
 	Params.Owner = OwnerBoss;
 	Params.Instigator = OwnerBoss;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AimLine = GetWorld()->SpawnActor<ABossGunAimLine>(Data()->AimLineClass, OwnerBoss->GetActorTransform(), Params);
+	AimLine = GetWorld()->SpawnActor<ABossGunAimLine>(ABossGunAimLine::StaticClass(), OwnerBoss->GetActorTransform(), Params);
 	if (!AimLine) return 0;
-	AimLine->Initialize(OwnerBoss, Data()->FireSocketName);
+	AimLine->Initialize(OwnerBoss, Data()->FireSocketName, Data()->Ray);
 	if (++NextAttackId == 0) ++NextAttackId;
 	ActiveAttackId = NextAttackId;
 	bAimLocked = false;
@@ -218,9 +218,9 @@ bool UBossGunCombatComponent::BuildShot(uint32 AttackId, FHitResult& OutHit, FVe
 	return OwnsAttack(AttackId) && bAimLocked && GetOrigin(OutStart) && Trace(OutStart, LockedWorldDirection(), OutHit, OutEnd);
 }
 
-void UBossGunCombatComponent::ShowShot(uint32 AttackId, const FVector& Start, const FVector& End, bool bBlockingHit)
+void UBossGunCombatComponent::ShowShot(uint32 AttackId, const FVector& Start, const FVector& End)
 {
-	if (OwnsAttack(AttackId) && AimLine) AimLine->ShowShot(Start, End, bBlockingHit);
+	if (OwnsAttack(AttackId) && AimLine) AimLine->ShowShot(Start, End);
 }
 
 void UBossGunCombatComponent::SetHiddenPhase(uint32 AttackId, EBossGunAimPhase Phase, float StartTime, float EndTime)

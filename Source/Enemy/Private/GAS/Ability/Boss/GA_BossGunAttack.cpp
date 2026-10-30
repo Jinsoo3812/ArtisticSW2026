@@ -146,7 +146,7 @@ void UGA_BossGunAttack::FireShot()
 			Resolver->ResolveHit(UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Hit.GetActor()), Hit, true, false, false);
 	}
 	if (!IsActive() || !Combat->OwnsAttack(AttackId)) return;
-	Combat->ShowShot(AttackId, Start, End, Hit.bBlockingHit);
+	Combat->ShowShot(AttackId, Start, End);
 	++ShotsFired;
 	if (Pattern.Montage && !Pattern.FireSection.IsNone())
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())

@@ -1,13 +1,9 @@
 #include "BossAI/BossGunAimLine.h"
 #include "BossAI/GunnerBossEnemy.h"
-#include "Components/StaticMeshComponent.h"
+#include "Components/LineBatchComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Materials/MaterialInstanceDynamic.h"
-#include "Engine/StaticMesh.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/GameStateBase.h"
-#include "Kismet/GameplayStatics.h"
-#include "NiagaraComponent.h"
-#include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "ShipAI/EnemyShip.h"
 
@@ -16,29 +12,27 @@ ABossGunAimLine::ABossGunAimLine()
 	bReplicates = true;
 	bAlwaysRelevant = true;
 	PrimaryActorTick.bCanEverTick = true;
-	LineMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LineMesh"));
-	SetRootComponent(LineMesh);
-	LineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	LineMesh->SetGenerateOverlapEvents(false);
-	LineMesh->SetCanEverAffectNavigation(false);
-	LineMesh->SetCastShadow(false);
-	WarningNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("WarningNiagara"));
-	WarningNiagara->SetupAttachment(RootComponent);
-	WarningNiagara->SetAutoActivate(false);
-	WarningNiagara->SetAbsolute(true, true, true);
+	PrimaryActorTick.TickGroup = TG_PostPhysics;
+	RayLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("RayLines"));
+	SetRootComponent(RayLines);
+	RayLines->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RayLines->SetGenerateOverlapEvents(false);
+	RayLines->SetCanEverAffectNavigation(false);
+	RayLines->SetCastShadow(false);
+	RayLines->SetComponentTickEnabled(false);
+	RayLines->bCalculateAccurateBounds = false;
+	RayLines->bUseEditorCompositing = false;
 }
-
-bool ABossGunAimLine::HasWarningVisual() const { return WarningMesh || WarningEffect; }
 
 void ABossGunAimLine::BeginPlay()
 {
 	Super::BeginPlay();
-	if (GetNetMode() == NM_DedicatedServer) return;
-	LineMesh->SetStaticMesh(WarningMesh);
-	if (WarningMaterial) LineMesh->SetMaterial(0, WarningMaterial);
-	if (LineMesh->GetMaterial(0)) LineMaterial = LineMesh->CreateDynamicMaterialInstance(0);
-	WarningNiagara->SetAsset(WarningEffect);
-	PresentState();
+	RayLines->SetComponentTickEnabled(false);
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		SetActorTickEnabled(false);
+		RayLines->SetVisibility(false);
+	}
 }
 
 void ABossGunAimLine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -53,11 +47,12 @@ float ABossGunAimLine::ServerTime() const
 	return State ? State->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
 }
 
-void ABossGunAimLine::Initialize(AGunnerBossEnemy* Boss, FName Socket)
+void ABossGunAimLine::Initialize(AGunnerBossEnemy* Boss, FName Socket, const FGunnerBossRaySettings& Ray)
 {
 	if (!HasAuthority()) return;
 	VisualState.Boss = Boss;
 	VisualState.Socket = Socket;
+	VisualState.Ray = Ray;
 	ForceNetUpdate();
 }
 
@@ -73,30 +68,39 @@ void ABossGunAimLine::SetAim(EBossGunAimPhase Phase, const FVector& End, float S
 	VisualState.PhaseStartTime = StartTime;
 	VisualState.PhaseEndTime = EndTime;
 	ForceNetUpdate();
-	PresentState();
+	OnRep_VisualState();
 }
 
-void ABossGunAimLine::ShowShot(const FVector& Start, const FVector& End, bool bBlockingHit)
+void ABossGunAimLine::ShowShot(const FVector& Start, const FVector& End)
 {
 	if (!HasAuthority()) return;
 	++VisualState.ShotSerial;
 	VisualState.ShotStart = Start;
 	VisualState.ShotEnd = End;
 	VisualState.ShotTime = ServerTime();
-	VisualState.bBlockingHit = bBlockingHit;
 	ForceNetUpdate();
-	PresentState();
 }
-
-void ABossGunAimLine::OnRep_VisualState() { PresentState(); }
 
 void ABossGunAimLine::FinishPresentation()
 {
 	if (!HasAuthority()) return;
 	VisualState.Phase = EBossGunAimPhase::Hidden;
 	ForceNetUpdate();
-	PresentState();
-	SetLifeSpan(FMath::Max(EndPresentationLifetime, ShotEffectLifetime));
+	OnRep_VisualState();
+	SetLifeSpan(FMath::Max(VisualState.Ray.EndPresentationLifetime, VisualState.Ray.ShotLifetime));
+}
+
+void ABossGunAimLine::OnRep_VisualState()
+{
+	if (PresentedPhase != VisualState.Phase || PresentedPhaseStart != VisualState.PhaseStartTime)
+	{
+		// Never interpolate an old tracking direction into a newly locked shot.
+		RenderedEnd = ResolveEnd();
+		bHaveEndpoint = true;
+		PresentedPhase = VisualState.Phase;
+		PresentedPhaseStart = VisualState.PhaseStartTime;
+		RayLines->Flush();
+	}
 }
 
 FVector ABossGunAimLine::ResolveEnd() const
@@ -109,88 +113,33 @@ FVector ABossGunAimLine::ResolveEnd() const
 
 void ABossGunAimLine::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (ShotNiagara) ShotNiagara->DestroyComponent();
+	RayLines->Flush();
 	Super::EndPlay(EndPlayReason);
-}
-
-void ABossGunAimLine::PresentState()
-{
-	if (GetNetMode() == NM_DedicatedServer) return;
-	if (PresentedPhase != VisualState.Phase || PresentedPhaseStart != VisualState.PhaseStartTime)
-	{
-		// Snap at stage boundaries; stale tracking interpolation must not conceal locked aim.
-		RenderedEnd = ResolveEnd();
-		bHaveEndpoint = true;
-		PresentedPhase = VisualState.Phase;
-		PresentedPhaseStart = VisualState.PhaseStartTime;
-		if (ServerTime() < VisualState.PhaseEndTime)
-		{
-			USoundBase* Sound = VisualState.Phase == EBossGunAimPhase::Tracking ? PrepareSound.Get()
-				: (VisualState.Phase == EBossGunAimPhase::Locked ? LockSound.Get() : nullptr);
-			if (Sound && IsValid(VisualState.Boss)) UGameplayStatics::PlaySoundAtLocation(this, Sound, VisualState.Boss->GetActorLocation());
-		}
-	}
-	if (VisualState.ShotSerial != PresentedShotSerial)
-	{
-		PresentedShotSerial = VisualState.ShotSerial;
-		const float Age = ServerTime() - VisualState.ShotTime;
-		if (Age < ShotEffectLifetime)
-		{
-			if (ShotNiagara) ShotNiagara->DestroyComponent();
-			if (ShotEffect)
-			{
-				ShotNiagara = UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ShotEffect, VisualState.ShotStart,
-					(FVector(VisualState.ShotEnd) - FVector(VisualState.ShotStart)).Rotation(), FVector::OneVector, true, false);
-				if (ShotNiagara)
-				{
-					ShotNiagara->SetVariableVec3(StartParameter, VisualState.ShotStart);
-					ShotNiagara->SetVariableVec3(EndParameter, VisualState.ShotEnd);
-					ShotNiagara->Activate();
-				}
-			}
-			if (MuzzleEffect) UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, MuzzleEffect, VisualState.ShotStart);
-			if (ImpactEffect && VisualState.bBlockingHit) UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ImpactEffect, VisualState.ShotEnd);
-			if (FireSound) UGameplayStatics::PlaySoundAtLocation(this, FireSound, VisualState.ShotStart);
-		}
-	}
 }
 
 void ABossGunAimLine::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if (GetNetMode() == NM_DedicatedServer) return;
-	const bool bVisible = IsValid(VisualState.Boss) && (VisualState.Phase == EBossGunAimPhase::Tracking
-		|| VisualState.Phase == EBossGunAimPhase::Locked) && ServerTime() <= VisualState.PhaseEndTime;
-	LineMesh->SetVisibility(bVisible && WarningMesh != nullptr);
-	if (bVisible && WarningEffect)
+	// Own component: never flush the world's lines or another boss's presentation.
+	RayLines->Flush();
+	const float Now = ServerTime();
+	const bool bPreparing = IsValid(VisualState.Boss) && (VisualState.Phase == EBossGunAimPhase::Tracking
+		|| VisualState.Phase == EBossGunAimPhase::Locked) && Now <= VisualState.PhaseEndTime;
+	const USkeletalMeshComponent* Mesh = IsValid(VisualState.Boss) ? VisualState.Boss->GetMesh() : nullptr;
+	if (bPreparing && Mesh && Mesh->DoesSocketExist(VisualState.Socket))
 	{
-		if (!WarningNiagara->IsActive()) WarningNiagara->Activate();
+		const FVector Start = Mesh->GetSocketLocation(VisualState.Socket);
+		if (!bHaveEndpoint || HasAuthority() || VisualState.Phase == EBossGunAimPhase::Locked
+			|| VisualState.Ray.EndpointInterpolationSpeed <= 0.f) RenderedEnd = ResolveEnd();
+		else RenderedEnd = FMath::VInterpTo(RenderedEnd, ResolveEnd(), DeltaSeconds, VisualState.Ray.EndpointInterpolationSpeed);
+		bHaveEndpoint = true;
+		// Direct runtime line drawing has no DrawDebugLine / ENABLE_DRAW_DEBUG shipping guard.
+		RayLines->DrawLine(Start, RenderedEnd, VisualState.Ray.Color, SDPG_World, VisualState.Ray.Thickness);
 	}
-	else if (WarningNiagara->IsActive()) WarningNiagara->DeactivateImmediate();
-	if (ShotNiagara && ServerTime() - VisualState.ShotTime >= ShotEffectLifetime)
+	if (VisualState.ShotSerial != 0 && Now - VisualState.ShotTime < VisualState.Ray.ShotLifetime)
 	{
-		ShotNiagara->DestroyComponent();
-		ShotNiagara = nullptr;
+		RayLines->DrawLine(VisualState.ShotStart, VisualState.ShotEnd, VisualState.Ray.Color,
+			SDPG_World, VisualState.Ray.ShotThickness);
 	}
-	if (!bVisible || !VisualState.Boss->GetMesh()->DoesSocketExist(VisualState.Socket)) return;
-	const FVector Start = VisualState.Boss->GetMesh()->GetSocketLocation(VisualState.Socket);
-	if (!bHaveEndpoint || HasAuthority() || VisualState.Phase == EBossGunAimPhase::Locked || EndpointInterpolationSpeed <= 0.f)
-		RenderedEnd = ResolveEnd();
-	else RenderedEnd = FMath::VInterpTo(RenderedEnd, ResolveEnd(), DeltaSeconds, EndpointInterpolationSpeed);
-	bHaveEndpoint = true;
-	const FVector Delta = RenderedEnd - Start;
-	const FLinearColor Color = VisualState.Phase == EBossGunAimPhase::Locked ? LockedColor : TrackingColor;
-	if (WarningMesh)
-	{
-		const FVector Size = WarningMesh->GetBounds().BoxExtent * 2.f;
-		LineMesh->SetWorldLocationAndRotation((Start + RenderedEnd) * 0.5f, Delta.Rotation());
-		LineMesh->SetWorldScale3D(FVector(Delta.Size() / FMath::Max(Size.X, 1.f),
-			LineThickness / FMath::Max(Size.Y, 1.f), LineThickness / FMath::Max(Size.Z, 1.f)));
-	}
-	if (LineMaterial) LineMaterial->SetVectorParameterValue(ColorParameter, Color);
-	WarningNiagara->SetVariableVec3(StartParameter, Start);
-	WarningNiagara->SetVariableVec3(EndParameter, RenderedEnd);
-	WarningNiagara->SetVariableLinearColor(NiagaraColorParameter, Color);
-	WarningNiagara->SetVariableFloat(ProgressParameter, FMath::Clamp((ServerTime() - VisualState.PhaseStartTime)
-		/ FMath::Max(VisualState.PhaseEndTime - VisualState.PhaseStartTime, KINDA_SMALL_NUMBER), 0.f, 1.f));
 }

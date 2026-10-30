@@ -5,8 +5,21 @@
 #include "GameplayTagContainer.h"
 #include "GunnerBossCombatData.generated.h"
 
-class ABossGunAimLine;
 class UAnimMontage;
+
+/** Asset-free client ray presentation. Thickness is in screen pixels. */
+USTRUCT(BlueprintType)
+struct ENEMY_API FGunnerBossRaySettings
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ray") FLinearColor Color = FLinearColor::Red;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ray", meta = (ClampMin = "0.1")) float Thickness = 2.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ray", meta = (ClampMin = "0.1")) float ShotThickness = 4.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ray", meta = (ClampMin = "0.01", Units = "s")) float ShotLifetime = 0.15f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ray", meta = (ClampMin = "0.01", Units = "s")) float EndPresentationLifetime = 0.3f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ray", meta = (ClampMin = "0.0")) float EndpointInterpolationSpeed = 20.f;
+	bool IsValid() const;
+};
 
 /** All times use the server clock; LockTime is included in PrepareTime. */
 USTRUCT(BlueprintType)
@@ -15,7 +28,8 @@ struct ENEMY_API FGunnerBossShotPattern
 	GENERATED_BODY()
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Timing", meta = (ClampMin = "0.01", Units = "s"))
 	float PrepareTime = 2.f;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Timing", meta = (ClampMin = "0.01", Units = "s"))
+	/** Zero tracks the player until the firing boundary. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Timing", meta = (ClampMin = "0.0", Units = "s"))
 	float LockTime = 0.6f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Timing", meta = (ClampMin = "0.0", Units = "s"))
 	float RecoveryTime = 1.2f;
@@ -56,8 +70,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun") bool bTraceComplex = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun", meta = (ClampMin = "0.01", Units = "s"))
 	float AimUpdateInterval = 0.05f;
-	/** Required BP: assign a warning mesh or Niagara beam in this class. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation") TSubclassOf<ABossGunAimLine> AimLineClass;
+	/** Red ray is drawn locally on every client without a mesh, material or Niagara asset. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation") FGunnerBossRaySettings Ray;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation", meta = (Categories = "GameplayCue.Impact")) FGameplayTag ImpactCue;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attacks") FGunnerBossShotPattern Basic;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attacks") FGunnerBossShotPattern Burst;

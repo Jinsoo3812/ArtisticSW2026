@@ -1,5 +1,4 @@
 #include "BossAI/GunnerBossCombatData.h"
-#include "BossAI/BossGunAimLine.h"
 #include "Animation/AnimMontage.h"
 #include "CollisionChannels.h"
 #if WITH_EDITOR
@@ -9,13 +8,22 @@
 bool FGunnerBossShotPattern::IsValid() const
 {
 	return FMath::IsFinite(PrepareTime) && PrepareTime > 0.f && FMath::IsFinite(LockTime)
-		&& LockTime > 0.f && LockTime <= PrepareTime && FMath::IsFinite(RecoveryTime) && RecoveryTime >= 0.f
+		&& LockTime >= 0.f && LockTime <= PrepareTime && FMath::IsFinite(RecoveryTime) && RecoveryTime >= 0.f
 		&& FMath::IsFinite(ShotGap) && ShotGap >= 0.f && FMath::IsFinite(Cooldown) && Cooldown >= 0.f
 		&& FMath::IsFinite(PostAttackGap) && PostAttackGap >= 0.f && FMath::IsFinite(DamageCoefficient)
 		&& DamageCoefficient > 0.f && FMath::IsFinite(MontagePlayRate) && MontagePlayRate > 0.f
 		&& (!Montage || ((PrepareSection.IsNone() || Montage->GetSectionIndex(PrepareSection) != INDEX_NONE)
 			&& (FireSection.IsNone() || Montage->GetSectionIndex(FireSection) != INDEX_NONE)
 			&& (RecoverySection.IsNone() || Montage->GetSectionIndex(RecoverySection) != INDEX_NONE)));
+}
+
+bool FGunnerBossRaySettings::IsValid() const
+{
+	return FMath::IsFinite(Color.R) && FMath::IsFinite(Color.G) && FMath::IsFinite(Color.B) && FMath::IsFinite(Color.A)
+		&& FMath::IsFinite(Thickness) && Thickness > 0.f && FMath::IsFinite(ShotThickness) && ShotThickness > 0.f
+		&& FMath::IsFinite(ShotLifetime) && ShotLifetime > 0.f
+		&& FMath::IsFinite(EndPresentationLifetime) && EndPresentationLifetime > 0.f
+		&& FMath::IsFinite(EndpointInterpolationSpeed) && EndpointInterpolationSpeed >= 0.f;
 }
 
 UGunnerBossCombatData::UGunnerBossCombatData()
@@ -33,15 +41,9 @@ bool UGunnerBossCombatData::Validate(FString& OutError) const
 {
 	if (FireSocketName.IsNone() || !FMath::IsFinite(AttackRange) || AttackRange <= 0.f
 		|| TargetAimOffset.ContainsNaN() || !FMath::IsFinite(AimUpdateInterval) || AimUpdateInterval <= 0.f
-		|| !Basic.IsValid() || !Burst.IsValid() || BurstShotCount < 1 || BurstShotCount > 16)
+		|| !Basic.IsValid() || !Burst.IsValid() || !Ray.IsValid() || BurstShotCount < 1 || BurstShotCount > 16)
 	{
-		OutError = TEXT("Invalid gun/pattern settings: require 0 < LockTime <= PrepareTime, valid montage sections and finite positive range.");
-		return false;
-	}
-	const ABossGunAimLine* Visual = AimLineClass ? AimLineClass.GetDefaultObject() : nullptr;
-	if (!Visual || !Visual->HasWarningVisual())
-	{
-		OutError = TEXT("Assign AimLineClass with a WarningMesh or WarningEffect; debug lines are not gameplay presentation.");
+		OutError = TEXT("Invalid gun/pattern/ray settings: require 0 <= LockTime <= PrepareTime, valid montage sections and finite positive range/line thickness.");
 		return false;
 	}
 	return true;

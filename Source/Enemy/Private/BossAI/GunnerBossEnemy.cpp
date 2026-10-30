@@ -18,9 +18,10 @@ AGunnerBossEnemy::AGunnerBossEnemy(const FObjectInitializer& ObjectInitializer) 
 	});
 	StartingAbilities.Add(UGA_BossGunAttack::StaticClass());
 	StartingAbilities.Add(UGA_BossGunBurst::StaticClass());
-	// The gun mesh may be attached in BP; do not grant the sword's legacy melee attack.
-	bEquipWeaponOnSpawn = false;
-	DefaultWeaponTag = FGameplayTag();
+	// Existing weapon registry/attachment/replication owns the gun's visible actor.
+	// Gun abilities are pawn-owned; the registry gun entry must not grant a second copy.
+	bEquipWeaponOnSpawn = true;
+	DefaultWeaponTag = GunnerBossTags::WeaponGun;
 }
 
 void AGunnerBossEnemy::BeginPlay()

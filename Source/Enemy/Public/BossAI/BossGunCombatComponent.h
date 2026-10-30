@@ -27,7 +27,7 @@ public:
 	bool UpdateAim(uint32 AttackId, AActor* Target, EBossGunAimPhase Phase, float StartTime, float EndTime);
 	bool LockAim(uint32 AttackId, AActor* Target);
 	bool BuildShot(uint32 AttackId, FHitResult& OutHit, FVector& OutStart, FVector& OutEnd) const;
-	void ShowShot(uint32 AttackId, const FVector& Start, const FVector& End, bool bBlockingHit);
+	void ShowShot(uint32 AttackId, const FVector& Start, const FVector& End);
 	void SetHiddenPhase(uint32 AttackId, EBossGunAimPhase Phase, float StartTime, float EndTime);
 	void FinishAttack(uint32 AttackId, float PostAttackGap, bool bKeepFinalShot = false);
 	void ResetCombat();
