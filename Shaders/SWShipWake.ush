@@ -28,16 +28,16 @@
     { \
         if (SW_Index >= SW_Count) break; \
         const float SW_X = (float(SW_Index) + 0.5) * (1.0 / float(SW_M7_WAKE_CAPACITY)); \
-        const float4 SW_R1 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.375), 0.0); \
+        const float4 SW_R1 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.3), 0.0); \
+        const float4 SW_R4 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.9), 0.0); \
         const float SW_T0 = SW_R1.x; \
-        const float SW_Amp = SW_R1.z; \
         const float SW_STime = (float)(SERVER_TIME); \
-        if (SW_Amp <= 0.0 || SW_STime < SW_T0) continue; \
+        if (max(SW_R1.z, SW_R4.x) <= 0.0 || SW_STime < SW_T0) continue; \
         \
-        const float4 SW_R2 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.625), 0.0); \
+        const float4 SW_R2 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.5), 0.0); \
         if (SW_STime >= SW_R2.x) continue; \
         \
-        const float4 SW_R0 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.125), 0.0); \
+        const float4 SW_R0 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.1), 0.0); \
         const float2 SW_D = SW_R0.xy - SW_Query; \
         const float SW_DistSq = dot(SW_D, SW_D); \
         const float SW_Length = max(SW_R2.y, 1.0); \
@@ -45,7 +45,7 @@
         const float SW_MaxReach = SW_Length + max(SW_R1.w, 1.0) * (SW_STime - SW_T0); \
         if (SW_DistSq > (SW_MaxReach * SW_MaxReach * 1.5)) continue; \
         \
-        const float4 SW_R3 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.875), 0.0); \
+        const float4 SW_R3 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.7), 0.0); \
         const float SW_T1 = max(SW_R1.y, SW_T0); \
         const float SW_DeltaT = max(SW_T1 - SW_T0, 1.0e-4); \
         const float2 SW_V = (SW_R0.zw - SW_R0.xy) * (1.0 / SW_DeltaT); \
@@ -56,15 +56,18 @@
         const float SW_B = 2.0 * (dot(SW_D, SW_V) + SW_C2 * SW_Trem); \
         const float SW_C = SW_DistSq - SW_C2 * SW_Trem * SW_Trem; \
         \
+        /* Match CPU roundoff snapping; the shared end remains exclusive. */ \
+        const float SW_RootTolerance = min(0.25 * SW_DeltaT, 8.0 * 1.192092896e-7 * max(1.0, max(SW_Trem, SW_DeltaT))); \
         float SW_Tau = -1.0; \
         if (abs(SW_A) < 1.0e-5) \
         { \
             if (abs(SW_B) > 1.0e-5) \
             { \
                 float SW_LinTau = -SW_C / SW_B; \
-                if (SW_LinTau >= -1.0e-3 && SW_LinTau <= SW_DeltaT + 1.0e-3 && SW_LinTau <= SW_Trem) \
+                SW_LinTau = abs(SW_LinTau) <= SW_RootTolerance ? 0.0 : (abs(SW_LinTau - SW_DeltaT) <= SW_RootTolerance ? SW_DeltaT : SW_LinTau); \
+                if (SW_LinTau >= 0.0 && SW_LinTau < SW_DeltaT && SW_LinTau <= SW_Trem) \
                 { \
-                    SW_Tau = clamp(SW_LinTau, 0.0, SW_DeltaT); \
+                    SW_Tau = SW_LinTau; \
                 } \
             } \
         } \
@@ -75,21 +78,19 @@
             { \
                 const float SW_SqrtDisc = sqrt(SW_Disc); \
                 const float SW_Inv2A = 0.5 / SW_A; \
-                const float SW_Tau1 = (-SW_B - SW_SqrtDisc) * SW_Inv2A; \
-                const float SW_Tau2 = (-SW_B + SW_SqrtDisc) * SW_Inv2A; \
-                const bool bV1 = (SW_Tau1 >= -1.0e-3 && SW_Tau1 <= SW_DeltaT + 1.0e-3 && SW_Tau1 <= SW_Trem); \
-                const bool bV2 = (SW_Tau2 >= -1.0e-3 && SW_Tau2 <= SW_DeltaT + 1.0e-3 && SW_Tau2 <= SW_Trem); \
-                if (bV1 && bV2) \
+                float SW_Tau1 = (-SW_B - SW_SqrtDisc) * SW_Inv2A; \
+                float SW_Tau2 = (-SW_B + SW_SqrtDisc) * SW_Inv2A; \
+                SW_Tau1 = abs(SW_Tau1) <= SW_RootTolerance ? 0.0 : (abs(SW_Tau1 - SW_DeltaT) <= SW_RootTolerance ? SW_DeltaT : SW_Tau1); \
+                SW_Tau2 = abs(SW_Tau2) <= SW_RootTolerance ? 0.0 : (abs(SW_Tau2 - SW_DeltaT) <= SW_RootTolerance ? SW_DeltaT : SW_Tau2); \
+                const bool bV1 = (SW_Tau1 >= 0.0 && SW_Tau1 < SW_DeltaT && SW_Tau1 <= SW_Trem); \
+                const bool bV2 = (SW_Tau2 >= 0.0 && SW_Tau2 < SW_DeltaT && SW_Tau2 <= SW_Trem); \
+                if (bV1) \
                 { \
-                    SW_Tau = (SW_Tau1 >= 0.0 && SW_Tau1 <= SW_DeltaT) ? SW_Tau1 : SW_Tau2; \
-                } \
-                else if (bV1) \
-                { \
-                    SW_Tau = clamp(SW_Tau1, 0.0, SW_DeltaT); \
+                    SW_Tau = SW_Tau1; \
                 } \
                 else if (bV2) \
                 { \
-                    SW_Tau = clamp(SW_Tau2, 0.0, SW_DeltaT); \
+                    SW_Tau = SW_Tau2; \
                 } \
             } \
         } \
@@ -103,6 +104,9 @@
         if (SW_Decay < 0.001) continue; \
         \
         const float SW_Alpha = clamp(SW_Tau / SW_DeltaT, 0.0, 1.0); \
+        /* 가감속 때 구간별 고정 진폭이 만든 높이 단차를 제거한다. CPU 쿼리/부력과 같은 계산이다. */ \
+        /* 기록된 시작/종료 진폭을 출발 시각 Alpha로 보간한다. 현재 프레임 기준 보간이 아니다. */ \
+        const float SW_Amp = lerp(SW_R1.z, SW_R4.x, SW_Alpha); \
         const float2 SW_Apex = lerp(SW_R0.xy, SW_R0.zw, SW_Alpha); \
         const float2 SW_Fwd = normalize(lerp(float2(cos(SW_R3.x), sin(SW_R3.x)), float2(cos(SW_R3.y), sin(SW_R3.y)), SW_Alpha) + float2(1.0e-8, 0.0)); \
         const float2 SW_Right = float2(-SW_Fwd.y, SW_Fwd.x); \

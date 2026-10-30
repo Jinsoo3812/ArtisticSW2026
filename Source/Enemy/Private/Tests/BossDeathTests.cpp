@@ -70,8 +70,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBossDeathDeckAnchorTest,
 bool FBossDeathDeckAnchorTest::RunTest(const FString& Parameters)
 {
 	// Known unrelated item-table validation emitted by the world subsystem.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	BossDeathTests::FWorldScope Scope;
 	AEnemyShip* Ship = BossDeathTests::CreateShip(Scope.World);
 	AShipBossEnemy* Boss = BossDeathTests::CreateBoss(Scope.World);
@@ -140,8 +139,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBossDeathMontageTest,
 
 bool FBossDeathMontageTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UClass* BossClass = LoadObject<UClass>(nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C"));
 	UAnimMontage* Montage = LoadObject<UAnimMontage>(nullptr, TEXT("/Game/Fab/Samurai/Animations/Montages/AM_Samurai_Death.AM_Samurai_Death"));
 	if (!TestNotNull(TEXT("Authored boss loads"), BossClass) || !TestNotNull(TEXT("Boss death montage loads"), Montage))
@@ -198,8 +196,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBossDeathMontageInterruptedTest,
 
 bool FBossDeathMontageInterruptedTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UClass* BossClass = LoadObject<UClass>(nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C"));
 	if (!TestNotNull(TEXT("Boss Blueprint loads"), BossClass))
 	{

@@ -20,6 +20,7 @@ DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnQuickSlotsChangedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnConsumableQuickSlotInputChangedDelegate);
 
+class USWFoleyComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
@@ -99,6 +100,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Recovery")
 	TObjectPtr<UStuckRecoveryInputComponent> StuckRecoveryInputComponent;
 
+	/** Cosmetic contact audio, inherited by male/female player Blueprints. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio|Foley")
+	TObjectPtr<USWFoleyComponent> FoleyComponent;
+	virtual void OnJumped_Implementation() override;
 	virtual void SetMountedDamageMode(bool bEnabled) override;
 	virtual bool IsMountedForDamage() const override { return bMountedDamageMode; }
 	virtual void PrepareForHealthDeath() override;
@@ -128,6 +133,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	bool HandleFinalDepartureRequested(AActor* Requester);
+	void HandleBossQuestAccepted(AActor* Requester);
 	virtual void PostInitializeComponents() override;
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 

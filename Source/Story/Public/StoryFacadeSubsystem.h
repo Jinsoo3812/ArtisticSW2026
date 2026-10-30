@@ -68,6 +68,9 @@ public:
 	/** Development departure commits the real final quest without fabricating earlier completions. */
 	bool ActivateDevelopmentFinalBattle();
 
+	/** Development only: replaces campaign progress with the selected middle-boss quest stage. */
+	bool ActivateDevelopmentMiddleBoss(int32 BossNumber);
+
 	/** True from completion onward, including after save/load and replication. */
 	UFUNCTION(BlueprintPure, Category = "Story")
 	bool IsStoryNodeReached(EStoryNode Node) const;

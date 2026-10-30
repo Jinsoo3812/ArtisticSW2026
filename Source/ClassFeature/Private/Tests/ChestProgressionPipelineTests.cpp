@@ -82,8 +82,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FChestProgressionPipelineTest,
 bool FChestProgressionPipelineTest::RunTest(const FString& Parameters)
 {
 	// Creating the transient game world initializes the project's existing recipe fixture.
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UItemData* Items = NewObject<UItemData>();
 	const auto Define = [Items](FGameplayTag Tag, EItemProgressionKind Kind, int32 Tier)
 	{
@@ -203,6 +202,8 @@ bool FChestProgressionPipelineTest::RunTest(const FString& Parameters)
 					Manager->RebalanceSpawnedChestsWithData(Balance, Items, Recipes, Tree));
 				TestEqual(TEXT("Manager census counts only the active point"),
 					Manager->GetLastActiveChestCount(EProgressionZone::Mid1), 1);
+				// Rebalancing is probabilistic; seed a certain stack for the append contract.
+				Chest->ReplaceProgressionLoot({Certain}, Items, 77);
 				FStorageItemEntry Extra;
 				Extra.ItemTag = Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial;
 				Extra.Count = 1;

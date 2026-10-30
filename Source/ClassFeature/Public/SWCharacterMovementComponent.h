@@ -71,6 +71,8 @@ public:
 	void SetActiveSurfaceWaveServerTime(double ServerTimeSeconds);
 	void ClearActiveSurfaceWaveServerTime();
 	bool TryGetActiveSurfaceWaveServerTime(double& OutServerTime) const;
+	virtual void ResetPredictionData_Client() override;
+	virtual void ResetPredictionData_Server() override;
 
 protected:
 	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
@@ -122,6 +124,10 @@ protected:
 	TWeakObjectPtr<AShip> LastStandingShip;
 
 private:
+	friend class FSurfaceWavePredictionResetTest;
+	void ResetSurfaceWavePrediction(const TCHAR* Reason);
+	double LastSwimMoveDiagnosticTime = -1.0;
+	uint32 SwimCorrectionDiagnosticCount = 0;
 	FTransform RedirectHitReactionRootMotion(
 		const FTransform& WorldRootMotion,
 		UCharacterMovementComponent* MovementComponent,

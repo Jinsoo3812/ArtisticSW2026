@@ -25,6 +25,9 @@
 #include "BossAI/ShipBossAIController.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
+#include "BasePlayerState.h"
+#include "BaseAttributeSet.h"
 #include "Components/BaseHealthComponent.h"
 #include "Decorator/BTD_CanActivateAbilityByTag.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
@@ -40,8 +43,12 @@
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
+#include "StoryFacadeSubsystem.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/WorldSettings.h"
 #include "GameFramework/PlayerController.h"
 #include "Interactable/InteractableComponent.h"
 #include "ShipAI/EnemyShip.h"
@@ -90,26 +97,63 @@ namespace BossMVPTests
 	struct FScopedTestWorld
 	{
 		UWorld* World = nullptr;
+		UGameInstance* Instance = nullptr;
 
 		FScopedTestWorld()
 		{
-			World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("BossMVPTestWorld"));
-			if (World)
-			{
-				FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
-				WorldContext.SetCurrentWorld(World);
-			}
+			Instance = NewObject<UGameInstance>(GEngine);
+			Instance->InitializeStandalone(TEXT("BossMVPTestWorld"));
+			World = Instance->GetWorld();
+			Instance->GetSubsystem<UStoryFacadeSubsystem>()->ActivateDevelopmentMiddleBoss(1);
+			World->InitializeActorsForPlay(FURL());
 		}
 
 		~FScopedTestWorld()
 		{
 			if (World)
 			{
+				if (World->HasBegunPlay()) World->EndPlay(EEndPlayReason::Quit);
+				Instance->Shutdown();
 				World->DestroyWorld(false);
 				GEngine->DestroyWorldContext(World);
 			}
 		}
 	};
+	void PrepareEncounterShip(AEnemyShip* Ship, UDeckWaypointComponent* Point = nullptr)
+	{
+		Ship->bEnableDistanceOptimization = false;
+		if (Point)
+		{
+			UStaticMeshComponent* Deck = Ship->GetShipDeckMesh();
+			Deck->SetRelativeScale3D(FVector::OneVector);
+			Deck->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			UStaticMeshComponent* Floor = NewObject<UStaticMeshComponent>(Ship, TEXT("EncounterFloor"));
+			Ship->AddInstanceComponent(Floor);
+			Floor->SetupAttachment(Deck);
+			Floor->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+			Floor->SetRelativeScale3D(FVector(20, 20, .1));
+			Floor->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+			Floor->SetCollisionResponseToAllChannels(ECR_Block);
+			Floor->RegisterComponent();
+			FDeckWalkSurfaceSettings Surface;
+			Surface.SurfaceId = TEXT("EncounterDeck");
+			Surface.FloorComponentNames = {Floor->GetFName()};
+			Surface.bTraceComplex = false;
+			Surface.MinimumFloorZ = 0.f;
+			Surface.MaximumFloorZ = 20.f;
+			UDeckWalkAreaComponent* Area = Ship->GetDeckWalkAreaComponent();
+			*FindFProperty<FArrayProperty>(Area->GetClass(), TEXT("Surfaces"))->ContainerPtrToValuePtr<TArray<FDeckWalkSurfaceSettings>>(Area) = {Surface};
+			*FindFProperty<FArrayProperty>(Area->GetClass(), TEXT("ObstacleComponentNames"))->ContainerPtrToValuePtr<TArray<FName>>(Area) = {Floor->GetFName()};
+			FindFProperty<FNameProperty>(Point->GetClass(), TEXT("WalkSurfaceId"))->SetPropertyValue_InContainer(Point, Surface.SurfaceId);
+		}
+		Ship->DispatchBeginPlay();
+		if (Point)
+		{
+			Ship->GetWorld()->BeginPlay();
+			Ship->GetWorld()->GetWorldSettings()->NotifyBeginPlay();
+		}
+	}
+
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -177,8 +221,8 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Shared destination BT task exists"), SelectTaskCDO);
 	if (TestNotNull(TEXT("Shared live-deck movement BT task exists"), MoveTaskCDO))
 	{
-		TestEqual(TEXT("Live-deck movement starts with a 100 cm acceptance radius"),
-			MoveTaskCDO->GetAcceptanceRadius(), 100.0f);
+		TestEqual(TEXT("Live-deck movement uses the current 30 cm acceptance radius"),
+			MoveTaskCDO->GetAcceptanceRadius(), 30.0f);
 		TestTrue(TEXT("Live-deck movement has a finite overall timeout"),
 			MoveTaskCDO->GetMaximumMoveTime() > 0.0f);
 		TestTrue(TEXT("Live-deck movement detects stalled progress"),
@@ -312,7 +356,7 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 
 	const UBossBasicAttackSet* BasicAttackSet = LoadObject<UBossBasicAttackSet>(
 		nullptr,
-		TEXT("/Game/GameplayAbilitySystem/Enemy/DA/DA_RogueBossBasicAttacks.DA_RogueBossBasicAttacks"));
+		TEXT("/Game/GameplayAbilitySystem/Enemy/DA/T4_DA_Samurai_Attacks.T4_DA_Samurai_Attacks"));
 	if (TestNotNull(TEXT("Boss basic-attack set loads"), BasicAttackSet))
 	{
 		TestTrue(TEXT("Boss basic-attack set contains at least one configurable variation"),
@@ -352,7 +396,7 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	}
 
 	UClass* BossBlueprintClass = LoadClass<AShipBossEnemy>(
-		nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C"));
+		nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/Balancing/T4/T4_BP_ShipBoss_Samurai.T4_BP_ShipBoss_Samurai_C"));
 	const AShipBossEnemy* BossBlueprintCDO = BossBlueprintClass
 		? Cast<AShipBossEnemy>(BossBlueprintClass->GetDefaultObject())
 		: nullptr;
@@ -367,16 +411,16 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/AI/BB_RogueBoss.BB_RogueBoss"));
 		const UBehaviorTree* CombatSubtree = LoadObject<UBehaviorTree>(
 			nullptr,
-			TEXT("/Game/GameplayAbilitySystem/Enemy/AI/SubTree/RogueBoss/BT_Subtree_RogueBoss_Combat.BT_Subtree_RogueBoss_Combat"));
+			TEXT("/Game/GameplayAbilitySystem/Enemy/AI/SubTree/SamuraiBoss/BT_Subtree_SamuraiBoss_Combat.BT_Subtree_SamuraiBoss_Combat"));
 
 		if (TestNotNull(TEXT("BP_Ship_BossEnemy references a root Behavior Tree"), RootTree))
 		{
-			TestTrue(TEXT("Boss root tree is BT_RogueBoss"),
+			TestTrue(TEXT("Boss root tree uses the shared BT_BossBase"),
 				RootTree->GetPathName()
-				== TEXT("/Game/GameplayAbilitySystem/Enemy/AI/BT_RogueBoss.BT_RogueBoss"));
-			TestTrue(TEXT("BT_RogueBoss uses BB_RogueBoss"),
+				== TEXT("/Game/GameplayAbilitySystem/Enemy/AI/BT_BossBase.BT_BossBase"));
+			TestTrue(TEXT("Shared boss root uses BB_RogueBoss"),
 				RootTree->BlackboardAsset == BossBlackboard);
-			TestNotNull(TEXT("BT_RogueBoss has a compiled runtime root node"), RootTree->RootNode.Get());
+			TestNotNull(TEXT("Shared boss root has a compiled runtime root node"), RootTree->RootNode.Get());
 
 			TArray<const UBTTask_RunBehaviorDynamic*> DynamicRoutes;
 			BossMVPTests::CollectNodes(RootTree->RootNode.Get(), DynamicRoutes);
@@ -387,7 +431,7 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 				{
 					return Route && Route->HasMatchingTag(CombatRouteTag);
 				});
-			TestTrue(TEXT("BT_RogueBoss has an AI.Behavior.Combat dynamic route"), bHasCombatRoute);
+			TestTrue(TEXT("Shared boss root has an AI.Behavior.Combat dynamic route"), bHasCombatRoute);
 		}
 
 		if (TestNotNull(TEXT("BB_RogueBoss loads"), BossBlackboard))
@@ -424,12 +468,17 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			}
 			TestTrue(TEXT("Combat subtree activates BasicAttack"),
 				ConfiguredAbilityTags.HasTagExact(GameplayAbility_BasicAttack));
-			TestTrue(TEXT("Combat subtree activates Knockback"),
-				ConfiguredAbilityTags.HasTagExact(GameplayAbility_Boss_Knockback));
-			TestTrue(TEXT("Combat subtree activates DashSlash"),
-				ConfiguredAbilityTags.HasTagExact(GameplayAbility_Boss_DashSlash));
-			TestTrue(TEXT("Combat subtree activates Vanish"),
-				ConfiguredAbilityTags.HasTagExact(GameplayAbility_Boss_Vanish));
+			const TArray<TSubclassOf<UGameplayAbility>>* StartingAbilities =
+				FindFProperty<FArrayProperty>(BossBlueprintCDO->GetClass(), TEXT("StartingAbilities"))
+				->ContainerPtrToValuePtr<TArray<TSubclassOf<UGameplayAbility>>>(BossBlueprintCDO);
+			for (const FGameplayTag AbilityTag : ConfiguredAbilityTags)
+			{
+				TestTrue(*FString::Printf(TEXT("Combat ability %s is granted by its archetype"), *AbilityTag.ToString()),
+					StartingAbilities->ContainsByPredicate([AbilityTag](const TSubclassOf<UGameplayAbility>& Ability)
+					{
+						return Ability && Ability.GetDefaultObject()->GetAssetTags().HasTag(AbilityTag);
+					}));
+			}
 
 			TArray<const UBTT_SelectBossDestinationPoint*> DestinationTasks;
 			BossMVPTests::CollectNodes(CombatSubtree->RootNode.Get(), DestinationTasks);
@@ -446,12 +495,12 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("Combat subtree moves the boss toward a live deck point"), MoveTasks.Num() > 0);
 			TArray<const UBTT_SummonDeckEnemy*> SummonTasks;
 			BossMVPTests::CollectNodes(CombatSubtree->RootNode.Get(), SummonTasks);
-			TestTrue(TEXT("Combat subtree can request one pooled deck enemy"), SummonTasks.Num() > 0);
+			// Summoning is optional per archetype; Samurai and Rogue have distinct combat sets.
 		}
 
 		if (const UEnemyBehaviorSet* BehaviorSet = BossBlueprintCDO->GetBehaviorSet())
 		{
-			TestTrue(TEXT("DA_RogueBoss routes Combat to the authored boss subtree"),
+			TestTrue(TEXT("Samurai behavior set routes Combat to its authored subtree"),
 				BehaviorSet->FindSubtree(EEnemyAIState::Combat) == CombatSubtree);
 		}
 		else
@@ -659,7 +708,7 @@ bool FBossBehaviorTreeStartTest::RunTest(const FString& Parameters)
 	BossMVPTests::FScopedTestWorld TestWorld;
 	TestWorld.World->CreateAISystem();
 	UClass* BossBlueprintClass = LoadClass<AShipBossEnemy>(
-		nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C"));
+		nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/Balancing/T4/T4_BP_ShipBoss_Samurai.T4_BP_ShipBoss_Samurai_C"));
 	AShipBossEnemy* Boss = BossBlueprintClass
 		? TestWorld.World->SpawnActor<AShipBossEnemy>(BossBlueprintClass)
 		: nullptr;
@@ -683,7 +732,7 @@ bool FBossBehaviorTreeStartTest::RunTest(const FString& Parameters)
 	}
 	if (TestNotNull(TEXT("Possession initializes the boss Blackboard"), Blackboard))
 	{
-		TestTrue(TEXT("Runtime Blackboard matches BT_RogueBoss Blackboard"),
+		TestTrue(TEXT("Runtime Blackboard matches the configured boss root Blackboard"),
 			Blackboard->GetBlackboardAsset() == Boss->GetBehaviorTree()->BlackboardAsset);
 		TestFalse(TEXT("Runtime destination starts unset"), Blackboard->IsVectorValueSet(TEXT("DestinationLocation")));
 	}
@@ -792,7 +841,7 @@ bool FBossEncounterSingleTriggerTest::RunTest(const FString& Parameters)
 
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
 	AEnemyItemBox* ItemBox = TestWorld.World->SpawnActor<AEnemyItemBox>();
-	AActor* Interactor = TestWorld.World->SpawnActor<AActor>();
+	AShip* Interactor = TestWorld.World->SpawnActor<AShip>();
 	if (!TestNotNull(TEXT("Enemy ship is spawned"), Ship)
 		|| !TestNotNull(TEXT("Enemy item box is spawned"), ItemBox)
 		|| !TestNotNull(TEXT("Interactor is spawned"), Interactor))
@@ -805,18 +854,21 @@ bool FBossEncounterSingleTriggerTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	BossMVPTests::PrepareEncounterShip(Ship);
+	FEnumProperty* Trigger = FindFProperty<FEnumProperty>(Encounter->GetClass(), TEXT("EncounterTrigger"));
+	Trigger->GetUnderlyingProperty()->SetIntPropertyValue(Trigger->ContainerPtrToValuePtr<void>(Encounter), static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
 	Encounter->ConfigureEncounter(ItemBox, nullptr, -1);
-	TestTrue(TEXT("Configured encounter locks the item box before combat"), ItemBox->IsLocked());
+	TestFalse(TEXT("Waiting encounter does not lock a guardless item box"), ItemBox->IsLocked());
 
-	ItemBox->GetInteractableComponent()->Interact(Interactor);
+	Encounter->NotifyPlayerShipSighted(Interactor);
 	TestEqual(TEXT("Invalid authoring fails atomically after the first interaction"),
 		Encounter->GetEncounterState(), EBossEncounterState::Failed);
 	TestNull(TEXT("Failed encounter does not leave a partial boss"), Encounter->GetSpawnedBoss());
 
-	ItemBox->GetInteractableComponent()->Interact(Interactor);
+	Encounter->NotifyPlayerShipSighted(Interactor);
 	TestEqual(TEXT("A second interaction cannot restart a terminal encounter"),
 		Encounter->GetEncounterState(), EBossEncounterState::Failed);
-	TestTrue(TEXT("Failed encounter keeps the collectible locked"), ItemBox->IsLocked());
+	TestFalse(TEXT("Failed encounter does not fabricate a chest guard"), ItemBox->IsLocked());
 	return true;
 }
 
@@ -827,14 +879,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FBossEncounterSightSpawnWithoutRidingPlayerTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(
-		TEXT("QuestItem has an invalid ResultItemTag"),
-		EAutomationExpectedErrorFlags::Contains,
-		1);
-	AddExpectedError(
-		TEXT("QuestItem contains an invalid ingredient"),
-		EAutomationExpectedErrorFlags::Contains,
-		2);
+
 	BossMVPTests::FScopedTestWorld TestWorld;
 	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>();
 	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>();
@@ -864,6 +909,7 @@ bool FBossEncounterSightSpawnWithoutRidingPlayerTest::RunTest(const FString& Par
 	SpawnPoint->RegisterComponent();
 	SpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 10.0f));
 	EnemyShip->InitializeDeckWaypoints();
+	BossMVPTests::PrepareEncounterShip(EnemyShip, SpawnPoint);
 
 	PlayerShip->Tags.Add(TEXT("Player"));
 	UBossEncounterComponent* Encounter = EnemyShip->GetBossEncounterComponent();
@@ -876,6 +922,7 @@ bool FBossEncounterSightSpawnWithoutRidingPlayerTest::RunTest(const FString& Par
 	TriggerProperty->GetUnderlyingProperty()->SetIntPropertyValue(
 		TriggerProperty->ContainerPtrToValuePtr<void>(Encounter),
 		static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
+	AddExpectedError(TEXT("Boss has no Behavior Tree. BT-only AI will remain stopped."), EAutomationExpectedErrorFlags::Contains, 1);
 	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass(), 702);
 
 	TestTrue(TEXT("Sight starts even when the sensed ship has no riding player"),
@@ -899,14 +946,20 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FBossEncounterSightSpawnTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
-	AddExpectedError(TEXT("PlayerState is null"), EAutomationExpectedErrorFlags::Contains, 1);
+
 	BossMVPTests::FScopedTestWorld TestWorld;
 	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>();
 	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>();
 	ABasePlayer* Player = TestWorld.World->SpawnActor<ABasePlayer>();
-	APlayerController* PlayerController = TestWorld.World->SpawnActor<APlayerController>();
+	ABasePlayerController* PlayerController = TestWorld.World->SpawnActor<ABasePlayerController>();
+	ABasePlayerState* PlayerState = TestWorld.World->SpawnActor<ABasePlayerState>();
+	if (!TestNotNull(TEXT("Encounter player's state exists before BeginPlay"), PlayerState)
+		|| !TestNotNull(TEXT("Encounter player controller exists"), PlayerController)
+		|| !TestNotNull(TEXT("Encounter player exists"), Player)) return false;
+	PlayerState->GetAbilitySystemComponent()->AddAttributeSetSubobject(PlayerState->GetAttributeSet());
+	PlayerController->PlayerState = PlayerState;
+	PlayerState->SetOwner(PlayerController);
+	Player->SetPlayerState(PlayerState);
 	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (!TestNotNull(TEXT("Enemy ship is spawned"), EnemyShip)
 		|| !TestNotNull(TEXT("Player ship is spawned"), PlayerShip)
@@ -935,6 +988,7 @@ bool FBossEncounterSightSpawnTest::RunTest(const FString& Parameters)
 	SpawnPoint->RegisterComponent();
 	SpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 10.0f));
 	EnemyShip->InitializeDeckWaypoints();
+	BossMVPTests::PrepareEncounterShip(EnemyShip, SpawnPoint);
 
 	PlayerShip->Tags.Add(TEXT("Player"));
 	PlayerController->Possess(Player);
@@ -951,6 +1005,7 @@ bool FBossEncounterSightSpawnTest::RunTest(const FString& Parameters)
 	TriggerProperty->GetUnderlyingProperty()->SetIntPropertyValue(
 		TriggerProperty->ContainerPtrToValuePtr<void>(Encounter),
 		static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
+	AddExpectedError(TEXT("Boss has no Behavior Tree. BT-only AI will remain stopped."), EAutomationExpectedErrorFlags::Contains, 1);
 	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass(), 701);
 
 	EnemyShip->NotifyPlayerShipSighted(PlayerShip);

@@ -102,11 +102,11 @@ bool FDeckWalkSurfaceSampler::HasPassage(const FDeckWalkNode& A, const FDeckWalk
 	return true;
 }
 
-bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surfaces,
-	const TArray<FDeckWalkSurfaceConnection>& Connections, FDeckWalkGraph& OutGraph) const
+bool FDeckWalkSurfaceSampler::BeginBuild(FDeckWalkBuildCursor& Cursor, FDeckWalkGraph& Graph) const
 {
-	OutGraph.Reset();
-	FBox Bounds(ForceInit);
+	Graph.Reset();
+	Cursor = FDeckWalkBuildCursor();
+	FBox& Bounds = Cursor.Bounds;
 	for (const auto& Source : Sources)
 	{
 		const UStaticMeshComponent* Component = Source.Component.Get();
@@ -121,13 +121,19 @@ bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surf
 		}
 	}
 	if (!Bounds.IsValid) return false;
-	const int32 Width = FMath::FloorToInt(Bounds.GetSize().X / Settings.CellSize) + 1;
-	const int32 Height = FMath::FloorToInt(Bounds.GetSize().Y / Settings.CellSize) + 1;
+	const int32 Width = Cursor.Width = FMath::FloorToInt(Bounds.GetSize().X / Settings.CellSize) + 1;
+	const int32 Height = Cursor.Height = FMath::FloorToInt(Bounds.GetSize().Y / Settings.CellSize) + 1;
 	if (Width < 2 || Height < 2 || Width > 160 || Height > 160) return false;
+	return true;
+}
+
+bool FDeckWalkSurfaceSampler::StepBuild(FDeckWalkBuildCursor& Cursor,
+	const TArray<FDeckWalkSurfaceSettings>& Surfaces,
+	const TArray<FDeckWalkSurfaceConnection>& Connections, FDeckWalkGraph& OutGraph) const
+{
+	if (Cursor.bFailed || Cursor.Phase == 3) return true;
+	auto& ReferenceCandidates = Cursor.ReferenceCandidates;
 	const float NormalDot = FMath::Cos(FMath::DegreesToRadians(Settings.SlopeDegrees));
-	// Referenced surfaces retain one physical floor per column, nearest to the authored height.
-	// Delay clearance until after selection: a blocked floor must not redirect to a different layer.
-	TMap<FIntVector, FDeckWalkNode> ReferenceCandidates;
 	const auto AddWalkableNode = [&](const FDeckWalkNode& Node)
 	{
 		if (const TArray<int32>* Existing = OutGraph.Columns.Find(Node.Column))
@@ -137,7 +143,8 @@ bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surf
 				if (FMath::Abs(OutGraph.Nodes[Id].Floor.Z - Node.Floor.Z) > 3.0f) continue;
 				if (OutGraph.Nodes[Id].Surface != Node.Surface)
 				{
-					UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Surface height bands overlap at %s"), *Node.Floor.ToString());
+					/* Diagnostics muted after pooling/crew verification.
+					UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Surface height bands overlap at %s"), *Node.Floor.ToString()); */ {}
 					return false;
 				}
 				return true;
@@ -146,32 +153,38 @@ bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surf
 		if (HasClearance(Node.Floor)) OutGraph.AddNode(Node);
 		return true;
 	};
-	for (int32 SourceIndex = 0; SourceIndex < Sources.Num(); ++SourceIndex)
+
+	if (Cursor.Phase == 0)
 	{
+		if (Cursor.Source >= Sources.Num())
+		{
+			ReferenceCandidates.GenerateValueArray(Cursor.Candidates);
+			ReferenceCandidates.Reset(); Cursor.Phase = 1; return false;
+		}
+		const int32 SourceIndex = Cursor.Source;
 		const auto& Source = Sources[SourceIndex];
 		UStaticMeshComponent* Component = Source.Component.Get();
-		if (!Component) continue;
+		if (!Component) { ++Cursor.Source; Cursor.Column = 0; Cursor.bColumnStarted = false; return false; }
+		const int32 X = Cursor.Column % Cursor.Width, Y = Cursor.Column / Cursor.Width;
+		const FIntPoint Column(X, Y);
+		const float PX = Cursor.Bounds.Min.X + X * Settings.CellSize;
+		const float PY = Cursor.Bounds.Min.Y + Y * Settings.CellSize;
 		FCollisionQueryParams Query(SCENE_QUERY_STAT(DeckWalkLayerSample), Source.bTraceComplex);
-		for (int32 Y = 0; Y < Height; ++Y)
+		const auto FinishColumn = [&]()
 		{
-			for (int32 X = 0; X < Width; ++X)
-			{
-				const FIntPoint Column(X, Y);
-				const float PX = Bounds.Min.X + X * Settings.CellSize;
-				const float PY = Bounds.Min.Y + Y * Settings.CellSize;
-				float CursorZ = Source.MaxZ + 0.1f;
-				// Continue below every hit, including roof undersides/solid slabs.
-				// Each XY column can retain multiple walkable heights.
-				for (int32 Probe = 0; Probe < 2048 && CursorZ > Source.MinZ; ++Probe)
-				{
+			Cursor.bColumnStarted = false;
+			if (++Cursor.Column >= Cursor.Width * Cursor.Height) { Cursor.Column = 0; ++Cursor.Source; }
+		};
+		if (!Cursor.bColumnStarted) { Cursor.bColumnStarted = true; Cursor.ProbeZ = Source.MaxZ + 0.1f; Cursor.Probe = 0; }
+		if (Cursor.Probe++ >= 2048 || Cursor.ProbeZ <= Source.MinZ) { FinishColumn(); return false; }
 					FHitResult Hit;
 					if (!Component->LineTraceComponent(Hit,
-						Frame.TransformPosition(FVector(PX, PY, CursorZ)),
-						Frame.TransformPosition(FVector(PX, PY, Source.MinZ - 0.1f)), Query)) break;
+						Frame.TransformPosition(FVector(PX, PY, Cursor.ProbeZ)),
+						Frame.TransformPosition(FVector(PX, PY, Source.MinZ - 0.1f)), Query)) { FinishColumn(); return false; }
 					const FVector Floor = Frame.InverseTransformPosition(Hit.ImpactPoint);
-					CursorZ = FMath::Min(CursorZ - 2.0f, static_cast<float>(Floor.Z) - 2.0f);
+					Cursor.ProbeZ = FMath::Min(Cursor.ProbeZ - 2.0f, static_cast<float>(Floor.Z) - 2.0f);
 					if (Hit.bStartPenetrating || Floor.Z < Source.MinZ || Floor.Z > Source.MaxZ
-						|| FVector::DotProduct(Hit.ImpactNormal, Frame.GetUnitAxis(EAxis::Z)) < NormalDot) continue;
+						|| FVector::DotProduct(Hit.ImpactNormal, Frame.GetUnitAxis(EAxis::Z)) < NormalDot) return false;
 					// An explicit reference band owns its height range. A broad legacy range
 					// must not claim the additional deck before its reference surface is built.
 					if (!Source.bUseReferenceHeight && Sources.ContainsByPredicate(
@@ -179,7 +192,7 @@ bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surf
 						{
 							return Other.Surface != Source.Surface && Other.bUseReferenceHeight
 								&& Floor.Z >= Other.MinZ && Floor.Z <= Other.MaxZ;
-						})) continue;
+						})) return false;
 					FDeckWalkNode Node;
 					Node.Floor = Floor; Node.Column = Column;
 					Node.Surface = Source.Surface; Node.Source = SourceIndex;
@@ -193,17 +206,21 @@ bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surf
 							ReferenceCandidates.Add(Key, Node);
 						}
 					}
-					else if (!AddWalkableNode(Node)) return false;
-				}
-			}
+					else if (!AddWalkableNode(Node)) { Cursor.bFailed = true; return true; }
+		return false;
+	}
+	if (Cursor.Phase == 1)
+	{
+		if (Cursor.Candidate < Cursor.Candidates.Num())
+		{
+			if (!AddWalkableNode(Cursor.Candidates[Cursor.Candidate++])) { Cursor.bFailed = true; return true; }
+			return false;
 		}
+		Cursor.Candidates.Reset(); Cursor.Phase = 2; return false;
 	}
-	for (const auto& Candidate : ReferenceCandidates)
+	if (Cursor.Edge < OutGraph.Nodes.Num())
 	{
-		if (!AddWalkableNode(Candidate.Value)) return false;
-	}
-	for (int32 A = 0; A < OutGraph.Nodes.Num(); ++A)
-	{
+		const int32 A = Cursor.Edge++;
 		const FDeckWalkNode& Node = OutGraph.Nodes[A];
 		for (const FIntPoint Offset : { FIntPoint(1, 0), FIntPoint(0, 1) })
 		{
@@ -223,6 +240,18 @@ bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surf
 				if (bAllowed && HasPassage(Node, Other)) OutGraph.AddEdge(A, B);
 			}
 		}
+		return false;
 	}
-	return !OutGraph.Nodes.IsEmpty();
+	Cursor.Phase = 3;
+	Cursor.bFailed = OutGraph.Nodes.IsEmpty();
+	return true;
+}
+
+bool FDeckWalkSurfaceSampler::Build(const TArray<FDeckWalkSurfaceSettings>& Surfaces,
+	const TArray<FDeckWalkSurfaceConnection>& Connections, FDeckWalkGraph& OutGraph) const
+{
+	FDeckWalkBuildCursor Cursor;
+	if (!BeginBuild(Cursor, OutGraph)) return false;
+	while (!StepBuild(Cursor, Surfaces, Connections, OutGraph)) {}
+	return !Cursor.bFailed;
 }

@@ -95,6 +95,7 @@ struct ARTISTICSWCORE_API FSWRoomSharedProgress
 	UPROPERTY(SaveGame) TArray<FSWRoomCounterProgress> Counters;
 	UPROPERTY(SaveGame) TArray<FName> AppliedActionKeys;
 	UPROPERTY(SaveGame) TArray<FName> ShipUpgradeNodeIds;
+	UPROPERTY(SaveGame) FSoftObjectPath ShipUpgradeTree;
 	UPROPERTY(SaveGame) TArray<FSWRoomStorageProgress> Storage;
 	UPROPERTY(SaveGame) TArray<FSWRoomCaptureIssue> CaptureIssues;
 };

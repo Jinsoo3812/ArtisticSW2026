@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Audio/SWWorldAudio.h"
 #include "GameFramework/Actor.h"
 #include "Room/SWRoomStateAdapter.h"
 #include "Cannonball.generated.h"
@@ -187,6 +188,9 @@ protected:
 	virtual float GetWaterImpactEffectPlaybackSpeed() const;
 	void SpawnNiagaraEffectForAll(UNiagaraSystem* Effect, const FVector& Location,
 		float SizeScale = 1.0f, float LifetimeScale = 1.0f, float PlaybackSpeed = 1.0f);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastImpactSound(ESWWorldSound Event, FVector_NetQuantize Location);
 
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastSpawnNiagaraEffect(UNiagaraSystem* Effect, FVector_NetQuantize Location,

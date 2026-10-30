@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannon.h"
+#include "Audio/SWWorldAudio.h"
 #include "CannonRiderInterface.h"
 #include "MountedDamageUserInterface.h"
 #include "Components/StaticMeshComponent.h"
@@ -802,6 +803,7 @@ void ACannon::SpawnCannonball(
 	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(SelectedProjectileClass, MuzzleLocation, LaunchRotation, SpawnParams);
 	if (SpawnedProjectile)
 	{
+		MulticastFireSound(MuzzleLocation);
 		if (ACannonball* Projectile = Cast<ACannonball>(SpawnedProjectile))
 		{
 			if (AWaterBombCannonball* WaterBombProjectile = Cast<AWaterBombCannonball>(Projectile))
@@ -828,6 +830,11 @@ void ACannon::SpawnCannonball(
 			}
 		}
 	}
+}
+
+void ACannon::MulticastFireSound_Implementation(FVector_NetQuantize Location)
+{
+	USWWorldAudioSubsystem::PlayEvent(this, ESWWorldSound::CannonFire, Location, this);
 }
 
 void ACannon::ServerToggleWaterBombAbility_Implementation()

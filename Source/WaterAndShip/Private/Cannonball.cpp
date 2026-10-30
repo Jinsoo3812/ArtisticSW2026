@@ -404,6 +404,7 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 
 	SpawnNiagaraEffectForAll(ShipImpactEffect, GetActorLocation(), ShipImpactEffectScale,
 		ShipImpactEffectLifetimeScale, ShipImpactEffectPlaybackSpeed);
+	MulticastImpactSound(ESWWorldSound::CannonSolidImpact, GetActorLocation());
 
 	const FVector ExplosionLocation = GetActorLocation();
 	const float EffectiveRadius = FMath::Max(0.0f, SplashDamageRadius);
@@ -573,6 +574,8 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 	}
 	if (HasAuthority())
 	{
+		// Independent of Niagara assignment and of the locally predicted ripple.
+		MulticastImpactSound(ESWWorldSound::CannonWaterImpact, HitLocation);
 		if (Effect)
 		{
 			// This Niagara is authored to burst along its local +Z axis. Keep it
@@ -667,6 +670,11 @@ UNiagaraSystem* ACannonball::GetWaterImpactEffect() const { return WaterImpactEf
 float ACannonball::GetWaterImpactEffectScale() const { return WaterImpactEffectScale; }
 float ACannonball::GetWaterImpactEffectLifetimeScale() const { return WaterImpactEffectLifetimeScale; }
 float ACannonball::GetWaterImpactEffectPlaybackSpeed() const { return WaterImpactEffectPlaybackSpeed; }
+
+void ACannonball::MulticastImpactSound_Implementation(ESWWorldSound Event, FVector_NetQuantize Location)
+{
+	USWWorldAudioSubsystem::PlayEvent(this, Event, Location, this);
+}
 
 void ACannonball::MulticastSpawnNiagaraEffect_Implementation(
 	UNiagaraSystem* Effect,

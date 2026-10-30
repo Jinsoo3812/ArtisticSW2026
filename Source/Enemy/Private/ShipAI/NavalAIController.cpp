@@ -2,6 +2,7 @@
 
 
 #include "ShipAI/NavalAIController.h"
+#include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISense.h"
@@ -44,6 +45,11 @@ ANavalAIController::ANavalAIController()
 
 }
 
+float ANavalAIController::GetConfiguredSightRadius() const
+{
+	return SightConfig ? SightConfig->SightRadius : -1.f;
+}
+
 void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIStimulus Stimulus)
 {
 	if (!HasAuthority()
@@ -54,7 +60,7 @@ void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIS
 
 	AEnemyShip* EnemyShip = Cast<AEnemyShip>(GetPawn());
 	AShip* PlayerShip = Cast<AShip>(SensedActor);
-	if (!EnemyShip || EnemyShip->IsCrewDefeated() || EnemyShip->IsStoryGateDormant() || !PlayerShip || PlayerShip == EnemyShip
+	if (!EnemyShip || !PlayerShip || PlayerShip == EnemyShip
 		|| PlayerShip->IsEnemyShipForEffects()
 		|| !PlayerShip->ActorHasTag(TEXT("Player"))
 		|| PlayerShip->ActorHasTag(TEXT("Enemy")))
@@ -62,6 +68,9 @@ void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIS
 		return;
 	}
 
+	// Crew sight diagnostics muted; perception/deployment below must still run.
+	// if (auto* Crew = EnemyShip->GetDeckEnemySpawnerComponent()) Crew->ReportSightObservation(PlayerShip, Stimulus.WasSuccessfullySensed(), Stimulus.GetAge());
+	if (EnemyShip->IsCrewDefeated() || EnemyShip->IsStoryGateDormant()) return;
 	if (Stimulus.WasSuccessfullySensed()) EnemyShip->NotifyPlayerShipSighted(PlayerShip);
 	else EnemyShip->NotifyPlayerShipSightLost(PlayerShip);
 }

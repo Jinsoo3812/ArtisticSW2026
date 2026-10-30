@@ -1,12 +1,15 @@
 # 구현 문서 안내
 
-최신 정리: 2026-10-08. 이번 변경과 관련된 갑판 적 생명주기·저장/복제·근접 전투·PCG·함선 편성 문서를 현재 C++ 및 저장 레벨과 대조했다. 문서의 작성일·검증 범위를 함께 확인한다. 이번 점검과 관계없는 시스템 문서 전체의 런타임 재검증을 의미하지 않는다.
+최신 갱신: 2026-10-28. 사운드 통합·적 발 접촉·함선/물/날씨 음향과 검증 요약을 추가했다. 갑판 적 생명주기·저장/복제·근접 전투·PCG·함선 편성의 기존 대조 기록은 2026-10-08 기준이다. 문서별 작성일·검증 범위를 함께 확인하며 전체 시스템을 이번에 다시 검증했다는 뜻은 아니다.
 
 ## 현재 구현과 설정
 
 | 내용 | 문서 |
 | --- | --- |
 | Player 끼임 감지·3초 홀드 탈출 설정 | [Player 끼임 복구 가이드](Player_Stuck_Recovery_Editor_Guide.md) |
+| Lvl_CY 사운드 적용·음원 제작·2인 PIE·추가 에셋 목록 | [World audio 통합](World_Audio_Integration.md) |
+| 플레이어 Notify·적 접촉·표면별 발소리 | [Foley 시스템](Foley_Audio_System.md) |
+| 사운드 최종 자동화·출력 수치·미검증 범위 | [2026-10-28 검증 요약](validation/World_Audio_20261028.json) |
 | 갑판 적 공통 책임·스폰·풀·복제 | [DeckEnemy 공통 구조](DeckEnemy_Core.md) |
 | 휴면/Sight/슬롯/Room 복원 수동 확인 | [스폰 생명주기 검증](Deck_Enemy_Spawn_Refactoring_Editor_Test_Guide.md) |
 | 원인 수정과 구현된 계약·남은 검증 | [생명주기 구현 상태](../Planning/Enemy%20On%20Ship/Deck_Enemy_Spawn_Lifecycle_Refactoring_Plan_2026-10-07.md) |
@@ -26,7 +29,7 @@
 
 [스폰 실패 진단](LV_ET_EnemySpawn_Pipeline_Diagnosis.md)은 리팩터링 전 휴면/풀 스탯 문제의 재현 기록이다. 그 실패 흐름을 현재 구현 동작으로 읽지 않는다. Planning의 설계 문서는 계획·구현 상태를 확인하고 해당 현재 구현 가이드를 우선한다. 과거 Test_Level 노드 수·BP 설정과 테스트 성공 기록은 그 실행 시점에 한정된다.
 
-## 이번 점검에서 확인한 상태
+## 2026-10-08 점검에서 확인한 상태
 
 - `ArtisticSW2026Editor / Win64 / Development` 빌드 성공.
 - 두 저장 레벨 각각 EnemyShip 51척, BossSpawnPoint=20, Boss Encounter=false. LV_ET 티어 편성은 이름에 맞게 정리되어 있다.

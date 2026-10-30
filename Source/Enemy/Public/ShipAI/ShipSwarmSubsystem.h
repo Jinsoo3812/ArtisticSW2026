@@ -52,6 +52,9 @@ public:
 	FEnemyShipAvoidanceDecision EvaluateAvoidance(AEnemyShip* Ship);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FShipCrewChestIntegrationTest;
+#endif
 	void EvaluateDistanceOptimization();
 
 	// 군집 ID별로 배들의 약참조 목록을 보관 (댕글링 포인터 방지)

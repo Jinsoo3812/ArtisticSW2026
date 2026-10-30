@@ -71,6 +71,7 @@ public:
 	bool RebalanceSpawnedChestsWithData(const UProgressionBalanceData* Balance, const UItemData* Items,
 		const UDataTable* Recipes, const UShipUpgradeTreeDataAsset* Tree);
 	void EnsureBossGuaranteedLoot(AChestSpawnPoint* Point);
+	void RefillPooledGuardedChest(AChestSpawnPoint* Point, int32 Seed);
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Progression")
 	int32 GetLastActiveChestCount(EProgressionZone Zone) const;

@@ -11,7 +11,7 @@ ARTISTICSWCORE_API DECLARE_LOG_CATEGORY_EXTERN(LogSWRoomSave, Log, All);
 
 namespace SWRoomLogging
 {
-	/** Opt-in runtime diagnostics; never enabled in commandlets or Shipping. */
+	/** Enabled by SWRoomDetailedLog or SWRoomLoadDiag; never in commandlets or Shipping. */
 	ARTISTICSWCORE_API bool IsDetailedEnabled();
 }
 

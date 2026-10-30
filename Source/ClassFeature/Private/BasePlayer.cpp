@@ -4,6 +4,8 @@
 #include "BasePlayer.h"
 #include "Recovery/StuckRecoveryComponent.h"
 #include "Recovery/StuckRecoveryInputComponent.h"
+#include "Components/SWFoleyComponent.h"
+#include "Audio/SWFoleyAudioProfile.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
 #include "Components/CapsuleComponent.h"
 #include "Combat/PlayerAimComponent.h"
@@ -117,6 +119,11 @@ int32 ABasePlayer::ResolveDefaultMappingPriority(
 ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
+	FoleyComponent = CreateDefaultSubobject<USWFoleyComponent>(TEXT("Foley"));
+	FoleyComponent->bUseAnimationDrivenSurfaceStrokes = true;
+	FoleyComponent->ProfileOverride = TSoftObjectPtr<USWFoleyAudioProfile>(FSoftObjectPath(
+		TEXT("/Game/Audio/Foley/DA_Mannequin_Foley.DA_Mannequin_Foley")));
+
 	// 카메라 붐(SpringArm) 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -250,7 +257,10 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	if (HasAuthority() && DialogueComponent)
+	{
 		DialogueComponent->OnFinalDepartureRequested.BindUObject(this, &ABasePlayer::HandleFinalDepartureRequested);
+		DialogueComponent->OnBossQuestAccepted.BindUObject(this, &ABasePlayer::HandleBossQuestAccepted);
+	}
 	InitializeSwimmingAnimLayers();
 
 	// Apply presentation-only smoothing after Blueprint defaults are loaded.
@@ -373,6 +383,7 @@ void ABasePlayer::GiveStartingItemsForTest()
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (DialogueComponent) DialogueComponent->OnFinalDepartureRequested.Unbind();
+	if (DialogueComponent) DialogueComponent->OnBossQuestAccepted.Unbind();
 	ResetAutomaticSwimDiveInput();
 
 	if (InventoryComponent)
@@ -397,6 +408,18 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 		GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
 		return Progress->TryFinalDeparture(GetWorld(), this);
 	return false;
+}
+
+void ABasePlayer::HandleBossQuestAccepted(AActor* Requester)
+{
+	if (!HasAuthority() || Requester != this || !GetGameInstance()) return;
+	UClassFeatureRoomProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>();
+	if (!Progress || !Progress->TryReturn(GetWorld(), this))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Boss quest accepted, but return could not start for %s"), *GetName());
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			PC->ClientMessage(TEXT("Quest accepted. Return failed; retry returning before departure."));
+	}
 }
 
 bool ABasePlayer::IsMoveInputIgnored() const
@@ -1058,6 +1081,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.LandStartGroundSpeed = AnimStateComponent->LandStartGroundSpeed;
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
+	NewSnapshot.EventServerTimeSeconds = LocomotionStateSnapshot.EventServerTimeSeconds;
 	NewSnapshot.LastLocomotionEvent = LocomotionStateSnapshot.LastLocomotionEvent;
 	NewSnapshot.bShouldTurnInPlace = AnimStateComponent->bShouldTurnInPlace;
 	NewSnapshot.DesiredFacingDeltaYaw = AnimStateComponent->DesiredFacingDeltaYaw;
@@ -1154,6 +1178,7 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			if (PreviousLife != this && PreviousLife->GetHealthComponent()) PreviousLife->GetHealthComponent()->UninitializeFromAbilitySystem();
 	}
 	Super::PossessedBy(NewController);
+	if (FoleyComponent) { FoleyComponent->PrepareLocalAudio(); }
 	ResetAutomaticSwimDiveInput();
 
 	if (AnimStateComponent)
@@ -1371,6 +1396,7 @@ void ABasePlayer::OnRep_PlayerState()
 void ABasePlayer::PawnClientRestart()
 {
 	Super::PawnClientRestart();
+	if (FoleyComponent) { FoleyComponent->PrepareLocalAudio(); }
 
 	// 현재 폰을 조종하는 컨트롤러
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -2693,6 +2719,7 @@ void ABasePlayer::DoJumpStart()
 	{
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
+		LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 	}
 	else
 	{
@@ -2970,6 +2997,7 @@ void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 	// 이벤트 통보 (Multicast 대신 Snapshot에 변수 세팅)
 	LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 	LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
+	LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 }
 
 void ABasePlayer::Server_SetTurnInPlace_Implementation(bool bInTurnInPlace, float InFacingDeltaYaw, float InTargetActorYaw)
@@ -2998,6 +3026,7 @@ void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 	{
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::FallOff;
+		LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 	}
 }
 
@@ -3248,6 +3277,12 @@ void ABasePlayer::OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterru
 	bPendingCombatModeFromIntro = false;
 }
 
+void ABasePlayer::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+	if (FoleyComponent) { FoleyComponent->PlayJump(GetVelocity().Size2D()); }
+}
+
 void ABasePlayer::Landed(const FHitResult& Hit)
 {
 	const float ImpactFallSpeed = FMath::Max((AnimStateComponent ? AnimStateComponent->LastFallSpeed : 0.f), FMath::Abs(GetVelocity().Z));
@@ -3279,6 +3314,7 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 	{
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Landed;
+		LocomotionStateSnapshot.EventServerTimeSeconds = GetWorld()->GetTimeSeconds();
 		// FallSpeed는 UpdateLocomotionStateSnapshot 시점에 LastFallSpeed로 복제됨
 	}
 }

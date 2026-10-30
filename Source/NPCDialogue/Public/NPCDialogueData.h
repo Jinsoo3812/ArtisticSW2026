@@ -12,6 +12,9 @@ class NPCDIALOGUE_API UNPCDialogueData : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	bool IsYiSunSinTestMode() const;
+	void PrepareYiSunSinTestProgress(class UStoryFacadeSubsystem* Story) const;
+
 	/** Specialized dialogue assets may resolve a reply server-side. Default preserves NextLineId behavior. */
 	virtual bool ResolveReply(AActor* Player, class UStoryFacadeSubsystem* Story,
 		const FNPCDialogueRule& Rule, const FNPCDialogueLine& Line,

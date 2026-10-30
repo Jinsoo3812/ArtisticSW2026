@@ -112,6 +112,28 @@ bool UStoryFacadeSubsystem::ActivateDevelopmentFinalBattle()
 #endif
 }
 
+bool UStoryFacadeSubsystem::ActivateDevelopmentMiddleBoss(int32 BossNumber)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (BossNumber < 1 || BossNumber > 3 || !StartNewCampaign()) return false;
+	const EStoryNode Progress[] = {
+		EStoryNode::FirstSailingCompleted, EStoryNode::ReconQuestAccepted,
+		EStoryNode::MiddleBoss1Defeated, EStoryNode::SupplyPatrolQuestAccepted,
+		EStoryNode::CurrentGeneratorUnlocked, EStoryNode::MiddleBoss2Defeated,
+		EStoryNode::DecipherQuestAccepted, EStoryNode::SuppressJapaneseForcesQuestAccepted,
+		EStoryNode::WaterBombUnlocked
+	};
+	const int32 Count = BossNumber == 1 ? 2 : BossNumber == 2 ? 5 : UE_ARRAY_COUNT(Progress);
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		if (!CompleteStoryNode(Progress[Index])) return false;
+	}
+	return true;
+#else
+	return false;
+#endif
+}
+
 bool UStoryFacadeSubsystem::SaveCampaign(const FString& SlotName)
 {
 	UStorySubsystem* Story = ResolveStory();

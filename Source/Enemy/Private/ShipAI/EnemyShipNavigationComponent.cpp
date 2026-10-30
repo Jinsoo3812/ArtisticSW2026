@@ -12,6 +12,7 @@
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
 UEnemyShipNavigationComponent::UEnemyShipNavigationComponent()
 {
@@ -31,6 +32,7 @@ void UEnemyShipNavigationComponent::GetLifetimeReplicatedProps(
 	DOREPLIFETIME(UEnemyShipNavigationComponent, bHasSpawnHomeLocation);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, CurrentState);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, bNavigationEnabled);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, HomeAlignment);
 }
 
 void UEnemyShipNavigationComponent::BeginPlay()
@@ -66,6 +68,22 @@ void UEnemyShipNavigationComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	Super::EndPlay(EndPlayReason);
 }
 
+void UEnemyShipNavigationComponent::ResetSpawnHome(const FTransform& Transform)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	HomeAlignment.bActive = false;
+	bAlignmentPhysicsSuspended = false;
+	SpawnHomeLocation = Transform.GetLocation();
+	SpawnHomeRotation = Transform.Rotator();
+	bHasSpawnHomeLocation = true;
+	SetTargetShip(nullptr);
+	ClearAllOverrides();
+	CurrentState = ENavalCombatState::Idle;
+	LostTargetElapsed = 0.0f;
+	ResetAvoidance();
+	ResetTerrainAvoidance();
+}
+
 void UEnemyShipNavigationComponent::TickComponent(
 	float DeltaTime,
 	ELevelTick TickType,
@@ -79,7 +97,13 @@ void UEnemyShipNavigationComponent::TickComponent(
 		OwnerShip = Cast<AEnemyShip>(GetOwner());
 	}
 	AEnemyShip* Ship = OwnerShip.Get();
-	if (!Ship || !Ship->HasAuthority())
+	if (!Ship) return;
+	if (HomeAlignment.bActive)
+	{
+		TickHomeAlignment(DeltaTime);
+		return;
+	}
+	if (!Ship->HasAuthority())
 	{
 		return;
 	}
@@ -109,6 +133,31 @@ void UEnemyShipNavigationComponent::TickComponent(
 		&& LostTargetElapsed >= NavigationProfile.LostTargetReturnDelay;
 	LastNavigationOutput = FEnemyShipNavigationModel::Evaluate(CurrentState, NavigationProfile, Context);
 	CurrentState = LastNavigationOutput.State;
+	if (PreviousState == ENavalCombatState::Return && CurrentState == ENavalCombatState::Idle
+		&& HomeAlignmentDuration > UE_SMALL_NUMBER)
+	{
+		FTransform Home;
+		const bool bHasHome = GetSpawnHomeTransform(Home);
+		Home.SetScale3D(Ship->GetActorScale3D());
+		if (bHasHome && !Ship->GetActorTransform().Equals(Home, 0.1f))
+		{
+			CurrentState = ENavalCombatState::Return;
+			LastNavigationOutput.State = ENavalCombatState::Return;
+			HomeAlignment.bActive = true;
+			HomeAlignment.bRestorePhysics = Ship->IsShipRuntimePhysicsEnabled();
+			HomeAlignment.Start = Ship->GetActorTransform();
+			HomeAlignment.Home = Home;
+			HomeAlignment.Duration = HomeAlignmentDuration;
+			HomeAlignment.Elapsed = 0.0f;
+			OnRep_HomeAlignment();
+			Ship->ForceNetUpdate();
+			/* Diagnostics muted after pooling/crew verification.
+			UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolAlignment] Event=Begin Ship=%s Duration=%.2f DistanceCM=%.2f"),
+				*Ship->GetBundleAuthoredName().ToString(), HomeAlignment.Duration,
+				FVector::Distance(Home.GetLocation(), HomeAlignment.Start.GetLocation())); */ {}
+			return;
+		}
+	}
 	if (PreviousState != CurrentState)
 	{
 		OnNavigationStateChanged.Broadcast(PreviousState, CurrentState);
@@ -128,6 +177,67 @@ void UEnemyShipNavigationComponent::OnRep_CurrentState(ENavalCombatState Previou
 	if (PreviousState != CurrentState)
 	{
 		OnNavigationStateChanged.Broadcast(PreviousState, CurrentState);
+	}
+}
+
+void UEnemyShipNavigationComponent::OnRep_HomeAlignment()
+{
+	AlignmentClientReceivedTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner()))
+	{
+		if (HomeAlignment.bActive)
+		{
+			Ship->SetShipRuntimePhysicsEnabled(false);
+			bAlignmentPhysicsSuspended = true;
+		}
+		else if (bAlignmentPhysicsSuspended)
+		{
+			if (!Ship->IsBundlePoolIdle() && !Ship->IsDistanceOptimizationDormant() && !Ship->IsStoryGateDormant())
+				Ship->SetShipRuntimePhysicsEnabled(HomeAlignment.bRestorePhysics);
+			bAlignmentPhysicsSuspended = false;
+		}
+	}
+}
+
+void UEnemyShipNavigationComponent::TickHomeAlignment(float DeltaTime)
+{
+	AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner());
+	if (!Ship) return;
+	if (const auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>(); Room && Room->IsRestoringSnapshot()) return;
+	if (Ship->IsDeathHandled() || Ship->IsSinking() || Ship->IsStoryGateDormant() || Ship->IsBundlePoolIdle())
+	{
+		if (Ship->HasAuthority())
+		{
+			HomeAlignment.bActive = false;
+			OnRep_HomeAlignment();
+			Ship->ForceNetUpdate();
+		}
+		return;
+	}
+	if (!bAlignmentPhysicsSuspended) OnRep_HomeAlignment();
+	// Replicated movement/physics notifications can arrive during the alignment.
+	// Reassert the kinematic body while this finite movement owns its transform.
+	Ship->SetShipRuntimePhysicsEnabled(false);
+	StopOwnerShip();
+	const float Elapsed = Ship->HasAuthority() ? (HomeAlignment.Elapsed += DeltaTime)
+		: HomeAlignment.Elapsed + GetWorld()->GetTimeSeconds() - AlignmentClientReceivedTime;
+	const float Alpha = FMath::Clamp(Elapsed / FMath::Max(UE_SMALL_NUMBER, HomeAlignment.Duration), 0.0f, 1.0f);
+	const float SmoothAlpha = Alpha * Alpha * (3.0f - 2.0f * Alpha);
+	const FTransform Transform(FQuat::Slerp(HomeAlignment.Start.GetRotation(), HomeAlignment.Home.GetRotation(), SmoothAlpha),
+		FMath::Lerp(HomeAlignment.Start.GetLocation(), HomeAlignment.Home.GetLocation(), SmoothAlpha),
+		FMath::Lerp(HomeAlignment.Start.GetScale3D(), HomeAlignment.Home.GetScale3D(), SmoothAlpha));
+	Ship->SetActorTransform(Transform, false, nullptr, ETeleportType::TeleportPhysics);
+	if (Ship->HasAuthority() && Alpha >= 1.0f)
+	{
+		HomeAlignment.bActive = false;
+		CurrentState = ENavalCombatState::Idle;
+		LastNavigationOutput.State = ENavalCombatState::Idle;
+		Ship->ResetAfterReturnToSpawn();
+		OnRep_HomeAlignment();
+		OnNavigationStateChanged.Broadcast(ENavalCombatState::Return, CurrentState);
+		Ship->ForceNetUpdate();
+		/* Diagnostics muted after pooling/crew verification.
+		UE_LOG(LogTemp, Display, TEXT("[EnemyShipPoolAlignment] Event=Complete Ship=%s"), *Ship->GetBundleAuthoredName().ToString()); */ {}
 	}
 }
 

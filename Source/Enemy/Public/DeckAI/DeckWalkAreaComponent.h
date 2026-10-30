@@ -44,6 +44,12 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Deck Walk")
 	void Rebuild();
+	bool BeginQueuedRebuild();
+	/** One bounded sampling/edge step. True when finished, including failure. */
+	bool StepQueuedRebuild();
+	void CancelQueuedRebuild();
+	/** New encounter bookkeeping only; retain the immutable local-space graph and revision. */
+	void ResetRuntimeClaims();
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck Walk")
 	bool IsReady() const { return bReady; }
 	bool CanPatrolAcrossSurfaces() const { return bPatrolAcrossSurfaces; }

@@ -44,9 +44,10 @@ FDeckSpawnAnchorValidationResult FDeckSpawnAnchorValidator::Validate(AEnemyShip&
 	{
 		FDeckSpawnAnchorValidationResult Failed;
 		Failed.ErrorCount = 1;
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogDeckSpawnAnchorValidation, Error,
 			TEXT("[DeckSpawnAnchorValidation] Class=%s Reason=MissingEditorValidationWorld"),
-			*GetNameSafe(Context.GetClass()));
+			*GetNameSafe(Context.GetClass())); */ {}
 		return Failed;
 	}
 
@@ -59,13 +60,15 @@ FDeckSpawnAnchorValidationResult FDeckSpawnAnchorValidator::Validate(AEnemyShip&
 	const FString Summary = Validator.Result.ToSummary();
 	if (Validator.Result.ErrorCount == 0)
 	{
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogDeckSpawnAnchorValidation, Display, TEXT("[DeckSpawnAnchorValidation] Ship=%s %s"),
-			*GetNameSafe(Context.GetClass()), *Summary);
+			*GetNameSafe(Context.GetClass()), *Summary); */ {}
 	}
 	else
 	{
+		/* Diagnostics muted after pooling/crew verification.
 		UE_LOG(LogDeckSpawnAnchorValidation, Error, TEXT("[DeckSpawnAnchorValidation] Ship=%s %s"),
-			*GetNameSafe(Context.GetClass()), *Summary);
+			*GetNameSafe(Context.GetClass()), *Summary); */ {}
 	}
 	if (bNeedsTemporaryActor) ValidationShip->Destroy();
 	return Validator.Result;
@@ -74,8 +77,9 @@ FDeckSpawnAnchorValidationResult FDeckSpawnAnchorValidator::Validate(AEnemyShip&
 void FDeckSpawnAnchorValidator::Error(const FString& Message)
 {
 	++Result.ErrorCount;
+	/* Diagnostics muted after pooling/crew verification.
 	UE_LOG(LogDeckSpawnAnchorValidation, Error, TEXT("[DeckSpawnAnchorValidation] Ship=%s %s"),
-		*Ship.GetName(), *Message);
+		*Ship.GetName(), *Message); */ {}
 }
 
 void FDeckSpawnAnchorValidator::CollectPoints()
