@@ -72,8 +72,8 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	bThrowRequested = false;
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->AddLooseGameplayTag(State_Aiming);
-		ASC->AddLooseGameplayTag(GameplayAbility_Skill_GravityVortex);
+		OwnedStateTags.Set(ASC, State_Aiming, true);
+		OwnedStateTags.Set(ASC, GameplayAbility_Skill_GravityVortex, true);
 	}
 	Player->StopSprint();
 
@@ -83,6 +83,8 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		LeftClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnLeftClickPressed);
 		LeftClickTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* RightClickTask =
@@ -91,6 +93,8 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		RightClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnRightClickPressed);
 		RightClickTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	if (Player->IsLocallyControlled() && (bDrawAimTrajectory || bUpdateAimTrajectoryVisual))
@@ -133,10 +137,12 @@ void UGA_GravityVortexThrow::EndAbility(
 	}
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Aiming);
-		ASC->RemoveLooseGameplayTag(GameplayAbility_Skill_GravityVortex);
+		OwnedStateTags.Set(ASC, State_Aiming, false);
+		OwnedStateTags.Set(ASC, GameplayAbility_Skill_GravityVortex, false);
 	}
 	bThrowRequested = false;
+
+	OwnedStateTags.Reset();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -155,7 +161,7 @@ void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 	}
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Aiming);
+		OwnedStateTags.Set(ASC, State_Aiming, false);
 	}
 
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))

@@ -2,7 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/EngineTypes.h"
 #include "Water/SWBuoyancyTypes.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "SwimmingComponent.generated.h"
 
 class ACharacter;
@@ -154,8 +156,14 @@ protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	void ApplySwimmingGameplayState(bool bEntering);
+	friend class FSwimmingExternalExitTest;
+	friend class FSwimmingCabinFeetIntegrationTest;
+	FSWOwnedLooseGameplayTags SwimmingStateTags;
+	/** External boarding/teleport and replicated movement exits bypass water-depth transitions. */
+	UFUNCTION()
+	void HandleMovementModeChanged(ACharacter* Character, EMovementMode PreviousMode, uint8 PreviousCustomMode);
 
-public:
+  public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	static int32 GetNetworkDiagnosticLevel();
 	void LogNetworkDiagnostic(const TCHAR* Phase, float DeltaTime, const FString& Detail = FString());

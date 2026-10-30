@@ -118,8 +118,9 @@ class CLASSFEATURE_API UInventoryComponent : public UActorComponent,
 {
 	GENERATED_BODY()
 	friend class UStorageComponent;
+	friend class FInventoryCountSafetyTest;
 
-public:	
+public:
 	void LogInventoryDiagnostic(const TCHAR* Event, bool bDetailed = false) const;
 	void LogSnapshotDiagnostic(const TCHAR* Event, const TArray<FSWInventorySlotSnapshot>& Slots, bool bDetailed = true) const;
 	// Sets default values for this component's properties

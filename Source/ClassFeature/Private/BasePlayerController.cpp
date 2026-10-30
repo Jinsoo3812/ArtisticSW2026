@@ -94,6 +94,11 @@ bool ABasePlayerController::IsDevelopmentTestInputBlockedByServerUI() const
 }
 bool ABasePlayerController::IsDevelopmentTestInputBlockedByUI() const
 {
+ return IsGameplayInputBlockedByUI();
+}
+
+bool ABasePlayerController::IsGameplayInputBlockedByUI() const
+{
  const auto Visible = [](const UUserWidget* Value)
  {
   if (!Value || !Value->IsInViewport()) return false;

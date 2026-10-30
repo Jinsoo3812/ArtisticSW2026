@@ -74,6 +74,9 @@ public:
 	void RequestEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
 	virtual void UpdateCameraManager(float DeltaSeconds) override;
 	bool IsDevelopmentTestInputBlockedByUI() const;
+	bool IsGameplayInputBlockedByUI() const;
+	/** Local view preference survives pawn replacement; never replicated or sent as gameplay input. */
+	UPROPERTY(Transient) float LocalPreferredCameraDistance = 0.f;
 	bool IsDevelopmentTestInputBlockedByServerUI() const;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class USWDevTestInputComponent> DevTestInput;
 	virtual bool CaptureLatestLifeProgress(APawn* SourcePawn) override;

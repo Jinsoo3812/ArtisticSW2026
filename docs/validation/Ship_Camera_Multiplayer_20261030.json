@@ -1,0 +1,1107 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-30",
+  "map": "/Game/Level/Lvl_CY",
+  "method": "Two-player single-process listen server/client PIE; parked camera comparisons on live ship; injected movement/dive/ascend input with teleport setup between cabin and water.",
+  "authoring": {
+    "blueprint": "/Game/Blueprints/Ship/Blueprints/BP_PlayerShip_Kelvin",
+    "proxy": "/Game/Blueprints/Ship/Camera/SM_PlayerShip_Camera.SM_PlayerShip_Camera",
+    "source_triangles": 70838,
+    "proxy_triangles": 70390,
+    "removed_pillars": 16,
+    "removed_triangles": 448,
+    "original_source_unchanged": true
+  },
+  "camera": [
+    {
+      "phase": "pillars_native",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 161.6771793365507,
+      "min_distance_cm": 161.65710687637764,
+      "max_distance_cm": 161.7231726646557,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "pillars_native",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 161.6236156225192,
+      "min_distance_cm": 161.45334243773635,
+      "max_distance_cm": 161.8147015571654,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "pillars_policy",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 400.0000000000003,
+      "min_distance_cm": 399.99999999998886,
+      "max_distance_cm": 400.0000000000168,
+      "blocking_components": [],
+      "ignored_counts": [
+        1
+      ]
+    },
+    {
+      "phase": "pillars_policy",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 392.9551017284366,
+      "min_distance_cm": 371.1447238922145,
+      "max_distance_cm": 400.0000000000104,
+      "blocking_components": [
+        "Block_Left1"
+      ],
+      "ignored_counts": [
+        1
+      ]
+    },
+    {
+      "phase": "pillars_native_repeat",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 161.7093354463585,
+      "min_distance_cm": 161.6808414459066,
+      "max_distance_cm": 161.7201089858916,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "pillars_native_repeat",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 161.71545982360865,
+      "min_distance_cm": 161.64064407350034,
+      "max_distance_cm": 161.76093816756494,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "pillars_policy_repeat",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 399.9999999999982,
+      "min_distance_cm": 399.99999999998437,
+      "max_distance_cm": 400.0000000000157,
+      "blocking_components": [],
+      "ignored_counts": [
+        1
+      ]
+    },
+    {
+      "phase": "pillars_policy_repeat",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 393.58819365501256,
+      "min_distance_cm": 371.6400384902908,
+      "max_distance_cm": 400.0000000000071,
+      "blocking_components": [
+        "Block_Left1"
+      ],
+      "ignored_counts": [
+        1
+      ]
+    },
+    {
+      "phase": "other_player_native",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 102.95071899891,
+      "min_distance_cm": 102.90191173554216,
+      "max_distance_cm": 102.99772024154659,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "other_player_native",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 102.949673533441,
+      "min_distance_cm": 102.8355956077496,
+      "max_distance_cm": 103.21315526961554,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "other_player_policy",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 399.99999999999557,
+      "min_distance_cm": 399.9999999999854,
+      "max_distance_cm": 400.00000000001495,
+      "blocking_components": [],
+      "ignored_counts": [
+        2
+      ]
+    },
+    {
+      "phase": "other_player_policy",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 399.999999999999,
+      "min_distance_cm": 399.99999999998647,
+      "max_distance_cm": 400.00000000001256,
+      "blocking_components": [],
+      "ignored_counts": [
+        2
+      ]
+    },
+    {
+      "phase": "wall_native",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 171.70059144496923,
+      "min_distance_cm": 170.56704759598745,
+      "max_distance_cm": 174.82458353041707,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "wall_native",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 168.84684979915562,
+      "min_distance_cm": 156.1702251434288,
+      "max_distance_cm": 181.2464714050249,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "wall_policy",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 171.99988007545383,
+      "min_distance_cm": 170.3755617141847,
+      "max_distance_cm": 173.87487888335713,
+      "blocking_components": [
+        "DeckMesh_Complex"
+      ],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "wall_policy",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 171.1497956514364,
+      "min_distance_cm": 167.79919862745516,
+      "max_distance_cm": 176.61725282669025,
+      "blocking_components": [
+        "DeckMesh_Complex"
+      ],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "enemy_native",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 161.6978240013131,
+      "min_distance_cm": 161.67608499525397,
+      "max_distance_cm": 161.73224449158127,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "enemy_native",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 161.68689489364783,
+      "min_distance_cm": 161.54841184616868,
+      "max_distance_cm": 161.78576946257988,
+      "blocking_components": [],
+      "ignored_counts": [
+        0
+      ]
+    },
+    {
+      "phase": "enemy_policy",
+      "peer": 0,
+      "samples": 20,
+      "mean_distance_cm": 399.9999999999975,
+      "min_distance_cm": 399.9999999999829,
+      "max_distance_cm": 400.0000000000155,
+      "blocking_components": [],
+      "ignored_counts": [
+        1
+      ]
+    },
+    {
+      "phase": "enemy_policy",
+      "peer": 1,
+      "samples": 20,
+      "mean_distance_cm": 398.01052093505916,
+      "min_distance_cm": 379.6585321426399,
+      "max_distance_cm": 400.0000000000142,
+      "blocking_components": [
+        "Block_Left1"
+      ],
+      "ignored_counts": [
+        1
+      ]
+    }
+  ],
+  "swimming": [
+    {
+      "phase": "1_cabin_walk",
+      "peer": 0,
+      "samples": 40,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 211.19546890259255,
+      "max_camera_distance_cm": 216.24817848204788
+    },
+    {
+      "phase": "1_cabin_walk",
+      "peer": 1,
+      "samples": 40,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 399.9999999999891,
+      "max_camera_distance_cm": 399.9999999999891
+    },
+    {
+      "phase": "1_fall_to_water",
+      "peer": 0,
+      "samples": 50,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.000103370872,
+      "max_camera_distance_cm": 406.97051490248646
+    },
+    {
+      "phase": "1_fall_to_water",
+      "peer": 1,
+      "samples": 50,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.00003221345094,
+      "max_camera_distance_cm": 406.2958978097581
+    },
+    {
+      "phase": "1_surface_forward",
+      "peer": 0,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 456.862347459552,
+      "max_camera_distance_cm": 474.04720672384394
+    },
+    {
+      "phase": "1_surface_forward",
+      "peer": 1,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 448.17628129676416,
+      "max_camera_distance_cm": 473.34334755477744
+    },
+    {
+      "phase": "1_dive",
+      "peer": 0,
+      "samples": 20,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 406.9705615731485,
+      "max_camera_distance_cm": 407.0688118139136
+    },
+    {
+      "phase": "1_dive",
+      "peer": 1,
+      "samples": 20,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 406.9705604164551,
+      "max_camera_distance_cm": 407.0647380712747
+    },
+    {
+      "phase": "1_underwater_forward",
+      "peer": 0,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 474.5715010771818,
+      "max_camera_distance_cm": 474.9999999999682
+    },
+    {
+      "phase": "1_underwater_forward",
+      "peer": 1,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 474.58353884419944,
+      "max_camera_distance_cm": 474.99999999463586
+    },
+    {
+      "phase": "1_ascend",
+      "peer": 0,
+      "samples": 40,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false,
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.19469958469557,
+      "max_camera_distance_cm": 407.0759686074772
+    },
+    {
+      "phase": "1_ascend",
+      "peer": 1,
+      "samples": 40,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false,
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.02238126937095,
+      "max_camera_distance_cm": 407.07584426878645
+    },
+    {
+      "phase": "1_return_to_cabin",
+      "peer": 0,
+      "samples": 50,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 179.50917482375976,
+      "max_camera_distance_cm": 201.43127441405147
+    },
+    {
+      "phase": "1_return_to_cabin",
+      "peer": 1,
+      "samples": 50,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 0.0,
+      "max_camera_distance_cm": 174.86473321914738
+    },
+    {
+      "phase": "2_cabin_walk",
+      "peer": 0,
+      "samples": 40,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 202.22451686859222,
+      "max_camera_distance_cm": 210.07895469666946
+    },
+    {
+      "phase": "2_cabin_walk",
+      "peer": 1,
+      "samples": 40,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_FALLING: 3>",
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 399.999999999982,
+      "max_camera_distance_cm": 400.00000000001654
+    },
+    {
+      "phase": "2_fall_to_water",
+      "peer": 0,
+      "samples": 50,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.0005244463203,
+      "max_camera_distance_cm": 403.8680666514081
+    },
+    {
+      "phase": "2_fall_to_water",
+      "peer": 1,
+      "samples": 50,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.0000314987976,
+      "max_camera_distance_cm": 406.9951046259249
+    },
+    {
+      "phase": "2_surface_forward",
+      "peer": 0,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 461.9507602199805,
+      "max_camera_distance_cm": 474.2782865035177
+    },
+    {
+      "phase": "2_surface_forward",
+      "peer": 1,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 458.3910101887824,
+      "max_camera_distance_cm": 474.7507438495367
+    },
+    {
+      "phase": "2_dive",
+      "peer": 0,
+      "samples": 20,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 406.9705591962185,
+      "max_camera_distance_cm": 407.0597962126885
+    },
+    {
+      "phase": "2_dive",
+      "peer": 1,
+      "samples": 20,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 406.97056318315435,
+      "max_camera_distance_cm": 407.07524187996813
+    },
+    {
+      "phase": "2_underwater_forward",
+      "peer": 0,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 474.57161712708916,
+      "max_camera_distance_cm": 474.9999999999746
+    },
+    {
+      "phase": "2_underwater_forward",
+      "peer": 1,
+      "samples": 30,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 474.58312785196114,
+      "max_camera_distance_cm": 474.99999999902894
+    },
+    {
+      "phase": "2_ascend",
+      "peer": 0,
+      "samples": 40,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false,
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.162285955748,
+      "max_camera_distance_cm": 407.0759685333753
+    },
+    {
+      "phase": "2_ascend",
+      "peer": 1,
+      "samples": 40,
+      "swimming": [
+        true
+      ],
+      "underwater": [
+        false,
+        true
+      ],
+      "camera_lag": [
+        true
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_CUSTOM: 6>"
+      ],
+      "min_camera_distance_cm": 400.09006147670715,
+      "max_camera_distance_cm": 407.0759356704184
+    },
+    {
+      "phase": "2_return_to_cabin",
+      "peer": 0,
+      "samples": 50,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 195.4418897628876,
+      "max_camera_distance_cm": 211.03603839875183
+    },
+    {
+      "phase": "2_return_to_cabin",
+      "peer": 1,
+      "samples": 50,
+      "swimming": [
+        false
+      ],
+      "underwater": [
+        false
+      ],
+      "camera_lag": [
+        false
+      ],
+      "movement_modes": [
+        "<MovementMode.MOVE_WALKING: 1>"
+      ],
+      "min_camera_distance_cm": 79.55194711686065,
+      "max_camera_distance_cm": 96.14977240561451
+    }
+  ],
+  "geometry": [
+    {
+      "world": "World=/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY NetMode=2 AudioDevice=4294967295",
+      "pillars": [
+        {
+          "id": 450,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 451,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 452,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 453,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 454,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 455,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 456,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 457,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 458,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 459,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 460,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 461,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 462,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 463,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 464,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 465,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        }
+      ],
+      "walls": [
+        {
+          "x": -300,
+          "side": -1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": -300,
+          "side": 1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 100,
+          "side": -1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 100,
+          "side": 1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 700,
+          "side": -1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 700,
+          "side": 1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        }
+      ],
+      "proxy_mesh": "/Game/Blueprints/Ship/Camera/SM_PlayerShip_Camera.SM_PlayerShip_Camera",
+      "proxy_enabled": "<CollisionEnabled.QUERY_ONLY: 1>",
+      "original_pawn_response": "<CollisionResponseType.ECR_BLOCK: 2>",
+      "proxy_pawn_response": "<CollisionResponseType.ECR_IGNORE: 0>"
+    },
+    {
+      "world": "World=/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY NetMode=3 AudioDevice=4294967295",
+      "pillars": [
+        {
+          "id": 450,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 451,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 452,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 453,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 454,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 455,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 456,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 457,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 458,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 459,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 460,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 461,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 462,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 463,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 464,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        },
+        {
+          "id": 465,
+          "gameplay_hits": true,
+          "camera_proxy_hits": false
+        }
+      ],
+      "walls": [
+        {
+          "x": -300,
+          "side": -1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": -300,
+          "side": 1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 100,
+          "side": -1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 100,
+          "side": 1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 700,
+          "side": -1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        },
+        {
+          "x": 700,
+          "side": 1,
+          "original_hits": false,
+          "camera_proxy_hits": false
+        }
+      ],
+      "proxy_mesh": "/Game/Blueprints/Ship/Camera/SM_PlayerShip_Camera.SM_PlayerShip_Camera",
+      "proxy_enabled": "<CollisionEnabled.QUERY_ONLY: 1>",
+      "original_pawn_response": "<CollisionResponseType.ECR_BLOCK: 2>",
+      "proxy_pawn_response": "<CollisionResponseType.ECR_IGNORE: 0>"
+    }
+  ],
+  "swim_state_disagreements_after_2s": 0,
+  "max_client_server_position_delta_cm_after_2s": 57.299299155966004,
+  "near_zero_camera_samples_after_2s": [
+    {
+      "phase": "1_return_to_cabin",
+      "peer": 1,
+      "time": 209.74101642146707
+    }
+  ],
+  "sweep_budget_exhaustions": 0,
+  "raw_output_directory": "Saved\\AudioIntegration\\Live\\7284",
+  "return_diagnostic": [
+    {
+      "policy": false,
+      "peer": 0,
+      "min_distance_cm": 194.93678808214207,
+      "max_distance_cm": 203.03592681886553,
+      "blockers": []
+    },
+    {
+      "policy": false,
+      "peer": 1,
+      "min_distance_cm": 52.897596359246556,
+      "max_distance_cm": 81.311631202697,
+      "blockers": []
+    },
+    {
+      "policy": true,
+      "peer": 0,
+      "min_distance_cm": 192.90862083434027,
+      "max_distance_cm": 206.98409080506477,
+      "blockers": [
+        "DeckMesh_Complex"
+      ]
+    },
+    {
+      "policy": true,
+      "peer": 1,
+      "min_distance_cm": 90.11413455009759,
+      "max_distance_cm": 104.02928590775467,
+      "blockers": [
+        "CameraObstacleMesh"
+      ]
+    }
+  ]
+}

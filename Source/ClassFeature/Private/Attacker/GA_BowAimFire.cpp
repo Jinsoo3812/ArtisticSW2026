@@ -51,7 +51,7 @@ void UGA_BowAimFire::ActivateAbility(
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->AddLooseGameplayTag(State_Aiming);
+		OwnedStateTags.Set(ASC, State_Aiming, true);
 	}
 
 	RemoveBowStateTags();
@@ -69,6 +69,8 @@ void UGA_BowAimFire::ActivateAbility(
 	{
 		WaitRightReleaseTask->OnRelease.AddDynamic(this, &UGA_BowAimFire::OnRightClickReleased);
 		WaitRightReleaseTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitLeftPressedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick, nullptr, false, true);
@@ -76,6 +78,8 @@ void UGA_BowAimFire::ActivateAbility(
 	{
 		WaitLeftPressedTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnLeftClickPressed);
 		WaitLeftPressedTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitLeftReleasedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick_Released, nullptr, false, true);
@@ -83,6 +87,8 @@ void UGA_BowAimFire::ActivateAbility(
 	{
 		WaitLeftReleasedTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnLeftClickReleased);
 		WaitLeftReleasedTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitFireArrowTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Montage_FireArrow, nullptr, false, true);
@@ -90,6 +96,8 @@ void UGA_BowAimFire::ActivateAbility(
 	{
 		WaitFireArrowTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnReleaseFireEvent);
 		WaitFireArrowTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitNockArrowTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Montage_NockArrow, nullptr, false, true);
@@ -97,6 +105,8 @@ void UGA_BowAimFire::ActivateAbility(
 	{
 		WaitNockArrowTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnNockArrowEvent);
 		WaitNockArrowTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 }
 
@@ -113,10 +123,12 @@ void UGA_BowAimFire::EndAbility(
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Aiming);
-		ASC->RemoveLooseGameplayTag(State_Attacking);
+		OwnedStateTags.Set(ASC, State_Aiming, false);
+		OwnedStateTags.Set(ASC, State_Attacking, false);
 	}
 	RemoveBowStateTags();
+
+	OwnedStateTags.Reset();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -166,7 +178,7 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->AddLooseGameplayTag(State_Attacking);
+		OwnedStateTags.Set(ASC, State_Attacking, true);
 	}
 	SetBowDrawTagState(true, false, false);
 
@@ -247,7 +259,8 @@ void UGA_BowAimFire::UpdateDrawAlpha()
 
 	if (DrawAlpha >= FullDrawAlphaToRelease)
 	{
-		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+		if (GetWorld())
+			GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 		CachedBowComponent->SetDrawAlpha(1.0f);
 
 		// Make the full-draw pose available before the draw montage starts blending
@@ -388,7 +401,8 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 		PendingReleaseFireSpeed = CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha());
 	}
 
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	bIsDrawing = false;
 	bIsFullyDrawn = true;
 	bIsReleaseInProgress = true;
@@ -672,7 +686,8 @@ void UGA_BowAimFire::FinishShot()
 	if (bFinishingShot) return;
 	TGuardValue<bool> FinishingGuard(bFinishingShot, true);
 	CancelPendingShot();
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	StopDrawMontage(DrawMontageBlendOutTime);
 	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
 	{
@@ -696,7 +711,7 @@ void UGA_BowAimFire::FinishShot()
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Attacking);
+		OwnedStateTags.Set(ASC, State_Attacking, false);
 	}
 	RemoveBowStateTags();
 	ReleaseServerPoseRefresh();
@@ -707,7 +722,8 @@ void UGA_BowAimFire::ResetBowState()
 	if (bFinishingShot) return;
 	TGuardValue<bool> FinishingGuard(bFinishingShot, true);
 	CancelPendingShot();
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	StopDrawMontage(DrawMontageBlendOutTime);
 	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
 	{
@@ -800,15 +816,15 @@ void UGA_BowAimFire::AddBowStateTags()
 	{
 		if (bIsDrawing)
 		{
-			ASC->AddLooseGameplayTag(State_Bow_Drawing);
+			OwnedStateTags.Set(ASC, State_Bow_Drawing, true);
 		}
 		if (bIsFullyDrawn)
 		{
-			ASC->AddLooseGameplayTag(State_Bow_FullyDrawn);
+			OwnedStateTags.Set(ASC, State_Bow_FullyDrawn, true);
 		}
 		if (bIsReleaseInProgress)
 		{
-			ASC->AddLooseGameplayTag(State_Bow_Releasing);
+			OwnedStateTags.Set(ASC, State_Bow_Releasing, true);
 		}
 	}
 }
@@ -817,9 +833,9 @@ void UGA_BowAimFire::RemoveBowStateTags()
 {
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Bow_Drawing);
-		ASC->RemoveLooseGameplayTag(State_Bow_FullyDrawn);
-		ASC->RemoveLooseGameplayTag(State_Bow_Releasing);
+		OwnedStateTags.Set(ASC, State_Bow_Drawing, false);
+		OwnedStateTags.Set(ASC, State_Bow_FullyDrawn, false);
+		OwnedStateTags.Set(ASC, State_Bow_Releasing, false);
 	}
 }
 
