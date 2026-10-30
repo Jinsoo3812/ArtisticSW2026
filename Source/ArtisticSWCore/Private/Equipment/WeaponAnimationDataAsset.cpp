@@ -1,5 +1,21 @@
 #include "Equipment/WeaponAnimationDataAsset.h"
 
+UWeaponAnimationDataAsset* UWeaponAnimationDataAsset::CreateSpeedVariant(UObject* Outer, float BasicAttackRate, float AimCycleRate) const
+{
+	UWeaponAnimationDataAsset* Variant = DuplicateObject<UWeaponAnimationDataAsset>(this, Outer,
+		MakeUniqueObjectName(Outer, StaticClass()));
+	Variant->ClearFlags(RF_Public | RF_Standalone);
+	Variant->SetFlags(RF_Transient);
+	auto ApplySpeed = [BasicAttackRate, AimCycleRate](FWeaponAnimationEntry& Entry)
+	{
+		Entry.BasicAttackPlayRate = BasicAttackRate;
+		Entry.AimCyclePlayRate = AimCycleRate;
+	};
+	ApplySpeed(Variant->DefaultEntry);
+	for (FWeaponAnimationEntry& Entry : Variant->Entries) ApplySpeed(Entry);
+	return Variant;
+}
+
 static bool DoesWeaponGameplayTagMatch(const FGameplayTag& ItemTag, const FGameplayTag& ConfiguredTag)
 {
 	if (!ItemTag.IsValid() || !ConfiguredTag.IsValid())

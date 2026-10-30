@@ -2,6 +2,7 @@
 
 #include "NativeGameplayTags.h"
 #include "StorySubsystem.h"
+#include "StorySaveGame.h"
 #include "Engine/World.h"
 
 namespace StoryFacadeTags
@@ -78,9 +79,20 @@ bool UStoryFacadeSubsystem::CompleteStoryNode(EStoryNode Node)
 	}
 
 	const FGameplayTag NodeTag = GetInternalTag(Node);
-	return NodeTag.IsValid()
-		&& ArePrerequisitesReached(Node)
-		&& Story->AddFact(NodeTag);
+	if (!NodeTag.IsValid() || !ArePrerequisitesReached(Node)) return false;
+	FGameplayTagContainer CompletedFacts;
+	CompletedFacts.AddTag(NodeTag);
+	switch (Node)
+	{
+	case EStoryNode::SupplyPatrolQuestAccepted:
+		CompletedFacts.AddTag(GetInternalTag(EStoryNode::CurrentGeneratorUnlocked)); break;
+	case EStoryNode::SuppressJapaneseForcesQuestAccepted:
+		CompletedFacts.AddTag(GetInternalTag(EStoryNode::WaterBombUnlocked)); break;
+	case EStoryNode::UldolmokBattleQuestAccepted:
+		CompletedFacts.AddTag(GetInternalTag(EStoryNode::BombardmentUnlocked)); break;
+	default: break;
+	}
+	return Story->AddFacts(CompletedFacts);
 }
 
 bool UStoryFacadeSubsystem::IsStoryNodeReached(EStoryNode Node) const
@@ -107,28 +119,6 @@ bool UStoryFacadeSubsystem::ActivateDevelopmentFinalBattle()
 		|| IsStoryNodeReached(EStoryNode::FinalBossDefeated)) return false;
 	return IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)
 		|| Story->AddFact(GetInternalTag(EStoryNode::UldolmokBattleQuestAccepted));
-#else
-	return false;
-#endif
-}
-
-bool UStoryFacadeSubsystem::ActivateDevelopmentMiddleBoss(int32 BossNumber)
-{
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	if (BossNumber < 1 || BossNumber > 3 || !StartNewCampaign()) return false;
-	const EStoryNode Progress[] = {
-		EStoryNode::FirstSailingCompleted, EStoryNode::ReconQuestAccepted,
-		EStoryNode::MiddleBoss1Defeated, EStoryNode::SupplyPatrolQuestAccepted,
-		EStoryNode::CurrentGeneratorUnlocked, EStoryNode::MiddleBoss2Defeated,
-		EStoryNode::DecipherQuestAccepted, EStoryNode::SuppressJapaneseForcesQuestAccepted,
-		EStoryNode::WaterBombUnlocked
-	};
-	const int32 Count = BossNumber == 1 ? 2 : BossNumber == 2 ? 5 : UE_ARRAY_COUNT(Progress);
-	for (int32 Index = 0; Index < Count; ++Index)
-	{
-		if (!CompleteStoryNode(Progress[Index])) return false;
-	}
-	return true;
 #else
 	return false;
 #endif
@@ -244,4 +234,35 @@ FGameplayTag UStoryFacadeSubsystem::GetInternalTag(EStoryNode Node) const
 	default:
 		return FGameplayTag();
 	}
+}
+
+int32 UStoryFacadeSubsystem::GetDevelopmentCheckpointIndex(FName Target)
+{
+ const FName Names[] = { TEXT("Recon"), TEXT("SupplyPatrol"), TEXT("Decipher"), TEXT("Suppress"), TEXT("Uldolmok"), TEXT("Ending") };
+ for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index) if (Names[Index] == Target) return Index;
+ return INDEX_NONE;
+}
+
+UStorySaveGame* UStoryFacadeSubsystem::BuildDevelopmentCheckpoint(FName Target, FString& OutError) const
+{
+ OutError = TEXT("Invalid checkpoint. Use Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending.");
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ const int32 Index = GetDevelopmentCheckpointIndex(Target);
+ UStorySubsystem* Story = ResolveStory();
+ if (Index == INDEX_NONE || !Story || !Story->HasStoryAuthority()) return nullptr;
+ // Build the requested state independently of the current campaign.
+ UStorySaveGame* Prepared = NewObject<UStorySaveGame>();
+ auto Add = [this, Prepared](EStoryNode Node) { Prepared->Facts.AddTag(GetInternalTag(Node)); };
+ Add(EStoryNode::GameStarted); Add(EStoryNode::FirstSailingCompleted); Add(EStoryNode::ReconQuestAccepted);
+ Add(EStoryNode::StoryClue1Acquired); Add(EStoryNode::CipherBookAcquired);
+ if (Index >= 1) { Add(EStoryNode::MiddleBoss1Defeated); Add(EStoryNode::SupplyPatrolQuestAccepted); Add(EStoryNode::CurrentGeneratorUnlocked); }
+ if (Index >= 2) { Add(EStoryNode::MiddleBoss2Defeated); Add(EStoryNode::DecipherQuestAccepted); }
+ if (Index >= 3) { Add(EStoryNode::SuppressJapaneseForcesQuestAccepted); Add(EStoryNode::WaterBombUnlocked); }
+ if (Index >= 4) { Add(EStoryNode::MiddleBoss3Defeated); Add(EStoryNode::UldolmokBattleQuestAccepted); Add(EStoryNode::BombardmentUnlocked); }
+ if (Index >= 5) { Add(EStoryNode::FinalBossDefeated); Add(EStoryNode::EndingDialogueCompleted); }
+ OutError.Reset();
+ return Prepared;
+#else
+ return nullptr;
+#endif
 }

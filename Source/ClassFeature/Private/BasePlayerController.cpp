@@ -62,13 +62,24 @@ ABasePlayerController::ABasePlayerController()
 #include "HAL/PlatformMisc.h"
 #include "HAL/IConsoleManager.h"
 #include "StoryFacadeSubsystem.h"
+#include "InputKeyEventArgs.h"
+#include "WeaponInputAbilitySystemComponent.h"
 
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-static TAutoConsoleVariable<int32> CVarMiddleBossAndReturn(
-	TEXT("sw.Campaign.MiddleBossAndReturn"), 0,
-	TEXT("One-shot: 1/2/3 replaces campaign progress with that middle-boss quest stage and requests return. Inventory is unchanged. Resets to 0 after consumption."),
-	ECVF_Cheat);
-#endif
+bool ABasePlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	if (UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled()
+		&& (Params.Key == EKeys::E || Params.Key == EKeys::C)
+		&& (Params.Event == IE_Pressed || Params.Event == IE_Released))
+	{
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=RawKey Controller=%s Key=%s Pressed=%d Pawn=%s LifeCharacter=%s LifePhase=%d SessionPhase=%d CanMutate=%d UIBlocked=%d Cursor=%d IgnoreMove=%d IgnoreLook=%d ViewportIgnore=%d"),
+			*GetName(), *Params.Key.ToString(), Params.Event == IE_Pressed, *GetNameSafe(GetPawn()), *GetNameSafe(GetLifeCharacter()),
+			static_cast<int32>(DeathFlowState.Phase), static_cast<int32>(LocalSessionPhase), CanMutateGameplay(),
+			IsDevelopmentTestInputBlockedByUI(), bShowMouseCursor, IsMoveInputIgnored(), IsLookInputIgnored(),
+			GetWorld() && GetWorld()->GetGameViewport() && GetWorld()->GetGameViewport()->IgnoreInput());
+		if (const ABasePlayer* LifePawnCharacter = GetLifeCharacter()) LifePawnCharacter->LogCombatInputDiagnostic(TEXT("RawKeySnapshot"));
+	}
+	return Super::InputKey(Params);
+}
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 static TAutoConsoleVariable<int32> CVarSWShipMotionDiag(
@@ -95,6 +106,20 @@ bool ABasePlayerController::IsDevelopmentTestInputBlockedByUI() const
   || IsDevelopmentTestInputBlockedByServerUI() || bRoomSavePending || PendingRetryRequestId
   || LocalSessionPhase == ESWSessionLifePhase::GameOver || LocalSessionPhase == ESWSessionLifePhase::ReturningAfterGameOver
   || (Connection && Connection->IsLoadingPresentationVisible());
+}
+
+bool ABasePlayerController::IsSkillCursorInputBlocked() const
+{
+	return IsDevelopmentTestInputBlockedByUI()
+		|| DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn;
+}
+
+void ABasePlayerController::RestoreInputAfterSkillCursor()
+{
+	if (IsLocalController() && !IsSkillCursorInputBlocked())
+	{
+		ApplyInventoryInputMode(false);
+	}
 }
 
 void ABasePlayerController::ClientBeginRoomReturn_Implementation()
@@ -190,8 +215,7 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 		}
 		if (SharedUpgrade)
 		{
-			SharedUpgrade->SetIgnoreMaterialCostsForTesting(
-				RequestingPlayer && RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest());
+			SharedUpgrade->SetIgnoreMaterialCostsForTesting(false); // The shared component queries the session policy.
 			SharedState->ForceNetUpdate();
 		}
 	}
@@ -698,7 +722,6 @@ void ABasePlayerController::HandleMenuEscape()
 	UClass* RoomMenuClass = LoadClass<USWRoomMenuWidget>(nullptr, TEXT("/Game/UI/Room/WBP_RoomMenu.WBP_RoomMenu_C"));
 	RoomMenuWidget = CreateWidget<USWRoomMenuWidget>(this, RoomMenuClass ? RoomMenuClass : USWRoomMenuWidget::StaticClass());
 	if (!RoomMenuWidget) return;
-	bCursorVisibleBeforeRoomMenu = bShowMouseCursor;
 	RoomMenuWidget->AddToViewport(50);
 	ApplyInventoryInputMode(true);
 }
@@ -709,7 +732,6 @@ void ABasePlayerController::CloseRoomMenu()
 	RoomMenuWidget->RemoveFromParent();
 	RoomMenuWidget = nullptr;
 	ApplyInventoryInputMode(false);
-	bShowMouseCursor = bCursorVisibleBeforeRoomMenu;
 }
 
 void ABasePlayerController::RequestRoomSave()
@@ -1345,7 +1367,10 @@ float ABasePlayerController::GetStorageSlotSearchTime(AStorageChest* StorageChes
 
 void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 {
-	bShowMouseCursor = bOpen;
+	const AShip* Ship = Cast<AShip>(GetPawn());
+	const bool bTargeting = !bOpen && Ship && Ship->IsLocallyControlled()
+		&& Ship->IsBombardmentTargeting() && Ship->IsLocalBombardmentInputModeApplied();
+	bShowMouseCursor = bOpen || bTargeting;
 	// A chest and the facility hub are modal; keep F/game input available for closing.
 	UpdateInteractionMovementLock();
 
@@ -1370,12 +1395,20 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 	}
 	else
 	{
-		FInputModeGameOnly InputMode;
-		// Closing a UI must not consume the first mouse-down just to recapture the viewport.
-		// Forward that click to gameplay as well (attack/interact inputs use mouse buttons).
-		InputMode.SetConsumeCaptureMouseDown(false);
-		SetInputMode(InputMode);
-		UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		if (bTargeting)
+		{
+			FInputModeGameAndUI InputMode;
+			InputMode.SetHideCursorDuringCapture(false);
+			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			SetInputMode(InputMode);
+		}
+		else
+		{
+			FInputModeGameOnly InputMode;
+			InputMode.SetConsumeCaptureMouseDown(false);
+			SetInputMode(InputMode);
+			UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		}
 		FlushPressedKeys();
 
 		if (bInventoryInputModeApplied)
@@ -1437,8 +1470,6 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	SyncYiSunSinDialogueTestMode();
-	ConsumeMiddleBossReturnRequest();
 	TickDeathFlow(DeltaTime);
 	TickShipMotionDiagnostics();
 	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
@@ -1456,80 +1487,6 @@ void ABasePlayerController::Tick(float DeltaTime)
 			}
 		}
 	}
-}
-
-bool ABasePlayerController::CanChangeDevelopmentCampaignState()
-{
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	const UWorld* World = GetWorld();
-	const AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
-	return Mode && Mode->CanChangeDevelopmentCampaignState(this);
-#else
-	return false;
-#endif
-}
-
-void ABasePlayerController::SyncYiSunSinDialogueTestMode()
-{
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	if (!IsLocalController() || HasAuthority()) return;
-	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
-	if (!Toggle) return;
-	const int32 Value = Toggle->GetInt() != 0 ? 1 : 0;
-	if (Value == LastYiSunSinDialogueTestValue) return;
-	const bool bInitialDefault = LastYiSunSinDialogueTestValue == INDEX_NONE && Value == 0
-		&& (Toggle->GetFlags() & ECVF_SetByMask) == ECVF_SetByConstructor;
-	LastYiSunSinDialogueTestValue = Value;
-	if (!bInitialDefault) ServerSetYiSunSinDialogueTestMode(Value != 0);
-#endif
-}
-
-void ABasePlayerController::ServerSetYiSunSinDialogueTestMode_Implementation(bool bEnabled)
-{
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
-	if (!CanChangeDevelopmentCampaignState() || !Toggle) return;
-	Toggle->Set(bEnabled ? 1 : 0, ECVF_SetByConsole);
-	UE_LOG(LogTemp, Display, TEXT("[YiDialogueTest] Server toggle=%d requested by %s"), bEnabled, *GetNameSafe(PlayerState));
-#endif
-}
-
-void ABasePlayerController::ConsumeMiddleBossReturnRequest()
-{
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	if ((!IsLocalController() && !HasAuthority()) || !PlayerState || !GetLifeCharacter()) return;
-	// A remote guest must not consume the server console's one-shot request.
-	if (HasAuthority() && !CanChangeDevelopmentCampaignState()) return;
-	const int32 BossNumber = CVarMiddleBossAndReturn.GetValueOnGameThread();
-	if (BossNumber == 0) return;
-	CVarMiddleBossAndReturn.AsVariable()->Set(0, ECVF_SetByConsole);
-	if (BossNumber < 1 || BossNumber > 3)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[CampaignTest] Invalid middle boss %d; expected 1/2/3"), BossNumber);
-		return;
-	}
-	ServerRequestMiddleBossAndReturn(BossNumber);
-#endif
-}
-
-void ABasePlayerController::ServerRequestMiddleBossAndReturn_Implementation(int32 BossNumber)
-{
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	UGameInstance* Instance = GetGameInstance();
-	UStoryFacadeSubsystem* Story = Instance ? Instance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
-	UClassFeatureRoomProgressSubsystem* Progress = Instance ? Instance->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr;
-	ABasePlayer* Requester = GetLifeCharacter();
-	if (!CanChangeDevelopmentCampaignState() || BossNumber < 1 || BossNumber > 3
-		|| !Requester || !Story || !Progress)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[CampaignTest] MiddleBossAndReturn rejected Boss=%d Controller=%s"), BossNumber, *GetName());
-		return;
-	}
-	const bool bStageSet = Story->ActivateDevelopmentMiddleBoss(BossNumber);
-	const bool bReturnAccepted = bStageSet && Progress->TryReturn(GetWorld(), Requester);
-	UE_LOG(LogTemp, Display, TEXT("[CampaignTest] MiddleBossAndReturn Boss=%d StageSet=%d ReturnAccepted=%d"), BossNumber, bStageSet, bReturnAccepted);
-	if (!bReturnAccepted) ClientMessage(TEXT("Campaign test: stage/return failed; see server log."));
-#endif
 }
 
 void ABasePlayerController::TickShipMotionDiagnostics()
@@ -1865,9 +1822,9 @@ void ABasePlayerController::ApplyLocalDeathFlow()
  }
  if (bBlocked)
  {
-  if (!DeathFlowWidget && GetLocalPlayer() && GetWorld()->GetGameViewport())
+  if (!DeathFlowWidget && DeathFlowWidgetClass && GetLocalPlayer() && GetWorld()->GetGameViewport())
   {
-   DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, USWDeathFlowWidget::StaticClass());
+   DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, DeathFlowWidgetClass);
    if (DeathFlowWidget) DeathFlowWidget->AddToViewport(1000);
   }
   if (bGameOver)

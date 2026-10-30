@@ -1,6 +1,24 @@
 #include "ItemData.h"
 #include "BaseGameplayTags.h"
 #include "Engine/Texture2D.h"
+#include "Equipment/WeaponDefinition.h"
+
+UEquippableWeaponDefinition* UItemData::CreateWeaponDefinition(FGameplayTag ItemTag, UObject* Outer, FString& OutError) const
+{
+	OutError.Reset();
+	const FItemDefinition* Item = FindItemDefinition(ItemTag);
+	if (!Item || !Outer) { OutError = TEXT("Missing weapon identity or runtime owner."); return nullptr; }
+	if (Item->WeaponBalanceRow.IsNull()) return Item->WeaponDefinition.LoadSynchronous();
+	const FDataTableRowHandle& Handle = Item->WeaponBalanceRow;
+	if (!Handle.DataTable || Handle.RowName.IsNone() || Handle.DataTable->GetRowStruct() != FWeaponBalanceRow::StaticStruct())
+	{ OutError = TEXT("Missing or incompatible direct weapon balance row."); return nullptr; }
+	const FWeaponBalanceRow* Row = Handle.DataTable->FindRow<FWeaponBalanceRow>(Handle.RowName, TEXT("Weapon item resolution"), false);
+	if (!Row || Row->ItemTag != ItemTag)
+	{ OutError = TEXT("Weapon balance row does not match the inventory item identity."); return nullptr; }
+	UEquippableWeaponDefinition* Runtime = NewObject<UEquippableWeaponDefinition>(Outer, NAME_None, RF_Transient);
+	Runtime->BalanceRow = Handle;
+	return Runtime->RefreshBalanceData(OutError) ? Runtime : nullptr;
+}
 
 int32 UItemData::GetRarityRank(FGameplayTag RarityTag)
 {

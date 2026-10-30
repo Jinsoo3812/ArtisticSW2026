@@ -14,6 +14,7 @@
 #include "ShipRepairUserInterface.h"
 #include "MountedDamageUserInterface.h"
 #include "Room/SWRoomSnapshotTypes.h"
+#include "Development/SWDevelopmentSettings.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -70,20 +71,6 @@ struct FQuickSlotReference
 	bool IsEmpty() const { return !ItemTag.IsValid(); }
 };
 
-/** One item type and its desired inventory count when starting an editor test. */
-USTRUCT(BlueprintType)
-struct FStartingInventoryItemForTest
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Testing|Inventory",
-		meta = (Categories = "Item.Id"))
-	FGameplayTag ItemTag;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Testing|Inventory",
-		meta = (ClampMin = "1", UIMin = "1"))
-	int32 Count = 1;
-};
 
 /**
  * 
@@ -470,7 +457,7 @@ public:
 	 * When enabled, player skills ignore story locks and inventory
 	 * materials, and completed uses do not consume an item.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Skill Test")
+	UPROPERTY(BlueprintReadOnly, Category = "Testing|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use SW.DevTest.SkillFree"))
 	bool bBypassSkillRequirementsForTesting = false;
 
 	/** Enables the formal Gravity Vortex Enhanced Input binding while on foot. */
@@ -517,6 +504,7 @@ public:
 
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
+	void LogCombatInputDiagnostic(const TCHAR* Event, FGameplayTag InputTag = FGameplayTag()) const;
 	void OnAbilityInputReleased(FGameplayTag InputTag);
 	void OnShipRepairInteractionReleased();
 	void OnShipRepairInteractionPressed();
@@ -588,11 +576,17 @@ public:
 
 	bool HasSelectedQuickSlotConsumable() const;
 
+	UFUNCTION(BlueprintPure, Category = "Inventory|Consumable")
+	float GetConsumableCooldownRemaining(FGameplayTag ItemTag) const;
+
 	void BeginConsumableQuickSlotInput(int32 QuickSlotIndex);
 	void EndConsumableQuickSlotInput(int32 QuickSlotIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
 	void AssignQuickSlotFromInventory(int32 QuickSlotIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
+	void AssignQuickSlotItem(int32 QuickSlotIndex, FGameplayTag ItemTag);
 
 	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
 	void ClearQuickSlot(int32 QuickSlotIndex);
@@ -605,6 +599,9 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void ServerAssignQuickSlotFromInventory(int32 QuickSlotIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerAssignQuickSlotItem(int32 QuickSlotIndex, FGameplayTag ItemTag);
 
 	UFUNCTION(Server, Reliable)
 	void ServerClearQuickSlot(int32 QuickSlotIndex);
@@ -809,22 +806,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Dialogue")
 	TObjectPtr<UPlayerDialogueComponent> DialogueComponent;
 	/** TEST ONLY: 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. 출시 전 끌 것. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
-		meta = (DisplayName = "[TEST ONLY] Give Starting Items",
-			ToolTip = "에디터 테스트 전용 자동 지급 옵션입니다. 패키징 빌드에는 적용되지 않으며 출시 전 꺼야 합니다."))
+	UPROPERTY(BlueprintReadOnly, Category = "Testing|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use Project Settings / SW Development Tests"))
 	bool bGiveStartingItemForTest = false;
 
 	/** TEST ONLY: allows ship upgrade nodes to activate without inventory materials. Prerequisites still apply. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Ship Upgrade",
-		meta = (DisplayName = "[TEST ONLY] Ignore Ship Upgrade Material Costs",
-			ToolTip = "에디터 테스트에서 배 강화 재료 검사와 소비를 생략합니다. 선행 노드 조건은 유지됩니다."))
+	UPROPERTY(BlueprintReadOnly, Category = "Testing|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use SW.DevTest.ShipUpgradeFree"))
 	bool bIgnoreShipUpgradeMaterialCostsForTest = false;
 
 	/** TEST ONLY: 에디터 시작 시 보장할 아이템별 목표 보유량. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
-		meta = (DisplayName = "[TEST ONLY] Starting Items",
-			ToolTip = "에디터 테스트 시작 시 인벤토리에 보장할 아이템과 목표 수량입니다.",
-			EditCondition = "bGiveStartingItemForTest", EditConditionHides, TitleProperty = "ItemTag"))
+	UPROPERTY(BlueprintReadOnly, Category = "Testing|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use Project Settings / SW Development Tests"))
 	TArray<FStartingInventoryItemForTest> StartingItemsForTest;
 
 	void GiveStartingItemsForTest();

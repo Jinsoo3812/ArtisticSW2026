@@ -40,10 +40,10 @@ public:
 	FString SaveSlotName = TEXT("ShipUpgradeProgress");
 
 	/**
-	 * Development-only material bypass for testing this component.
-	 * It is forcibly ignored in Shipping builds and does not affect crafting or any other inventory consumer.
+	 * Legacy serialized material-bypass field, retained for asset compatibility.
+	 * Gameplay now queries the authoritative SW.DevTest.ShipUpgradeFree option.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_TestMaterialBypass, Category = "Ship Upgrade|Testing", meta = (DevelopmentOnly))
+	UPROPERTY(ReplicatedUsing = OnRep_TestMaterialBypass, meta = (DeprecatedProperty, DeprecationMessage = "Use SW.DevTest.ShipUpgradeFree"))
 	bool bIgnoreMaterialCostsForTesting = false;
 
 	UPROPERTY(BlueprintAssignable, Category = "Ship Upgrade|Events")

@@ -1,0 +1,33 @@
+{
+  "root_restored_vertices": 7070,
+  "bones": 83,
+  "root": "spine",
+  "animations": {
+    "Walk": {
+      "action": "NPC_Walk",
+      "start": 1,
+      "end": 36,
+      "source": "spine.001"
+    },
+    "Idle": {
+      "action": "NPC_Idle",
+      "start": 1,
+      "end": 122,
+      "source": "spine.002"
+    },
+    "Run": {
+      "action": "NPC_Run",
+      "start": 1,
+      "end": 26,
+      "source": "spine.003"
+    },
+    "Jump": {
+      "action": "NPC_Jump",
+      "start": 1,
+      "end": 23,
+      "source": "spine.004"
+    }
+  },
+  "skinning": "linear blend",
+  "source_mesh_untouched": true
+}

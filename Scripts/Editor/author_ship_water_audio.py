@@ -14,7 +14,7 @@ folder = "/Game/Audio/World/Waves/Ship"
 sound_class = assets.load_asset("/Game/Audio/World/Mix/SC_WorldSFX")
 waves = {}
 entries = json.loads((source / "prepared_manifest.json").read_text()) if (source / "prepared_manifest.json").exists() else [
-    {"file": n + ".wav", "loop": n.startswith("Loop_")} for n in ["Loop_River_Ambience__Boat1", "Loop_Running_Water2", "Oneshot_Splash3", "Oneshot_Splash5", "WaterImpact_Body", "Oneshot_Swimming_Heavy1", "Oneshot_Wave_Crash4", "CharacterWaterBody", "CannonWaterBody", "CharacterEntry_PlungeA", "CharacterEntry_PlungeB"]]
+    {"file": n + ".wav", "loop": n.startswith("Loop_")} for n in ["Loop_River_Ambience__Boat1", "Loop_Running_Water2", "Oneshot_Splash3", "Oneshot_Splash5", "WaterImpact_Body", "Oneshot_Swimming_Heavy1", "Oneshot_Wave_Crash4", "CharacterWaterBody", "CannonWaterBody", "CharacterEntry_PlungeA", "CharacterEntry_PlungeB", "CannonEntry_PlungeA", "CannonEntry_PlungeB"]]
 for entry in entries:
     path = source / entry["file"]
     name = path.stem
@@ -44,7 +44,7 @@ profile = assets.load_asset(profile_path)
 events = dict(profile.get_editor_property("events"))
 for event, name, attacks, body, pitch in [
     (unreal.SWWorldSound.WATER_ENTER, "Cue_CharacterWaterEntry_Heavy", [waves["CharacterEntry_PlungeA"], waves["CharacterEntry_PlungeB"]], waves['CharacterWaterBody'], .94),
-    (unreal.SWWorldSound.CANNON_WATER_IMPACT, "Cue_CannonWaterImpact_Heavy", [assets.load_asset("/Game/Audio/World/Waves/Water/Oneshot_Splash4"), waves["Oneshot_Splash5"]], waves['CannonWaterBody'], .8),
+    (unreal.SWWorldSound.CANNON_WATER_IMPACT, "Cue_CannonWaterImpact_Heavy", [waves['CannonEntry_PlungeA'], waves['CannonEntry_PlungeB']], waves['CannonWaterBody'], .88),
 ]:
     cue = unreal.SWAudioAuthoringLibrary.create_water_impact_cue("/Game/Audio/World/Cues/" + name, attacks, body, pitch)
     assert cue
@@ -52,6 +52,7 @@ for event, name, attacks, body, pitch in [
     assert assets.save_loaded_asset(cue, False)
     value = events[event]; value.set_editor_property("sound", cue)
     if event == unreal.SWWorldSound.WATER_ENTER: value.set_editor_property("volume", .72)
+    if event == unreal.SWWorldSound.CANNON_WATER_IMPACT: value.set_editor_property("volume", 1.)
     events[event] = value
 
 mix_folder = "/Game/Audio/World/Mix"

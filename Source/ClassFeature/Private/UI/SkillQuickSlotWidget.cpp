@@ -1,4 +1,5 @@
 #include "UI/SkillQuickSlotWidget.h"
+#include "Development/SWDevelopmentOptions.h"
 
 #include "BaseGameplayTags.h"
 #include "AbilitySystemComponent.h"
@@ -128,6 +129,12 @@ void USkillQuickSlotWidget::HandleActiveSkillTagChanged(FGameplayTag, int32)
 
 void USkillQuickSlotWidget::RefreshSlots()
 {
+ if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown))
+ {
+  SetSkillCooldown(GameplayAbility_Skill_GravityVortex, 0.f, 0.f);
+  SetSkillCooldown(GameplayAbility_Skill_WaterBomb, 0.f, 0.f);
+  SetSkillCooldown(GameplayAbility_Skill_Bombardment, 0.f, 0.f);
+ }
 	RefreshSkill(GameplayAbility_Skill_GravityVortex, GravityVortexIconImage, GravityVortexLockOverlay);
 	RefreshSkill(GameplayAbility_Skill_WaterBomb, WaterBombIconImage, WaterBombLockOverlay);
 	RefreshSkill(GameplayAbility_Skill_Bombardment, BombardmentIconImage, BombardmentLockOverlay);
@@ -214,7 +221,7 @@ void USkillQuickSlotWidget::SetSkillCooldown(
 {
 	if (UImage* CooldownImage = FindCooldownImage(SkillTag))
 	{
-		const float Percent = DurationSeconds > KINDA_SMALL_NUMBER
+		const float Percent = !SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillNoCooldown) && DurationSeconds > KINDA_SMALL_NUMBER
 			? FMath::Clamp(RemainingSeconds / DurationSeconds, 0.0f, 1.0f)
 			: 0.0f;
 		if (UMaterialInstanceDynamic* CooldownMaterial = CooldownImage->GetDynamicMaterial())

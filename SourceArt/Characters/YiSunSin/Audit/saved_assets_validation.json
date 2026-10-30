@@ -1,0 +1,18 @@
+{
+  "saved_references_valid": true,
+  "compiled_animation_blueprint": "/Game/Chae_Asset/YiSunSinContent/NPC/Animations/ABP_YiSunSin_NPC.ABP_YiSunSin_NPC",
+  "compiled_npc_blueprint": "/Game/Chae_Asset/YiSunSinContent/NPC/Blueprints/BP_YiSunSin_NPC.BP_YiSunSin_NPC",
+  "original_skeleton_shared": "/Game/Chae_Asset/YiSunSinContent/Characters/SK_YiSunSin_Latest_Skeleton.SK_YiSunSin_Latest_Skeleton",
+  "player_input_disabled": true,
+  "parent": "Character",
+  "idle_duration_seconds": 4.840000152587891,
+  "speed_samples_cm_per_sec": [
+    0,
+    150,
+    450
+  ],
+  "runtime_pie_report": "ue_blend_samples.json",
+  "idle_root_scale_and_rotation_match_bind": true,
+  "preview_map": "/Game/Chae_Asset/YiSunSinContent/NPC/Preview/L_YiSunSin_NPC_Preview",
+  "existing_preview_preserved": true
+}

@@ -634,6 +634,15 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		if (ABasePlayerController* Controller = Cast<ABasePlayerController>(It->Get())) Controller->ReleaseFrozenLifeProgress();
 	if (!Room->IsNewRoomPending()) Mode->SetHostedRoomWorldReady();
 	Mode->MarkHostedRoomWorldReady();
+ if (bCampaignRestorePending)
+ {
+  Room->DevelopmentOptionMask = CampaignOptionMask;
+  Room->SetDevelopmentTestSessionEnabled(World, true);
+  bCampaignRestorePending = false;
+  CampaignPreparedRoom = nullptr; CampaignRollbackRoom = nullptr; CampaignTarget = NAME_None;
+  for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+   if (APlayerController* PC = It->Get()) PC->ClientMessage(TEXT("Campaign story checkpoint restored."));
+ }
 	Room->CompleteWorldRecovery();
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=WorldRestore RoomId=%s Result=Ready ReturnPending=%d"),
 		*Room->GetActiveRoom()->RoomId.ToString(), Room->IsReturnTravelPending());
@@ -646,6 +655,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 
 void UClassFeatureRoomProgressSubsystem::HandleGameOverRestart()
 {
+ if (bReturning && !bTravelAccepted && TransitionReason == ERoomTransitionReason::CampaignSkip) CancelReturnPresentation();
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=GameOver Phase=CapturePermanent NoDiskWrite=1"));
  if (UWorld* World = GetGameInstance()->GetWorld())
   for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
@@ -985,7 +995,7 @@ bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind 
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=SaveAttempt Phase=Requested RoomId=%s Sequence=%llu Kind=%s World=%s"),
 		Save ? *Save->RoomId.ToString() : TEXT("None"), Save ? Save->CaptureSequence + 1 : 0,
 		*UEnum::GetValueAsString(Kind), *GetNameSafe(World));
-	if (!World || !Save || bSaving || World->GetNetMode() == NM_Client)
+	if (!World || !Save || bSaving || (bReturning && TransitionReason == ERoomTransitionReason::CampaignSkip) || World->GetNetMode() == NM_Client)
 	{
 		OutError = TEXT("Room save is unavailable");
 		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveAttempt Result=Failed Phase=Precondition RoomId=%s Sequence=%llu World=%d Save=%d Busy=%d Client=%d Reason=%s"),
@@ -1355,6 +1365,16 @@ void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 	World->GetTimerManager().ClearTimer(ReturnPresentationTimeoutHandle);
 	AMultiGameMode* Mode = World->GetAuthGameMode<AMultiGameMode>();
 	RecordTransitionParticipants(World);
+ if (TransitionReason == ERoomTransitionReason::CampaignSkip)
+ {
+  FString Error;
+  if (!CommitDevelopmentCampaign(World, Error))
+  {
+   for (const auto& Controller : ReturnControllers) if (Controller.IsValid()) Controller->ClientMessage(Error);
+   CancelReturnPresentation();
+  }
+  return;
+ }
 	if (TransitionReason == ERoomTransitionReason::FinalDeparture)
 	{
 		UStoryFacadeSubsystem* Story = GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>();
@@ -1421,6 +1441,7 @@ void UClassFeatureRoomProgressSubsystem::HandleReturnPresentationTimeout()
 
 void UClassFeatureRoomProgressSubsystem::CancelReturnPresentation()
 {
+ if (TransitionReason == ERoomTransitionReason::CampaignSkip) CancelDevelopmentCampaign();
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ReturnCancelled Reason=%d RetryRequest=%llu Message=%s"), static_cast<int32>(TransitionReason), RetryRequestId, *RetryCancelReason);
  if (USWRoomProgressSubsystem* Room=GetRoom(GetGameInstance())) Room->ClearDevelopmentFinalEncounterWorld(GetGameInstance()->GetWorld());
  bDevelopmentFinalDeparture=false;
@@ -1595,6 +1616,7 @@ bool UClassFeatureRoomProgressSubsystem::TryGameOverRetry(UWorld* World, ABasePl
 void UClassFeatureRoomProgressSubsystem::HandleTransitionLogout(ABasePlayerController* Controller)
 {
  if (!bReturning || bTravelAccepted || !Controller) return;
+ if (TransitionReason == ERoomTransitionReason::CampaignSkip) { CancelReturnPresentation(); return; }
  USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
  AMultiGameMode* Mode = Controller->GetWorld() ? Controller->GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
  int32 Slot = Mode ? Mode->GetPlayerIndex(Controller) : INDEX_NONE;

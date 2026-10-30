@@ -16,6 +16,7 @@
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAttributeDamageResolved, const FGameplayEffectContextHandle&, float);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAttributeHealingResolved, const FGameplayEffectContextHandle&, float);
 
 UCLASS()
 class GASCORE_API UBaseAttributeSet : public UAttributeSet
@@ -25,6 +26,7 @@ class GASCORE_API UBaseAttributeSet : public UAttributeSet
 public:
 	UBaseAttributeSet();
 	FOnAttributeDamageResolved OnDamageResolved;
+	FOnAttributeHealingResolved OnHealingResolved;
 
 	// 네트워크로 복제할 Attribute와 RepNotify 방식을 등록합니다.
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

@@ -3,7 +3,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Curves/CurveFloat.h"
-#include "DrawDebugHelpers.h"
+#include "SWWaterSkillOverlaySubsystem.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
@@ -14,6 +14,11 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+
+namespace
+{
+	uint64 NextGravitySurfaceOrder = 0;
+}
 
 AGravityVortexField::AGravityVortexField()
 {
@@ -53,11 +58,13 @@ void AGravityVortexField::BeginPlay()
 	if (HasAuthority() && !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		SourceId = FGuid::NewGuid();
+		SurfaceOrder = ++NextGravitySurfaceOrder;
 		ActivationServerTime = GetSynchronizedServerTime();
 		ExpireServerTime = ActivationServerTime + FMath::Max(0.05f, Duration);
 		SetLifeSpan(FMath::Max(0.05f, Duration));
 		RefreshTargets();
 	}
+	UpdateSurfaceOverlay();
 }
 
 void AGravityVortexField::Tick(float DeltaSeconds)
@@ -74,41 +81,39 @@ void AGravityVortexField::Tick(float DeltaSeconds)
 		}
 	}
 
-#if !UE_SERVER
-	if (bDrawDebug && GetWorld())
+	UpdateSurfaceOverlay();
+}
+
+void AGravityVortexField::UpdateSurfaceOverlay()
+{
+	if (!GetWorld() || GetNetMode() == NM_DedicatedServer)
 	{
-		const FVector DebugCenter = GetActorLocation() + FVector::UpVector * DebugDrawHeightOffset;
-		const float HalfDebugHeight = 20.0f;
-		const int32 Segments = FMath::Clamp(DebugCircleSegments, 16, 256);
-		const float Thickness = FMath::Max(0.5f, DebugLineThickness);
-
-		// A shallow cylinder is substantially more visible than a single circle on
-		// translucent water and remains readable from an oblique gameplay camera.
-		DrawDebugCylinder(
-			GetWorld(),
-			DebugCenter - FVector::UpVector * HalfDebugHeight,
-			DebugCenter + FVector::UpVector * HalfDebugHeight,
-			PullRadius,
-			Segments,
-			FColor::Emerald,
-			false,
-			0.0f,
-			1,
-			Thickness);
-
-		DrawDebugCircle(
-			GetWorld(), DebugCenter, FMath::Max(InnerDeadZoneRadius, 25.0f), 32,
-			FColor::Purple, false, 0.0f, 1, Thickness * 0.65f,
-			FVector::ForwardVector, FVector::RightVector, false);
-		DrawDebugLine(
-			GetWorld(), DebugCenter, DebugCenter + FVector::UpVector * 400.0f,
-			FColor::Yellow, false, 0.0f, 1, Thickness);
+		return;
 	}
-#endif
+	if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+	{
+		if (ExpireServerTime <= ActivationServerTime
+			|| GetSynchronizedServerTime() >= ExpireServerTime)
+		{
+			Overlays->Remove(this);
+			return;
+		}
+		FLinearColor Color = SurfaceTint;
+		Color.A = 1.0f;
+		Overlays->Upsert(this, GetActorLocation(), PullRadius, Color,
+			ActivationServerTime, SurfaceOrder, ExpireServerTime);
+	}
 }
 
 void AGravityVortexField::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (GetWorld())
+	{
+		if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+		{
+			Overlays->Remove(this);
+		}
+	}
 	if (HasAuthority())
 	{
 		for (const TWeakObjectPtr<AShip>& ShipPtr : AffectedShips)
@@ -230,12 +235,16 @@ void AGravityVortexField::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AGravityVortexField, ActivationServerTime);
 	DOREPLIFETIME(AGravityVortexField, ExpireServerTime);
+	DOREPLIFETIME(AGravityVortexField, PullRadius);
+	DOREPLIFETIME(AGravityVortexField, SurfaceTint);
+	DOREPLIFETIME(AGravityVortexField, SurfaceOrder);
 }
 
 void AGravityVortexField::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
 {
 	FSWRoomGravityFieldState State;
 	State.SourceId = SourceId;
+	State.SurfaceOrder = SurfaceOrder;
 	State.RemainingLife = GetLifeSpan();
 	State.RefreshAccumulator = RefreshAccumulator;
 	for (const TWeakObjectPtr<AShip>& Ship : AffectedShips)
@@ -276,6 +285,8 @@ bool AGravityVortexField::RestoreRoomDomain(const FSWRoomDomainPart& Part, FStri
 		return false;
 	}
 	SourceId = State.SourceId;
+	SurfaceOrder = State.SurfaceOrder;
+	NextGravitySurfaceOrder = FMath::Max(NextGravitySurfaceOrder, SurfaceOrder);
 	RefreshAccumulator = State.RefreshAccumulator;
 	AffectedShips.Reset();
 	PendingRoomState = MoveTemp(State);
@@ -301,5 +312,6 @@ bool AGravityVortexField::FinalizeRoomRestore(const TMap<FGuid, AActor*>& Regist
 		if (bSuppressEnemyPropulsion) Ship->AddPropulsionSuppression(SourceId);
 	}
 	RefreshTargets();
+	UpdateSurfaceOverlay();
 	return true;
 }

@@ -71,9 +71,9 @@ def write_composite(name,layers,description):
     path=dest/(name+'.wav')
     rows.append({'file':path.name,'sources':[str(folder/(recording+'.wav')) for folder,recording,_,_,_ in layers],'processing':description,**prepare(buf.getvalue(),path,mono=True)})
 
-write_composite('CannonWaterBody',[(source,'Oneshot_Splash6',.82,.65,0),(extra,'Oneshot_Diving_Underwater1',.82,.75,.035)],'Dense splash and deeper underwater plunge, 35ms follow-through')
 (dest / "prepared_manifest.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
 from prepare_character_entry import prepare_character_entry
 prepare_character_entry(args.staging)
+prepare_character_entry(args.staging, cannon=True)
 rows = json.loads((dest / "prepared_manifest.json").read_text(encoding="utf-8"))
 print(json.dumps(rows, indent=2))

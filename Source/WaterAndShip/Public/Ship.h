@@ -49,7 +49,6 @@ struct FSWRoomShipState
 class USWBuoyancyComponent;
 class UGameplayEffect;
 class UNiagaraSystem;
-class UMaterialParameterCollection;
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -736,6 +735,7 @@ public:
 		TSubclassOf<ABombardment> BombardmentClass);
 	void DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability);
 	bool IsBombardmentTargeting() const { return bBombardmentTargeting; }
+	bool IsLocalBombardmentInputModeApplied() const { return bLocalBombardmentInputModeApplied; }
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnBombardmentTargetingChanged, bool);
 	FOnBombardmentTargetingChanged OnBombardmentTargetingChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
@@ -1274,16 +1274,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ABombardmentPreview> BombardmentPreviewActor;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialParameterCollection> WaterSkillPreviewParameterCollection;
-
 	FVector LocalBombardmentTarget = FVector::ZeroVector;
-	FVector LastWaterSkillPreviewCenter = FVector::ZeroVector;
-	float LastWaterSkillPreviewRadius = 0.0f;
 	bool bLocalBombardmentTargetValid = false;
 	bool bLocalBombardmentInputModeApplied = false;
-	bool bWaterSkillPreviewEnabled = false;
-	bool bSavedShowMouseCursor = false;
+	TWeakObjectPtr<APlayerController> BombardmentInputController;
 
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;

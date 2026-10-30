@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Room/SWRoomSaveGame.h"
+#include "Development/SWDevelopmentOptions.h"
 #include "SWRoomProgressSubsystem.generated.h"
 
 class USWRoomSaveGame;
@@ -20,6 +21,8 @@ class ARTISTICSWCORE_API USWRoomProgressSubsystem : public UGameInstanceSubsyste
 {
 	GENERATED_BODY()
 public:
+	// Session-only settings; deliberately excluded from room saves.
+	int32 DevelopmentOptionMask = SWDevelopmentOptions::All;
 	bool IsDevelopmentTestSessionEnabled(UWorld* World) const;
 	void SetDevelopmentTestSessionEnabled(UWorld* World, bool bEnabled);
 	void SetDevelopmentFinalDeparturePending(UWorld* World, bool bPending, bool bValidatedTransition = false);

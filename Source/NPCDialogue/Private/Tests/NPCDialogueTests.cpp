@@ -9,7 +9,6 @@
 #include "Engine/GameInstance.h"
 #include "Misc/DataValidation.h"
 #include "HAL/IConsoleManager.h"
-#include "Misc/ScopeExit.h"
 
 namespace NPCDialogueTests
 {
@@ -31,56 +30,20 @@ namespace NPCDialogueTests
 	}
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FYiSunSinTestProgressionTest,
-	"ArtisticSW.NPCDialogue.YiSunSinTestProgression",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRetiredYiDialogueToggleTest,
+	"ArtisticSW.NPCDialogue.LegacySkipRemoved",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FYiSunSinTestProgressionTest::RunTest(const FString& Parameters)
+bool FRetiredYiDialogueToggleTest::RunTest(const FString& Parameters)
 {
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	IConsoleVariable* Toggle = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Dialogue.YiSunSin.SkipRequirements"));
-	if (!TestNotNull(TEXT("Test toggle exists"), Toggle)) return false;
-	const int32 Previous = Toggle->GetInt();
-	ON_SCOPE_EXIT { Toggle->Set(Previous, ECVF_SetByConsole); };
-	UNPCDialogueData* Data = LoadObject<UNPCDialogueData>(nullptr,
-		TEXT("/Game/Campaign/DataAsset/Dialogue/DA_YiSunSinDialogue.DA_YiSunSinDialogue"));
-	if (!TestNotNull(TEXT("Actual Yi Sun Sin data loads"), Data)) return false;
-	UGameInstance* Instance = NewObject<UGameInstance>();
-	UStorySubsystem* State = NewObject<UStorySubsystem>(Instance);
-	UStoryFacadeSubsystem* Story = NewObject<UStoryFacadeSubsystem>(Instance);
-	Story->ConfigureForUseCase(State);
-	TestTrue(TEXT("Campaign starts"), Story->StartNewCampaign());
-	AActor* NPC = NewObject<AActor>();
-	UNPCDialogueSourceComponent* Source = NewObject<UNPCDialogueSourceComponent>(NPC);
-	Source->SetDialogueData(Data);
-	Toggle->Set(1, ECVF_SetByConsole);
-	TestTrue(TEXT("Toggle applies to Yi Sun Sin"), Data->IsYiSunSinTestMode());
-	UNPCDialogueData* OtherData = NewObject<UNPCDialogueData>();
-	TestFalse(TEXT("Other NPCs are unaffected"), OtherData->IsYiSunSinTestMode());
-	const EStoryNode Expected[] = {EStoryNode::ReconQuestAccepted, EStoryNode::SupplyPatrolQuestAccepted,
-		EStoryNode::DecipherQuestAccepted, EStoryNode::SuppressJapaneseForcesQuestAccepted,
-		EStoryNode::UldolmokBattleQuestAccepted, EStoryNode::EndingDialogueCompleted};
-	for (EStoryNode Node : Expected)
-	{
-		Data->PrepareYiSunSinTestProgress(Story);
-		const FNPCDialogueRule* Rule = Source->ResolveBestRule(Story, nullptr);
-		if (!TestNotNull(TEXT("Next campaign dialogue exists without inventory or boss fights"), Rule)) return false;
-		TestEqual(TEXT("Dialogue stays in campaign order"), Rule->StoryNodeToComplete, Node);
-		TestTrue(TEXT("Selected outcome can commit"), Story->CompleteStoryNode(Node));
-	}
-	const FNPCDialogueRule* Ambient = Source->ResolveBestRule(Story, nullptr);
-	TestTrue(TEXT("Completed progress does not repeat"), Ambient && Ambient->RuleId == TEXT("Rule_Ambient"));
-	Toggle->Set(0, ECVF_SetByConsole);
-	TestTrue(TEXT("Campaign can reset for the ordinary path"), Story->StartNewCampaign());
-	TestTrue(TEXT("Recon accepted normally"), Story->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
-	Data->PrepareYiSunSinTestProgress(Story);
-	TestFalse(TEXT("Disabled toggle does not fabricate boss completion"), Story->IsStoryNodeReached(EStoryNode::MiddleBoss1Defeated));
-	TestTrue(TEXT("Normal boss completion"), Story->CompleteStoryNode(EStoryNode::MiddleBoss1Defeated));
-	TestTrue(TEXT("Normal supply quest"), Story->CompleteStoryNode(EStoryNode::SupplyPatrolQuestAccepted));
-	TestTrue(TEXT("Normal boss two completion"), Story->CompleteStoryNode(EStoryNode::MiddleBoss2Defeated));
-	const FNPCDialogueRule* Suppress = Data->FindRule(TEXT("Rule_SuppressForces"));
-	TestTrue(TEXT("Normal item requirements are enforced again"), Suppress && !Source->IsRuleAvailable(*Suppress, Story, nullptr));
-#endif
+	TestNull(TEXT("Legacy dialogue bypass is not registered"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("sw.Dialogue.YiSunSin.SkipRequirements")));
+	TestNull(TEXT("Legacy middle-boss campaign replacement is not registered"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("sw.Campaign.MiddleBossAndReturn")));
+	TestNull(TEXT("Local host shortcut is disabled"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("SW.DevTest.Local.Host")));
+	TestNull(TEXT("Local join shortcut is disabled"),
+		IConsoleManager::Get().FindConsoleObject(TEXT("SW.DevTest.Local.Join")));
 	return true;
 }
 

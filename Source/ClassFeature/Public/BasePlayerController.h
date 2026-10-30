@@ -14,6 +14,7 @@
 #include "Respawn/SWRespawnControllerInterface.h"
 #include "Room/SWRoomSaveGame.h"
 #include "Camera/CameraTypes.h"
+#include "SkillCursorInputInterface.h"
 #include "BasePlayerController.generated.h"
 
 /**
@@ -60,12 +61,15 @@ struct FStorageRevealState
 };
 
 UCLASS()
-class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController, public ISWRespawnControllerInterface
+class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController, public ISWRespawnControllerInterface, public ISkillCursorInputInterface
 {
 	GENERATED_BODY()
 
 public:
 	ABasePlayerController();
+	virtual bool IsSkillCursorInputBlocked() const override;
+	virtual void RestoreInputAfterSkillCursor() override;
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 	/** Development console request; the server always uses this controller's pawn. */
 	void RequestEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
 	virtual void UpdateCameraManager(float DeltaSeconds) override;
@@ -147,6 +151,9 @@ private:
 	uint32 CameraRebufferCount = 0;
 	uint32 CameraCutCount = 0;
 	int32 LocalObservedRestoreGeneration = -1;
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Death")
+	TSubclassOf<class USWDeathFlowWidget> DeathFlowWidgetClass;
+
 	UPROPERTY(Transient) TObjectPtr<class USWDeathFlowWidget> DeathFlowWidget;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;
 	ESWSessionLifePhase LocalSessionPhase = ESWSessionLifePhase::Playing;
@@ -187,15 +194,8 @@ public:
 	void RequestRoomSaveAndExit();
 	void CloseRoomMenu();
 	UFUNCTION(Server, Reliable) void ServerRequestRoomSave(uint64 RequestId);
-	UFUNCTION(Server, Reliable) void ServerSetYiSunSinDialogueTestMode(bool bEnabled);
-	UFUNCTION(Server, Reliable) void ServerRequestMiddleBossAndReturn(int32 BossNumber);
 	UFUNCTION(Client, Reliable) void ClientRoomSaveResult(uint64 RequestId, bool bSuccess, const FString& Message);
 
-private:
-	bool CanChangeDevelopmentCampaignState();
-	void SyncYiSunSinDialogueTestMode();
-	void ConsumeMiddleBossReturnRequest();
-	int32 LastYiSunSinDialogueTestValue = INDEX_NONE;
 public:
 	UFUNCTION(Client, Reliable) void ClientBeginRoomReturn();
 	UFUNCTION(Client, Reliable) void ClientBeginFinalDeparture(int32 AttemptId);
@@ -373,7 +373,6 @@ protected:
 	TWeakObjectPtr<UGameViewportClient> BoundRoomViewport;
 	bool HandleRoomWindowCloseRequested();
 	void HandleRoomSaveTimeout();
-	bool bCursorVisibleBeforeRoomMenu = false;
 	void ApplyInventoryInputMode(bool bOpen);
 	void UpdateInteractionMovementLock();
 	void SetStatusCharacterInputLocked(bool bLocked);
