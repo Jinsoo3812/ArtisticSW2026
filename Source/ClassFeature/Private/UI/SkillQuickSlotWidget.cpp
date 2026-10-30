@@ -1,4 +1,5 @@
 #include "UI/SkillQuickSlotWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "BaseGameplayTags.h"
 #include "AbilitySystemComponent.h"
@@ -193,7 +194,7 @@ void USkillQuickSlotWidget::RefreshSkill(
 		UTexture2D* Icon = Inventory && Definition && Definition->SkillItemTag.IsValid()
 			? Inventory->GetMaterialIcon(Definition->SkillItemTag)
 			: nullptr;
-		IconImage->SetBrushFromTexture(Icon, true);
+		UItemIconLibrary::SetItemIcon(IconImage, Icon, Definition ? Definition->SkillItemTag : FGameplayTag());
 		IconImage->SetColorAndOpacity(Icon ? FLinearColor::White : FLinearColor::Transparent);
 	}
 

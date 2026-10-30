@@ -1026,7 +1026,9 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 
 		EntryWidget->SetVisibility(ESlateVisibility::Visible);
 		EntryWidget->ConfigureInteraction(QuickSlotIndex, false);
-		EntryWidget->SetupFromData(SlotTag, Icon, bEquipped, Count);
+		EntryWidget->SetupFromData(SlotTag, Icon, bEquipped, Count,
+			CachedPlayer.IsValid() && CachedPlayer->QuickSlots.IsValidIndex(QuickSlotIndex)
+				? CachedPlayer->QuickSlots[QuickSlotIndex].ItemTag : FGameplayTag());
 	}
 }
 
@@ -1054,7 +1056,8 @@ void UPlayerHUDWidget::RefreshCursorItemWidget()
 
 	InventoryCursorWidget->SetupCursorItem(
 		InventoryComp->GetMaterialIcon(CursorItem.ItemTag),
-		CursorItem.Count
+		CursorItem.Count,
+		CursorItem.ItemTag
 	);
 }
 

@@ -1,4 +1,5 @@
 #include "UI/ItemQuickSlotWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "BasePlayer.h"
 #include "Components/Border.h"
@@ -75,6 +76,7 @@ void UItemQuickSlotWidget::RefreshSlot(
 	ABasePlayer* Player = CachedPlayer.Get();
 	FText DisplayName = FText::GetEmpty();
 	UTexture2D* Icon = nullptr;
+	FGameplayTag IconItemTag;
 	int32 Count = 0;
 	bool bHasAssignedItem = false;
 
@@ -84,6 +86,7 @@ void UItemQuickSlotWidget::RefreshSlot(
 		if (QuickSlot.ItemTag.IsValid())
 		{
 			bHasAssignedItem = true;
+			IconItemTag = QuickSlot.ItemTag;
 			if (UInventoryComponent* Inventory = Player->GetInventoryComponent())
 			{
 				DisplayName = Inventory->GetMaterialName(QuickSlot.ItemTag);
@@ -97,7 +100,7 @@ void UItemQuickSlotWidget::RefreshSlot(
 	{
 		if (Icon)
 		{
-			IconImage->SetBrushFromTexture(Icon, true);
+			UItemIconLibrary::SetItemIcon(IconImage, Icon, IconItemTag);
 			IconImage->SetColorAndOpacity(FLinearColor::White);
 		}
 		else

@@ -178,7 +178,8 @@ void UStorageWindowWidget::RefreshStorage()
 					StorageSlot.Count,
 					StorageComponent->GetItemIcon(StorageSlot.ItemTag),
 					Index,
-					CachedStorageChest
+					CachedStorageChest,
+					StorageSlot.ItemTag
 				);
 			}
 			else if (PlayerController && PlayerController->IsStorageSlotSearching(CachedStorageChest, Index))

@@ -1,4 +1,5 @@
 #include "UI/SkillUpgradePanel.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
@@ -222,7 +223,7 @@ void USkillUpgradePanel::RefreshSelectedSkillPresentation()
 	}
 	if (ResultSkillIconImage)
 	{
-		ResultSkillIconImage->SetBrushFromTexture(SkillIcon, true);
+		UItemIconLibrary::SetItemIcon(ResultSkillIconImage, SkillIcon, GetSelectedSkillItemTag());
 		ResultSkillIconImage->SetVisibility(
 			SkillIcon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
