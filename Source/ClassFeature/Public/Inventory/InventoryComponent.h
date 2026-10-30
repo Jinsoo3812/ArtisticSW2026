@@ -138,6 +138,10 @@ public:
 	// Tag 아이템 총 개수 반환
 	int32 GetMaterialCount(const FGameplayTag& ItemTag) const;
 
+	/** Synchronous server-only use. Failed effects leave inventory and selection untouched. */
+	bool TryConsumeItemWithEffect(FGameplayTag ItemTag, TFunctionRef<bool()> ApplyEffect);
+	bool IsItemUseInProgress() const { return bItemUseInProgress; }
+
 	// New generic item wrappers. Legacy Material functions remain unchanged.
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Item")
 	int32 AddItem(const FGameplayTag& ItemTag, int32 Amount = 1);
@@ -245,6 +249,7 @@ public:
 	FShipUpgradeInventoryChangedNative ShipUpgradeInventoryChanged;
 
 protected:
+	bool bItemUseInProgress = false;
 	// 인벤토리 가로 칸 수
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
 	int32 InventoryColumns = 5;

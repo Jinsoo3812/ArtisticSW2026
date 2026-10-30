@@ -270,6 +270,7 @@ void UInventoryComponent::CaptureProgressSnapshot(TArray<FSWInventorySlotSnapsho
 
 void UInventoryComponent::RestoreProgressSnapshot(const TArray<FSWInventorySlotSnapshot>& InSlots)
 {
+	if (bItemUseInProgress) return;
 	if (GetOwner() && !GetOwner()->HasAuthority()) return;
 	LogSnapshotDiagnostic(TEXT("RestoreExpected"), InSlots);
 	LogInventoryDiagnostic(TEXT("RestoreBefore"), true);
@@ -341,6 +342,7 @@ bool UInventoryComponent::CanSlotAcceptItem(EInventoryTab Tab, const FGameplayTa
 
 int32 UInventoryComponent::AddMaterial(const FGameplayTag& ItemTag, int32 Amount)
 {
+	if (bItemUseInProgress) return 0;
     if (!GetOwner() || !GetOwner()->HasAuthority() || !ItemTag.IsValid() || Amount <= 0)
     {
         return 0;
@@ -412,6 +414,7 @@ int32 UInventoryComponent::AddMaterial(const FGameplayTag& ItemTag, int32 Amount
 
 bool UInventoryComponent::RemoveMaterial(const FGameplayTag& ItemTag, int32 Amount)
 {
+	if (bItemUseInProgress) return false;
     if (!GetOwner() || !GetOwner()->HasAuthority() || !ItemTag.IsValid() || Amount <= 0)
     {
         return false;
@@ -457,6 +460,23 @@ bool UInventoryComponent::RemoveMaterial(const FGameplayTag& ItemTag, int32 Amou
     }
 
     return false;
+}
+
+bool UInventoryComponent::TryConsumeItemWithEffect(FGameplayTag ItemTag, TFunctionRef<bool()> ApplyEffect)
+{
+    if (bItemUseInProgress || !GetOwner() || !GetOwner()->HasAuthority() || !ItemTag.IsValid()) return false;
+    TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+    FInventoryTabPage* Page = FindPageInArray(WorkingPages, GetInventoryTabForItem(ItemTag));
+    if (!Page || !RemoveFromSlots(Page->Slots, ItemTag, 1)) return false;
+    {
+        // No delegates run for a provisional inventory change. Reentrant mutations are rejected.
+        TGuardValue<bool> UseGuard(bItemUseInProgress, true);
+        if (!ApplyEffect()) return false;
+        InventoryPages = MoveTemp(WorkingPages);
+        if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab)) InventorySlots = ActivePage->Slots;
+    }
+    OnInventoryChanged.Broadcast();
+    return true;
 }
 
 int32 UInventoryComponent::GetMaterialCount(const FGameplayTag& ItemTag) const
@@ -523,6 +543,7 @@ bool UInventoryComponent::TryApplyCraftingTransaction(const TArray<FCraftingItem
 
 bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>& Costs)
 {
+	if (bItemUseInProgress) return false;
 	if (!GetOwner() || !GetOwner()->HasAuthority())
 	{
 		return false;
@@ -556,6 +577,7 @@ bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>
 
 bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& Items)
 {
+	if (bItemUseInProgress) return false;
 	if (!GetOwner() || !GetOwner()->HasAuthority())
 	{
 		return false;
@@ -628,6 +650,7 @@ bool UInventoryComponent::TryApplyItemTransaction(
 	const TArray<FCraftingItemStack>& RemovedItems,
 	const TArray<FCraftingItemStack>& AddedItems)
 {
+	if (bItemUseInProgress) return false;
 	if (!GetOwner() || !GetOwner()->HasAuthority())
 	{
 		return false;
@@ -780,6 +803,7 @@ void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
 
 void UInventoryComponent::HandleLeftClickSlotInTab(EInventoryTab Tab, int32 SlotIndex)
 {
+	if (bItemUseInProgress) return;
 	if (const ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()); Player && !Player->CanMutateLifeGameplay()) return;
     if (!GetOwner() || !GetOwner()->HasAuthority())
     {
@@ -917,6 +941,7 @@ void UInventoryComponent::HandleRightClickInventory()
 }
 void UInventoryComponent::ReturnCursorToOriginalSlot()
 {
+	if (bItemUseInProgress) return;
     if (!GetOwner() || !GetOwner()->HasAuthority() || !CursorItem.IsValid())
     {
         return;
@@ -1008,6 +1033,7 @@ int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageCompon
 
 int32 UInventoryComponent::TransferSlotToStorageInTab(EInventoryTab Tab, int32 SlotIndex, UStorageComponent* TargetStorage)
 {
+	if (bItemUseInProgress) return 0;
     // 인벤토리의 슬롯을, storage로 이동
     if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetStorage)
     {
@@ -1048,6 +1074,7 @@ int32 UInventoryComponent::TransferSlotToStorageInTab(EInventoryTab Tab, int32 S
 
 int32 UInventoryComponent::TransferCursorToStorageSlot(UStorageComponent* TargetStorage, int32 StorageSlotIndex)
 {
+	if (bItemUseInProgress) return 0;
     // 커서에 붙은 아이템을 storage로 이동
     if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetStorage || !CursorItem.IsValid())
     {

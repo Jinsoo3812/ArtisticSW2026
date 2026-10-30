@@ -568,11 +568,17 @@ public:
 
 	bool HasSelectedQuickSlotConsumable() const;
 
+	UFUNCTION(BlueprintPure, Category = "Inventory|Consumable")
+	float GetConsumableCooldownRemaining(FGameplayTag ItemTag) const;
+
 	void BeginConsumableQuickSlotInput(int32 QuickSlotIndex);
 	void EndConsumableQuickSlotInput(int32 QuickSlotIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
 	void AssignQuickSlotFromInventory(int32 QuickSlotIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
+	void AssignQuickSlotItem(int32 QuickSlotIndex, FGameplayTag ItemTag);
 
 	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
 	void ClearQuickSlot(int32 QuickSlotIndex);
@@ -585,6 +591,9 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void ServerAssignQuickSlotFromInventory(int32 QuickSlotIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerAssignQuickSlotItem(int32 QuickSlotIndex, FGameplayTag ItemTag);
 
 	UFUNCTION(Server, Reliable)
 	void ServerClearQuickSlot(int32 QuickSlotIndex);

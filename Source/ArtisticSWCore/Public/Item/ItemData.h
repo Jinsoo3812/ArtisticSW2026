@@ -5,6 +5,7 @@
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/GameplayAbility.h"
+#include "Item/ConsumableDefinition.h"
 #include "ItemData.generated.h"
 
 class UStaticMesh;
@@ -58,6 +59,10 @@ struct FItemDefinition
 	/** Required for weapon items. Legacy ability/spawn fields below are for non-weapons only. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon")
 	TSoftObjectPtr<UEquippableWeaponDefinition> WeaponDefinition;
+
+	/** Native defaults support the eight built-in consumables without asset migration. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable")
+	FConsumableDefinition Consumable;
 
 	/** Item tier is intrinsic to the item, not inferred from its tag or a recipe row. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Progression", meta = (ClampMin = "0", ClampMax = "4"))
@@ -116,7 +121,7 @@ class ARTISTICSWCORE_API UItemData : public UPrimaryDataAsset
 
 public:
 	// ItemData는 주로 Tag로 접근하므로 Map 관리
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Data", meta = (Categories = "Item.Id"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Data", meta = (Categories = "Item.Id,Item.Quest"))
 	TMap<FGameplayTag, FItemDefinition> ItemDefinitions;
 
 	// 외부에서 태그로 쉽게 구조체 포인터를 얻어갈 수 있는 헬퍼 함수
