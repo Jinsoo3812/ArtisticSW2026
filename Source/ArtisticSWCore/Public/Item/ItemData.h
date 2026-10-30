@@ -5,6 +5,7 @@
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/GameplayAbility.h"
+#include "Item/ConsumableDefinition.h"
 #include "ItemData.generated.h"
 
 class UStaticMesh;
@@ -62,6 +63,10 @@ struct FItemDefinition
 	/** Legacy serialized field; migrated catalog entries leave this empty. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon")
 	TSoftObjectPtr<UEquippableWeaponDefinition> WeaponDefinition;
+
+	/** Native defaults support the eight built-in consumables without asset migration. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Consumable")
+	FConsumableDefinition Consumable;
 
 	/** Item tier is intrinsic to the item, not inferred from its tag or a recipe row. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Progression", meta = (ClampMin = "0", ClampMax = "4"))
