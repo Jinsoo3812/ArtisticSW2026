@@ -44,7 +44,13 @@ private:
 #endif
  void RefreshDevelopmentOptions();
  int32 LastDevelopmentMask = INDEX_NONE;
- TWeakObjectPtr<UAbilitySystemComponent> DevelopmentInvulnerableASC;
+ struct FDevelopmentHealthOverride
+ {
+  float OriginalMaximum = 0.f;
+  TWeakObjectPtr<AActor> Avatar;
+ };
+ TMap<TWeakObjectPtr<UAbilitySystemComponent>, FDevelopmentHealthOverride> DevelopmentHealthOverrides;
+ void RestoreDevelopmentHealth();
  bool MatchesCurrentLife(ABasePlayer* ExpectedLifeCharacter, int32 ExpectedWaitingGeneration) const;
  UFUNCTION() void OnRep_SessionEnabled();
  UFUNCTION() void OnRep_ServerRestoreGeneration();

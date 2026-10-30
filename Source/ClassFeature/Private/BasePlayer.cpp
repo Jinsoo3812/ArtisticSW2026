@@ -2164,8 +2164,27 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
-	// A selected consumable owns F, including when an interactable is in reach.
-	if (bInteractionInput && HasSelectedQuickSlotConsumable())
+	// Follow the same nearest-component selection as UInteract.
+	bool bPriorityInteraction = false;
+	if (bInteractionInput)
+	{
+		TArray<FHitResult> Hits;
+		PerformInteractTrace(Hits);
+		float Closest = MAX_flt;
+		for (const FHitResult& Hit : Hits)
+		{
+			const IInteractable* Target = Cast<IInteractable>(Hit.GetComponent());
+			if (!Target || !Hit.GetActor()) continue;
+			const float Distance = FVector::DistSquared(GetActorLocation(),
+				Hit.bStartPenetrating ? Hit.GetActor()->GetActorLocation() : FVector(Hit.ImpactPoint));
+			if (Distance >= Closest) continue;
+			Closest = Distance;
+			const FGameplayTag Tag = Target->GetInteractionTag();
+			bPriorityInteraction = Tag == Interaction_ShipBoard || Tag == Interaction_Craft
+				|| Tag == FGameplayTag::RequestGameplayTag(TEXT("Interaction.Ship.Anchor"), false);
+		}
+	}
+	if (bInteractionInput && HasSelectedQuickSlotConsumable() && !bPriorityInteraction)
 	{
 		ActivateQuickSlot(SelectedConsumableQuickSlotIndex);
 		return;

@@ -476,7 +476,7 @@ void UCraftingComponent::ProcessCraftRequest(const FCraftingRequest& Request)
 		bool bUnlocked = false;
 		if (Skills) for (FGameplayTag Tag : Skills->GetRegisteredSkillTags())
 			if (Skills->GetSkillItemTag(Tag) == Recipe->ResultItemTag) bUnlocked = Skills->IsSkillUnlocked(Tag);
-		if (!bUnlocked)
+		if (!bUnlocked && !SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree))
 		{
 			Result.Reason = ECraftingFailureReason::UnlockConditionNotMet;
 			CompleteRequest(Result);

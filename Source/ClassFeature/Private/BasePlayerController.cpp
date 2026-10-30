@@ -1849,17 +1849,27 @@ void ABasePlayerController::ApplyLocalDeathFlow()
     bRetryFocusApplied = false;
     UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=DeathFlowInputMode Controller=%s Mode=SpectatorGame"), *GetName());
    }
-   if (!DeathCamera)
+  }
+  if (!DeathCamera)
+  {
+   DeathCamera = GetWorld()->SpawnActor<ACameraActor>();
+   if (DeathCamera) { DeathCamera->SetReplicates(false); DeathCamera->SetActorEnableCollision(false); }
+  }
+  if (DeathCamera)
+  {
+   if (ABasePlayer* Corpse = GetLifeCharacter(); Corpse && Corpse->GetMesh())
    {
-    DeathCamera = GetWorld()->SpawnActor<ACameraActor>();
-    if (DeathCamera) { DeathCamera->SetReplicates(false); DeathCamera->SetActorEnableCollision(false); DeathCamera->SetActorTickEnabled(false); }
+    if (DeathCamera->GetAttachParentActor() != Corpse)
+    {
+     DeathCamera->SetActorLocationAndRotation(FrozenOwnDeathPOV.Location, FrozenOwnDeathPOV.Rotation);
+     DeathCamera->AttachToComponent(Corpse->GetMesh(), FAttachmentTransformRules::KeepWorldTransform,
+      Corpse->GetMesh()->DoesSocketExist(TEXT("pelvis")) ? FName(TEXT("pelvis")) : NAME_None);
+    }
    }
-   if (DeathCamera)
-   {
-    if (!DeathFlowState.SpectatedPlayerState || !bHasObservedPOV)
-    { DeathCamera->SetActorLocationAndRotation(FrozenOwnDeathPOV.Location, FrozenOwnDeathPOV.Rotation); DeathCamera->GetCameraComponent()->SetFieldOfView(FrozenOwnDeathPOV.FOV); }
-    if (GetViewTarget() != DeathCamera) SetViewTargetWithBlend(DeathCamera, 0);
-   }
+   else if (!DeathCamera->GetAttachParentActor())
+    DeathCamera->SetActorLocationAndRotation(FrozenOwnDeathPOV.Location, FrozenOwnDeathPOV.Rotation);
+   DeathCamera->GetCameraComponent()->SetFieldOfView(FrozenOwnDeathPOV.FOV);
+   if (GetViewTarget() != DeathCamera) SetViewTargetWithBlend(DeathCamera, 0);
   }
  }
  else if (bDeathInputLocked && Cast<ABasePlayer>(GetPawn()) && PlayerState
@@ -1868,6 +1878,7 @@ void ABasePlayerController::ApplyLocalDeathFlow()
   SetIgnoreMoveInput(false); SetIgnoreLookInput(false); bDeathInputLocked = false;
   bDeathFlowInputModeApplied = false; bDeathFlowGameOverInput = false; bRetryFocusApplied = false;
   bAutoManageActiveCameraTarget = bSavedAutoCamera; SetViewTargetWithBlend(GetPawn(), 0);
+  if (DeathCamera) DeathCamera->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
   if (PlayerHUDWidget) PlayerHUDWidget->SetVisibility(ESlateVisibility::Visible);
   SetInputMode(FInputModeGameOnly()); bShowMouseCursor = false;
   if (DeathFlowWidget) { DeathFlowWidget->RemoveFromParent(); DeathFlowWidget = nullptr; }
@@ -1895,9 +1906,7 @@ void ABasePlayerController::TickDeathFlow(float DeltaTime)
  {
   LastSpectatorRefreshTime = Now;
   ABasePlayerController* Target = nullptr;
-  if (DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn && LocalSessionPhase != ESWSessionLifePhase::GameOver && LocalSessionPhase != ESWSessionLifePhase::ReturningAfterGameOver)
-   for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-    if (ABasePlayerController* Other = Cast<ABasePlayerController>(It->Get()); Other && Other != this && Other->IsLifeCharacterAlive()) { Target = Other; break; }
+  // Keep the camera on the local corpse while waiting.
   APlayerState* TargetState = Target ? Target->PlayerState.Get() : nullptr;
   if (TargetState != DeathFlowState.SpectatedPlayerState)
   {

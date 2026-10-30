@@ -555,7 +555,7 @@ struct FShipStatRow : public FTableRowBase
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
-	float MaxHealth = 100.f;
+	float MaxHealth = 3000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float ForwardPropulsionMultiplier = 1.f;
@@ -637,6 +637,12 @@ public:
 	/** Returns the selected DT row, with legacy movement fields safely migrated in memory. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
 	FShipStatSnapshot GetBaseStatSnapshot() const;
+
+	float GetNormalMaximumHealth() const { return NormalMaximumHealth; }
+
+private:
+	float NormalMaximumHealth = 3000.f;
+public:
 
 	/** Applies an already calculated authoritative snapshot to this ship. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")

@@ -91,8 +91,7 @@ void USWDevTestInputComponent::RemoveLocal()
 }
 void USWDevTestInputComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
- if (UAbilitySystemComponent* ASC = DevelopmentInvulnerableASC.Get()) ASC->RemoveLooseGameplayTag(State_Invulnerable);
- DevelopmentInvulnerableASC.Reset();
+ RestoreDevelopmentHealth();
  RemoveLocal(); if (BoundInput.IsValid()) for (uint32 Handle:BindingHandles) BoundInput->RemoveBindingByHandle(Handle);
  BindingHandles.Reset(); BoundInput.Reset(); Super::EndPlay(Reason);
 }
@@ -307,22 +306,49 @@ void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction
  Reply(true,TEXT("정상 사망 테스트 실행"));
 }
 
+void USWDevTestInputComponent::RestoreDevelopmentHealth()
+{
+ for (const auto& Pair : DevelopmentHealthOverrides)
+  if (UAbilitySystemComponent* ASC = Pair.Key.Get())
+  {
+   const float Health = ASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+   const AShip* Ship = Cast<AShip>(ASC->GetAvatarActor());
+   const float Maximum = Ship ? Ship->GetNormalMaximumHealth() : Pair.Value.OriginalMaximum;
+   ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), Maximum);
+   ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), FMath::Min(Health, Maximum));
+  }
+ DevelopmentHealthOverrides.Reset();
+}
+
 void USWDevTestInputComponent::RefreshDevelopmentOptions()
 {
  const int32 Mask = SWDevelopmentOptions::GetMask(this);
- // Own one tag count independently of roll/game-over protection. Rebind across respawns
- // even when the option mask is unchanged; mounted players use their life character.
+ // Session grants health once per life, without suppressing hits or refilling each tick.
  if (GetOwner()->HasAuthority())
  {
-  ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
-  ABasePlayer* Player = PC ? PC->GetLifeCharacter() : nullptr;
-  UAbilitySystemComponent* DesiredASC = (Mask & SWDevelopmentOptions::Session)
-   && (Mask & SWDevelopmentOptions::PlayerInvulnerable) && Player ? Player->GetAbilitySystemComponent() : nullptr;
-  if (DevelopmentInvulnerableASC.Get() != DesiredASC)
+  if (!(Mask & SWDevelopmentOptions::Session)) RestoreDevelopmentHealth();
+  else
   {
-   if (UAbilitySystemComponent* Previous = DevelopmentInvulnerableASC.Get()) Previous->RemoveLooseGameplayTag(State_Invulnerable);
-   DevelopmentInvulnerableASC = DesiredASC;
-   if (DesiredASC) DesiredASC->AddLooseGameplayTag(State_Invulnerable);
+   TArray<UAbilitySystemComponent*> Targets;
+   if (ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner()))
+    if (ABasePlayer* Player = PC->GetLifeCharacter()) Targets.Add(Player->GetAbilitySystemComponent());
+   ABasePlayerController* Host = Cast<ABasePlayerController>(GetOwner());
+   const AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>();
+   if (Host && Mode && Mode->IsRoomHostController(Host))
+    for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+     if (It->ActorHasTag(TEXT("Player")) && !It->ActorHasTag(TEXT("Enemy"))) Targets.Add(It->GetAbilitySystemComponent());
+   for (UAbilitySystemComponent* ASC : Targets)
+   {
+    if (!ASC || !ASC->GetSet<UBaseAttributeSet>() || ASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()) <= 0.f) continue;
+    FDevelopmentHealthOverride* Existing = DevelopmentHealthOverrides.Find(ASC);
+    if (Existing && Existing->Avatar == ASC->GetAvatarActor()) continue;
+    const bool bNew = !Existing;
+    FDevelopmentHealthOverride& Entry = DevelopmentHealthOverrides.FindOrAdd(ASC);
+    if (bNew) Entry.OriginalMaximum = ASC->GetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute());
+    Entry.Avatar = ASC->GetAvatarActor();
+    ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), 1000000.f);
+    ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 1000000.f);
+   }
   }
  }
  if (GetOwner()->HasAuthority())
@@ -435,7 +461,7 @@ FAutoConsoleCommandWithWorldAndArgs FreeSkills(TEXT("SW.DevTest.SkillFree"), TEX
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillFree")); }));
 FAutoConsoleCommandWithWorldAndArgs NoCooldown(TEXT("SW.DevTest.SkillNoCooldown"), TEXT("Ignore player skill cooldowns 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillNoCooldown")); }));
-FAutoConsoleCommandWithWorldAndArgs PlayerInvulnerable(TEXT("SW.DevTest.PlayerInvulnerable"), TEXT("Player invulnerability 0|1 (default 1, requires Session)"),
+FAutoConsoleCommandWithWorldAndArgs PlayerInvulnerable(TEXT("SW.DevTest.PlayerInvulnerable"), TEXT("Legacy option; Session now grants high health instead of invulnerability"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("PlayerInvulnerable")); }));
 FAutoConsoleCommandWithWorldAndArgs SkipCampaign(TEXT("SW.DevTest.Campaign.Skip"), TEXT("After Yi dialogue: Recon|SupplyPatrol|Decipher|Suppress|Uldolmok|Ending"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) {
