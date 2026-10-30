@@ -1,4 +1,9 @@
 ---,ItemName,HowToInteractText,AttachmentSocketName,MaxStack
+Item.Quest.CipherBook,암호 해독서,Pick Up,GripPoint,99
+Item.Quest.InvasionMap,침공 지도,Pick Up,GripPoint,99
+Item.Quest.JapaneseCipher,일본군 암호,Pick Up,GripPoint,99
+Item.Quest.DecipheredCipher,해독된 암호,Pick Up,GripPoint,99
+Item.Quest.AirRaidInfo,공습 정보,Pick Up,GripPoint,99
 Item.Tool.TestRed,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Tool.TestRed_ItemName"", ""Test_RedItem"")","NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Tool.TestRed_HowToInteractText"", ""F to Pick Up"")","HandGrip_R","99"
 Item.Tool.TestBlue,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Tool.TestBlue_ItemName"", ""Test_BlueItem"")","NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Tool.TestBlue_HowToInteractText"", ""F to Pick Up"")","HandGrip_R","99"
 Item.Tool.Grenade,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Tool.Grenade_ItemName"", ""Test_Grenade"")","NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Tool.Grenade_HowToInteractText"", ""F to Pick Up"")","HandGrip_R","99"
@@ -43,9 +48,9 @@ Item.Id.Material.WeaponSpecialMaterial.EpicMaterial,영웅 등급 무기 전용 
 Item.Id.Material.WeaponSpecialRecipe.EpicRecipe,영웅 등급 무기 제작 레시피,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Material.WeaponSpecialMaterial.EpicRecipe_HowToInteractText"", ""Pick Up"")","GripPoint","99"
 Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial,전설 등급 무기 전용 재료,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial_HowToInteractText"", ""Pick Up"")","GripPoint","99"
 Item.Id.Material.WeaponSpecialRecipe.LegendaryRecipe,전설 등급 무기 제작 레시피,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Material.WeaponSpecialMaterial.LegendaryRecipe_HowToInteractText"", ""Pick Up"")","GripPoint","99"
-Item.Id.Skill.Bombardment,포탄 세례,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Skill.CannonBarrage_HowToInteractText"", ""Pick Up"")","GripPoint","1"
-Item.Id.Skill.GravityVortex,해류 발생기,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Skill.CurrentGenerator_HowToInteractText"", ""Pick Up"")","GripPoint","1"
-Item.Id.Skill.WaterBomb,물폭탄,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Skill.WaterBomb_HowToInteractText"", ""Pick Up"")","GripPoint","1"
+Item.Id.Skill.Bombardment,포탄세례 사용 아이템,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Skill.CannonBarrage_HowToInteractText"", ""Pick Up"")","GripPoint","99"
+Item.Id.Skill.GravityVortex,해류 발생기 사용 아이템,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Skill.CurrentGenerator_HowToInteractText"", ""Pick Up"")","GripPoint","99"
+Item.Id.Skill.WaterBomb,물폭탄 사용 아이템,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Skill.WaterBomb_HowToInteractText"", ""Pick Up"")","GripPoint","99"
 Item.Id.Weapon.Bow.LongBow1,장궁 1,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Weapon.Bow.LongBow1_HowToInteractText"", ""Pick Up"")","Bow","1"
 Item.Id.Weapon.Bow.LongBow2,장궁 2,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Weapon.Bow.LongBow2_HowToInteractText"", ""Pick Up"")","GripPoint","1"
 Item.Id.Weapon.Bow.LongBow3,장궁 3,"NSLOCTEXT(""ItemFeatureDataTable [CE4F9767908EFAB88519A3F55F9DFE96]"", ""Item.Id.Weapon.Bow.LongBow3_HowToInteractText"", ""Pick Up"")","GripPoint","1"

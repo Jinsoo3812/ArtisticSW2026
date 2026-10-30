@@ -497,6 +497,7 @@ public:
 
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
+	void LogCombatInputDiagnostic(const TCHAR* Event, FGameplayTag InputTag = FGameplayTag()) const;
 	void OnAbilityInputReleased(FGameplayTag InputTag);
 	void OnShipRepairInteractionReleased();
 	void OnShipRepairInteractionPressed();

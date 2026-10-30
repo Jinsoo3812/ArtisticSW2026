@@ -54,6 +54,7 @@
 #include "Components/ChildActorComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/UnrealType.h"
+#include "UObject/ConstructorHelpers.h"
 #include "SWCabinWaterCullComponent.h"
 #include "DeckAI/DeckSpawnAnchorValidator.h"
 #include "Room/SWRoomSnapshotComponent.h"
@@ -218,6 +219,9 @@ namespace
 
 AEnemyShip::AEnemyShip()
 {
+	static ConstructorHelpers::FClassFinder<AStorageChest> DefaultChest(TEXT("/Game/Blueprints/Item/BP/Chest/BP_Storage_Chest"));
+	ChestSpawnPointChestSettings.ChestClassOverride = DefaultChest.Class;
+	bInvertShipLookYaw = false;
 	BossEncounterComponent = CreateDefaultSubobject<UBossEncounterComponent>(TEXT("BossEncounterComponent"));
 	DeckEnemySpawnerComponent = CreateDefaultSubobject<UDeckEnemySpawnerComponent>(TEXT("DeckEnemySpawnerComponent"));
 	DeckWalkAreaComponent = CreateDefaultSubobject<UDeckWalkAreaComponent>(TEXT("DeckWalkAreaComponent"));
@@ -246,20 +250,31 @@ AEnemyShip::AEnemyShip()
 void AEnemyShip::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+	// Match BP_PlayerShip_Kelvin even when an older BP serialized the inherited true default.
+	bInvertShipLookYaw = false;
 	ApplyChestSpawnPointSettings();
 }
 
 void AEnemyShip::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
+	bInvertShipLookYaw = false;
 	if (IsFinalBossSquadShip()) ApplyStoryGatePresentation();
 	ApplyChestSpawnPointSettings();
+}
+
+TSubclassOf<AStorageChest> AEnemyShip::GetDeckChestClass() const
+{
+	return ChestSpawnPointChestSettings.ChestClassOverride
+		? ChestSpawnPointChestSettings.ChestClassOverride
+		: GetDefault<AEnemyShip>()->ChestSpawnPointChestSettings.ChestClassOverride;
 }
 
 void AEnemyShip::ApplyChestSpawnPointSettings()
 {
 	ChestSpawnPointLootSettings.SpawnMode = ChestSpawnPointChestSettings.SpawnMode;
 	FChestSpawnPointChestSettings DeckChestSettings = ChestSpawnPointChestSettings;
+	DeckChestSettings.ChestClassOverride = GetDeckChestClass();
 	DeckChestSettings.Environment = EChestEnvironment::ShipDeck;
 	DeckChestSettings.OwningShip = this;
 	if (DeckChestSettings.SpawnMode == EChestSpawnMode::Guarded)
@@ -1030,6 +1045,13 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 	// reset by home-return/fresh encounter handling, not by this suspension flag.
 
 	bDistanceOptimizationDormant = bDormant;
+	if (EnemyShipDiagnostics::QueueLogLevel() > 0)
+	{
+		const USWRoomSnapshotComponent* Snapshot = FindComponentByClass<USWRoomSnapshotComponent>();
+		UE_LOG(LogEnemyShipInit, Display, TEXT("[EnemyShipQueue] Side=Server Event=DistanceDormancy UTC=%s NowSec=%.6f GameSec=%.3f Id=%s Actor=%s Dormant=%d RangeCm=%.1f Position=%s"),
+			*FDateTime::UtcNow().ToIso8601(), FPlatformTime::Seconds(), GetWorld()->GetTimeSeconds(), Snapshot ? *Snapshot->StableId.ToString() : TEXT("None"),
+			*GetName(), bDormant, DistanceOptimizationRange, *GetActorLocation().ToCompactString());
+	}
 	ApplyEffectiveDormancyState();
 	ForceNetUpdate();
 	if (bDormant)
@@ -1706,7 +1728,7 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 	const FRotator SpawnRotation(0.0f, DeathRotation.Yaw, 0.0f);
 	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
 
-	TSubclassOf<AStorageChest> ChestClass = ChestSpawnPointChestSettings.ChestClassOverride;
+	TSubclassOf<AStorageChest> ChestClass = GetDeckChestClass();
 	if (!ChestClass) ChestClass = AStorageChest::StaticClass();
 	AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
 		ChestClass,

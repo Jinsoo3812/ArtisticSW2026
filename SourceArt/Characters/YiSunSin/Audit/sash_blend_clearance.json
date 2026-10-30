@@ -1,0 +1,6 @@
+{
+  "gait_sash_forward_offset_m": 0.1,
+  "idle_forward_offset_m": 0,
+  "fixed_knot_unchanged": true,
+  "runtime_solver": false
+}

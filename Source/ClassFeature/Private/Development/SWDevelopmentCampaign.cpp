@@ -10,13 +10,10 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerState.h"
-#include "Inventory/InventoryComponent.h"
-#include "Item/ItemSubsystem.h"
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Room/SWRoomReadyState.h"
 #include "Room/SWLevelEntryPoint.h"
 #include "Room/SWFinalEncounterShipEntryPoint.h"
-#include "Skills/PlayerSkillComponent.h"
 #include "StoryFacadeSubsystem.h"
 #include "StorySaveGame.h"
 #include "Storage/StorageChest.h"
@@ -27,17 +24,9 @@ bool UClassFeatureRoomProgressSubsystem::PrepareDevelopmentCampaign(UWorld* Worl
  USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
  AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
  UStoryFacadeSubsystem* Story = GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>();
- UItemSubsystem* Items = World ? World->GetSubsystem<UItemSubsystem>() : nullptr;
  UStorySaveGame* PreparedStory = Story ? Story->BuildDevelopmentCheckpoint(CampaignTarget, OutError) : nullptr;
- if (!Room || !Room->GetActiveRoom() || !Mode || !Items || !PreparedStory) return false;
+ if (!Room || !Room->GetActiveRoom() || !Mode || !PreparedStory) return false;
  const int32 Index = UStoryFacadeSubsystem::GetDevelopmentCheckpointIndex(CampaignTarget);
- TArray<FGameplayTag> Rewards = { Item_Quest_CipherBook };
- if (Index >= 1) Rewards.Add(Item_Quest_InvasionMap);
- if (Index >= 2) Rewards.Add(Item_Quest_JapaneseCipher);
- if (Index >= 3) Rewards.Add(Item_Quest_DecipheredCipher);
- if (Index >= 4) Rewards.Add(Item_Quest_AirRaidInfo);
- for (const FGameplayTag Tag : Rewards)
-  if (!Items->GetItemDefinition(Tag)) { OutError = FString::Printf(TEXT("Missing item definition: %s"), *Tag.ToString()); return false; }
  if (!CaptureSharedWorld(World)) { OutError = TEXT("Cannot capture shared room progress."); return false; }
  CampaignPreparedRoom = DuplicateObject<USWRoomSaveGame>(Room->GetActiveRoom(), this);
  FSWRoomSharedProgress& Shared = CampaignPreparedRoom->SharedProgress;
@@ -54,31 +43,18 @@ bool UClassFeatureRoomProgressSubsystem::PrepareDevelopmentCampaign(UWorld* Worl
  {
   ABasePlayerController* PC = Cast<ABasePlayerController>(It->Get());
   ABasePlayer* Player = PC ? PC->GetLifeCharacter() : nullptr;
-  UInventoryComponent* Inventory = Player ? Player->GetInventoryComponent() : nullptr;
-  UPlayerSkillComponent* Skills = Player ? Player->GetPlayerSkillComponent() : nullptr;
-  if (!PC || !PC->IsLifeCharacterAlive() || !Inventory || !Skills || Player->GetController() != PC || !PC->PlayerState)
+  if (!PC || !Player || !PC->IsLifeCharacterAlive() || Player->GetController() != PC || !PC->PlayerState)
   { OutError = TEXT("All connected players must be alive, restored, and dismounted."); return false; }
   FSWRoomPlayerProgress Progress;
   Player->CaptureRoomProgress(Progress);
   if (!Progress.CaptureIssues.IsEmpty()) { OutError = TEXT("Player capture has unresolved issues."); return false; }
-  TArray<FCraftingItemStack> Grants;
-  for (const FGameplayTag Tag : Rewards)
-   if (Inventory->GetItemCount(Tag) < 1)
-   { FCraftingItemStack& Grant = Grants.AddDefaulted_GetRef(); Grant.ItemTag = Tag; Grant.Quantity = 1; }
-  if (!Inventory->BuildSnapshotWithAddedItems(Grants, Progress.InventorySlots))
-  { OutError = FString::Printf(TEXT("Not enough inventory space: %s"), *PC->PlayerState->GetPlayerName()); return false; }
-  auto Unlock = [&Progress, Skills](FGameplayTag Tag)
+  for (FSWRoomSkillProgress& Skill : Progress.Skills)
   {
-   if (!Skills->FindSkillDefinition(Tag)) return false;
-   FSWRoomSkillProgress* Skill = Progress.Skills.FindByPredicate([Tag](const FSWRoomSkillProgress& Entry) { return Entry.SkillTag == Tag; });
-   if (!Skill) { Skill = &Progress.Skills.AddDefaulted_GetRef(); Skill->SkillTag = Tag; }
-   Skill->bUnlocked = true; Skill->bConditionsMet = true;
-   return true;
-  };
-  if ((Index >= 1 && !Unlock(GameplayAbility_Skill_GravityVortex))
-   || (Index >= 3 && !Unlock(GameplayAbility_Skill_WaterBomb))
-   || (Index >= 4 && !Unlock(GameplayAbility_Skill_Bombardment)))
-  { OutError = TEXT("Required campaign skill definition is missing."); return false; }
+   Skill.bUnlocked = false;
+   Skill.bConditionsMet = (Index >= 1 && Skill.SkillTag == GameplayAbility_Skill_GravityVortex)
+    || (Index >= 3 && Skill.SkillTag == GameplayAbility_Skill_WaterBomb)
+    || (Index >= 4 && Skill.SkillTag == GameplayAbility_Skill_Bombardment);
+  }
   if (Mode->GetPlayerIndex(PC) == 0)
   { if (bHostFound) return false; bHostFound = true; CampaignPreparedRoom->HostProgress = Progress; }
   else
@@ -178,7 +154,7 @@ bool UClassFeatureRoomProgressSubsystem::CommitDevelopmentCampaign(UWorld* World
   Room->SetDevelopmentFinalDeparturePending(World, true, true);
  bTravelAccepted = UStoryFacadeSubsystem::GetDevelopmentCheckpointIndex(CampaignTarget) == 4
   ? Mode->RequestHostedRoomFinalDepartureTravel() : Mode->RequestHostedRoomReturnTravel();
- if (!bTravelAccepted) { OutError = TEXT("Server restart was rejected; campaign rewards were not applied."); return false; }
+ if (!bTravelAccepted) { OutError = TEXT("Server restart was rejected; story checkpoint was not applied."); return false; }
  return true;
 }
 
@@ -195,7 +171,7 @@ void UClassFeatureRoomProgressSubsystem::CancelDevelopmentCampaign()
   Room->ExpectedTransitionPlayers.Reset();
   Room->SetDevelopmentFinalDeparturePending(GetGameInstance()->GetWorld(), false);
  }
- for (const auto& PC : ReturnControllers) if (PC.IsValid()) PC->ClientMessage(TEXT("Campaign skip cancelled. No rewards or story changes applied."));
+ for (const auto& PC : ReturnControllers) if (PC.IsValid()) PC->ClientMessage(TEXT("Campaign skip cancelled. Story checkpoint was not applied."));
  CampaignPreparedRoom = nullptr; CampaignRollbackRoom = nullptr; CampaignTarget = NAME_None;
  bCampaignRestorePending = false;
 }

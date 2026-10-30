@@ -68,12 +68,10 @@ public:
 
 	/** Development departure commits the real final quest without fabricating earlier completions. */
 	bool ActivateDevelopmentFinalBattle();
- /** Cumulative checkpoints AFTER each Yi dialogue, including unlocked side branches. */
+ /** Exact development state AFTER each Yi dialogue, independent of current campaign progress. */
  static int32 GetDevelopmentCheckpointIndex(FName Target);
  UStorySaveGame* BuildDevelopmentCheckpoint(FName Target, FString& OutError) const;
 
-	/** Development only: replaces campaign progress with the selected middle-boss quest stage. */
-	bool ActivateDevelopmentMiddleBoss(int32 BossNumber);
 
 	/** True from completion onward, including after save/load and replication. */
 	UFUNCTION(BlueprintPure, Category = "Story")

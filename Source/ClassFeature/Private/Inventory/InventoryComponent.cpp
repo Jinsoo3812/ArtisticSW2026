@@ -789,7 +789,7 @@ EInventoryTab UInventoryComponent::ResolveItemTab(UWorld* World, const FGameplay
         }
     }
 
-    if (ItemTag.MatchesTag(Item_Id_Clue)) return EInventoryTab::Clue;
+    if (ItemTag.MatchesTag(Item_Id_Clue) || ItemTag.MatchesTag(Item_Quest)) return EInventoryTab::Clue;
     if (ItemTag.MatchesTag(Item_Id_Consumables)) return EInventoryTab::Consumable;
     if (ItemTag.MatchesTag(Item_Id_Weapon)) return EInventoryTab::Weapon;
 

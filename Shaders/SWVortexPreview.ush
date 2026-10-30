@@ -19,10 +19,30 @@ float SW_ComputeVortexPreviewMask(
     const float DistanceSquared = dot(
         WorldPosition.xy - CenterRadius.xy,
         WorldPosition.xy - CenterRadius.xy);
+    if (Feather <= 0.0)
+    {
+        return DistanceSquared < Radius * Radius ? 1.0 : 0.0;
+    }
     return 1.0 - smoothstep(
         InnerRadius * InnerRadius,
         Radius * Radius,
         DistanceSquared);
+}
+
+void SW_ApplyWaterSkillOverlay(
+    float3 WorldPosition,
+    float4 CenterRadius,
+    float4 Color,
+    float3 PreviewTint,
+    float EdgeFeather,
+    inout float4 Result)
+{
+    const float Mask = SW_ComputeVortexPreviewMask(WorldPosition, CenterRadius, 1.0, EdgeFeather);
+    [branch]
+    if (Mask > 0.0)
+    {
+        Result = float4(lerp(PreviewTint, Color.rgb, saturate(Color.a)), Mask);
+    }
 }
 
 #endif

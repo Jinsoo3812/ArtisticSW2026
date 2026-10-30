@@ -12,6 +12,7 @@ void ASWRoomReadyState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASWRoomReadyState, DevelopmentOptionMask);
+	DOREPLIFETIME(ASWRoomReadyState, DevelopmentShipSpeedMultiplier);
 	DOREPLIFETIME(ASWRoomReadyState, RestoreGeneration);
 	DOREPLIFETIME(ASWRoomReadyState, bWorldReady);
 	DOREPLIFETIME(ASWRoomReadyState, RoomRunId);

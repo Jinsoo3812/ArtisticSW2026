@@ -1,0 +1,20 @@
+{
+  "new_bones": [
+    "npc_sash_01",
+    "npc_sash_02",
+    "npc_sash_03",
+    "npc_sash_04"
+  ],
+  "original_bones_preserved": 83,
+  "npc_bones": 87,
+  "tail_vertices": 1280,
+  "fixed_knot_and_belt_vertices": 928,
+  "runtime_solver": false,
+  "clips": [
+    "Idle_Upright",
+    "Walk",
+    "Run"
+  ],
+  "front_clearance_max_m": 0.085,
+  "original_mesh_and_actions_preserved": true
+}

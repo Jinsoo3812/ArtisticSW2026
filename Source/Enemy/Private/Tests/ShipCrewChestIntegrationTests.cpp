@@ -345,7 +345,17 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Campaign state belongs to isolated game instance"), Story)) return false;
 	const bool bAuthored = Parameters.Contains(TEXT("Authored"));
 	const bool bMid3 = Parameters.Contains(TEXT("Mid3"));
-	Story->ActivateDevelopmentMiddleBoss(bMid3 ? 3 : 1);
+	TestTrue(TEXT("Campaign starts without legacy stage replacement"), Story->StartNewCampaign());
+	TestTrue(TEXT("Recon quest accepted"), Story->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
+	if (bMid3)
+	{
+		const EStoryNode Prerequisites[] = { EStoryNode::MiddleBoss1Defeated,
+			EStoryNode::SupplyPatrolQuestAccepted, EStoryNode::CurrentGeneratorUnlocked,
+			EStoryNode::MiddleBoss2Defeated, EStoryNode::DecipherQuestAccepted,
+			EStoryNode::SuppressJapaneseForcesQuestAccepted, EStoryNode::WaterBombUnlocked };
+		for (const EStoryNode Node : Prerequisites)
+			TestTrue(TEXT("Boss fixture reaches its prerequisite through the campaign facade"), Story->CompleteStoryNode(Node));
+	}
 	UBossEncounterComponent* Encounter = Fixture.Ship->GetBossEncounterComponent();
 	if (bMid3)
 	{

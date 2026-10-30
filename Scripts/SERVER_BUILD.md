@@ -77,7 +77,7 @@ C:\UnrealSource\UE5.7.4\Engine\Saved\UnrealBuildTool\BuildConfiguration.xml
 
 MSVC 14.44 구성 요소가 설치되어 있어야 한다. 이 XML은 별도 소스 엔진에만 적용하며, 스크립트는 설치나 설정 덮어쓰기를 자동 실행하지 않는다. 엔진 버전을 변경하면 스크립트와 도구 체인 설정도 함께 검토한다.
 
-UBT는 변경된 코드와 의존성을 증분 빌드한다. 이 스크립트의 Cook은 반복 Cook 시간을 줄이는 옵션을 별도로 사용하지 않으므로 콘텐츠 규모에 따라 시간이 걸린다. 방 생성의 기본값은 기존 UnrealEditor.exe -server이고, 아래 CVar로 패키징 서버를 선택할 수 있다. 기존 클라이언트 패키지에는 새 CVar가 자동 반영되지 않으므로 클라이언트도 다시 패키징해야 한다.
+UBT는 변경된 코드와 의존성을 증분 빌드한다. 이 스크립트의 Cook은 반복 Cook 시간을 줄이는 옵션을 별도로 사용하지 않으므로 콘텐츠 규모에 따라 시간이 걸린다. 방 생성의 기본값은 패키징 서버(`sw.Room.ServerBackend 1`)이며, 실행 경로는 아래와 같다. 기존 패키지에는 코드 변경이 자동 반영되지 않으므로 클라이언트와 서버를 다시 패키징해야 한다.
 
 ## 전체 PowerShell 명령: 서버 빌드부터 패키징·에디터 복구까지
 
@@ -123,16 +123,16 @@ Development 클라이언트 또는 에디터 -game의 콘솔에서 설정한다.
 sw.Room.ServerBackend 0
 ```
 
-0은 기존 에디터 서버이며 기본값이다. 기존 SWLocalEditorServer 및 SWRoomEditorExe/SWRoomProject 경로를 사용한다.
+0은 기존 에디터 서버를 명시적으로 선택한다. 기존 SWLocalEditorServer 및 SWRoomEditorExe/SWRoomProject 경로를 사용한다.
 
 ```text
-sw.Room.ServerExe "C:/UnrealBuilds/ArtisticSW2026Server-UE574/WindowsServer/ArtisticSW2026/Binaries/Win64/ArtisticSW2026Server.exe"
+sw.Room.ServerExe "C:/Unreal Projects/ArtisticSW2026/Packaged/Server/WindowsServer/ArtisticSW2026/Binaries/Win64/ArtisticSW2026Server.exe"
 sw.Room.ServerBackend 1
 ```
 
-1은 패키징 서버다. 경로는 원하는 날짜별 패키지의 실제 내부 exe로 바꾼다. 루트 WindowsServer/ArtisticSW2026Server.exe는 bootstrap이므로 지정하지 않는다. exe가 들어 있는 폴더의 상대 구조와 Content/Paks를 포함한 WindowsServer 전체 폴더를 유지한다.
+1은 기본값인 패키징 서버다. 위 경로도 CVar의 기본값이다. 경로는 원하는 날짜별 패키지의 실제 내부 exe로 바꿀 수 있다. 루트 WindowsServer/ArtisticSW2026Server.exe는 bootstrap이므로 지정하지 않는다. exe가 들어 있는 폴더의 상대 구조와 Content/Paks를 포함한 WindowsServer 전체 폴더를 유지한다.
 
-서버 exe 경로 우선순위는 비어 있지 않은 sw.Room.ServerExe → 실행 인자 -SWRoomServerExe → DefaultGame.ini의 [SWLocalPackagedServer] ServerExecutable이다. 콘솔에서 `sw.Room.ServerExe ""`로 CVar 경로를 초기화하면 실행 인자/설정 경로를 사용한다. 현재 설정의 기본 경로는 첫 성공 패키지이며, BuildServer.bat의 최신 날짜별 폴더로 자동 전환하지 않는다.
+서버 exe 경로 우선순위는 비어 있지 않은 sw.Room.ServerExe → 실행 인자 -SWRoomServerExe → DefaultGame.ini의 [SWLocalPackagedServer] ServerExecutable이다. 콘솔에서 `sw.Room.ServerExe ""`로 CVar 경로를 초기화하면 실행 인자/설정 경로를 사용한다. CVar 기본 경로는 프로젝트의 Packaged/Server 내부 exe이며, BuildServer.bat의 최신 날짜별 폴더로 자동 전환하지 않는다.
 
 CVar 변경은 다음 방 생성·이어하기에 적용한다. 공인 IP 확인 중이거나 방 서버가 이미 실행 중일 때 변경해도 진행 중인 방의 서버를 바꾸지 않는다. 잘못된 backend 또는 경로는 오류/호스트 버튼 비활성 상태로 처리하며 에디터로 자동 fallback하지 않는다. 실행 로그의 Backend=Editor/Packaged와 Executable로 실제 선택을 확인한다.
 

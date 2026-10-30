@@ -13,6 +13,7 @@
 #include "Room/SWRoomReadyState.h"
 #include "Components/BaseHealthComponent.h"
 #include "BaseAttributeSet.h"
+#include "BaseGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "Ship.h"
 #include "EnhancedInputComponent.h"
@@ -90,6 +91,8 @@ void USWDevTestInputComponent::RemoveLocal()
 }
 void USWDevTestInputComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
+ if (UAbilitySystemComponent* ASC = DevelopmentInvulnerableASC.Get()) ASC->RemoveLooseGameplayTag(State_Invulnerable);
+ DevelopmentInvulnerableASC.Reset();
  RemoveLocal(); if (BoundInput.IsValid()) for (uint32 Handle:BindingHandles) BoundInput->RemoveBindingByHandle(Handle);
  BindingHandles.Reset(); BoundInput.Reset(); Super::EndPlay(Reason);
 }
@@ -212,7 +215,7 @@ void USWDevTestInputComponent::ServerSetSessionEnabled_Implementation(bool bEnab
  State->SetDevelopmentTestSessionEnabled(GetWorld(),bEnabled);
  RefreshDevelopmentOptions();
  for (FConstPlayerControllerIterator It=GetWorld()->GetPlayerControllerIterator(); It; ++It) if (ABasePlayerController* Target=Cast<ABasePlayerController>(It->Get()))
- { Target->DevTestInput->bServerSessionEnabled=bEnabled; Target->DevTestInput->ServerRestoreGeneration=State->GetRestoreGeneration(); Target->DevTestInput->RefreshLocalState(); Target->ForceNetUpdate(); }
+ { Target->DevTestInput->bServerSessionEnabled=bEnabled; Target->DevTestInput->ServerRestoreGeneration=State->GetRestoreGeneration(); Target->DevTestInput->RefreshDevelopmentOptions(); Target->DevTestInput->RefreshLocalState(); Target->ForceNetUpdate(); }
 }
 void USWDevTestInputComponent::OnRep_SessionEnabled(){ RefreshLocalState(); }
 void USWDevTestInputComponent::OnRep_ServerRestoreGeneration(){ RefreshLocalState(); }
@@ -307,6 +310,21 @@ void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction
 void USWDevTestInputComponent::RefreshDevelopmentOptions()
 {
  const int32 Mask = SWDevelopmentOptions::GetMask(this);
+ // Own one tag count independently of roll/game-over protection. Rebind across respawns
+ // even when the option mask is unchanged; mounted players use their life character.
+ if (GetOwner()->HasAuthority())
+ {
+  ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+  ABasePlayer* Player = PC ? PC->GetLifeCharacter() : nullptr;
+  UAbilitySystemComponent* DesiredASC = (Mask & SWDevelopmentOptions::Session)
+   && (Mask & SWDevelopmentOptions::PlayerInvulnerable) && Player ? Player->GetAbilitySystemComponent() : nullptr;
+  if (DevelopmentInvulnerableASC.Get() != DesiredASC)
+  {
+   if (UAbilitySystemComponent* Previous = DevelopmentInvulnerableASC.Get()) Previous->RemoveLooseGameplayTag(State_Invulnerable);
+   DevelopmentInvulnerableASC = DesiredASC;
+   if (DesiredASC) DesiredASC->AddLooseGameplayTag(State_Invulnerable);
+  }
+ }
  if (GetOwner()->HasAuthority())
   if (ASWRoomReadyState* Ready = SWDevTestInput::Ready(GetWorld()); Ready && Ready->DevelopmentOptionMask != Mask)
   { Ready->DevelopmentOptionMask = Mask; Ready->ForceNetUpdate(); }
@@ -323,6 +341,14 @@ void USWDevTestInputComponent::RefreshDevelopmentOptions()
   if (UShipUpgradeComponent* Upgrade = It->FindComponentByClass<UShipUpgradeComponent>()) Upgrade->OnUpgradeDataChanged.Broadcast();
 }
 
+void USWDevTestInputComponent::ServerSetShipSpeedMultiplier_Implementation(float Multiplier)
+{
+ if (!SWDevTestInput::Allowed() || !Cast<ABasePlayerController>(GetOwner())) return;
+ const bool bApplied = SWDevelopmentOptions::SetShipSpeedMultiplier(this, Multiplier);
+ UE_LOG(LogSWDevTestInput, Display, TEXT("ShipSpeedMultiplier Applied=%d Value=%g Requester=%s"),
+  bApplied, SWDevelopmentOptions::GetShipSpeedMultiplier(this), *GetNameSafe(GetOwner()));
+}
+
 void USWDevTestInputComponent::ServerSetDevelopmentOption_Implementation(FName Option, bool bEnabled)
 {
  if (!SWDevTestInput::Allowed() || !SWDevTestInput::SafeWorld(GetWorld())) return;
@@ -335,9 +361,11 @@ void USWDevTestInputComponent::ServerSetDevelopmentOption_Implementation(FName O
  else if (Option == TEXT("CraftingFree")) Bit = SWDevelopmentOptions::CraftingFree;
  else if (Option == TEXT("SkillFree")) Bit = SWDevelopmentOptions::SkillFree;
  else if (Option == TEXT("SkillNoCooldown")) Bit = SWDevelopmentOptions::SkillNoCooldown;
+ else if (Option == TEXT("PlayerInvulnerable")) Bit = SWDevelopmentOptions::PlayerInvulnerable;
  if (!Bit) return;
  if (bEnabled) Room->DevelopmentOptionMask |= Bit; else Room->DevelopmentOptionMask &= ~Bit;
- RefreshDevelopmentOptions();
+ for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+  if (ABasePlayerController* Target = Cast<ABasePlayerController>(It->Get())) Target->DevTestInput->RefreshDevelopmentOptions();
  PC->ClientMessage(FString::Printf(TEXT("SW.DevTest.%s = %d (Session must be enabled)"), *Option.ToString(), bEnabled));
 }
 
@@ -376,6 +404,29 @@ void SetDevelopmentOption(const TArray<FString>& Args, UWorld* World, FName Name
  if (Args.Num() != 1 || (Args[0] != TEXT("0") && Args[0] != TEXT("1"))) return;
  if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetDevelopmentOption(Name, Args[0] == TEXT("1"));
 }
+FAutoConsoleCommandWithWorldAndArgs ShipSpeedMultiplier(TEXT("SW.DevTest.ShipSpeedMultiplier"),
+ TEXT("Set shared player ship propulsion multiplier through the server: [multiplier]. No argument prints the replicated value. Any development client may set it."),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  if (!World || !World->IsGameWorld()) return;
+  if (Args.IsEmpty())
+  {
+   UE_LOG(LogSWDevTestInput, Display, TEXT("SW.DevTest.ShipSpeedMultiplier = %g"), SWDevelopmentOptions::GetShipSpeedMultiplier(World));
+   return;
+  }
+  float Multiplier = 1.0f;
+  if (Args.Num() != 1 || !LexTryParseString(Multiplier, *Args[0]) || !FMath::IsFinite(Multiplier))
+  {
+   UE_LOG(LogSWDevTestInput, Warning, TEXT("Usage: SW.DevTest.ShipSpeedMultiplier <finite multiplier>"));
+   return;
+  }
+  if (World->GetNetMode() != NM_Client)
+  {
+   const bool bApplied = SWDevelopmentOptions::SetShipSpeedMultiplier(World, Multiplier);
+   UE_LOG(LogSWDevTestInput, Display, TEXT("ShipSpeedMultiplier Applied=%d Value=%g"), bApplied, SWDevelopmentOptions::GetShipSpeedMultiplier(World));
+  }
+  else if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetShipSpeedMultiplier(Multiplier);
+  else UE_LOG(LogSWDevTestInput, Warning, TEXT("ShipSpeedMultiplier requires one local player controller."));
+ }));
 FAutoConsoleCommandWithWorldAndArgs FreeUpgrade(TEXT("SW.DevTest.ShipUpgradeFree"), TEXT("Ignore ship materials 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("ShipUpgradeFree")); }));
 FAutoConsoleCommandWithWorldAndArgs FreeCrafting(TEXT("SW.DevTest.CraftingFree"), TEXT("Ignore recipes and materials 0|1"),
@@ -384,17 +435,19 @@ FAutoConsoleCommandWithWorldAndArgs FreeSkills(TEXT("SW.DevTest.SkillFree"), TEX
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillFree")); }));
 FAutoConsoleCommandWithWorldAndArgs NoCooldown(TEXT("SW.DevTest.SkillNoCooldown"), TEXT("Ignore player skill cooldowns 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillNoCooldown")); }));
+FAutoConsoleCommandWithWorldAndArgs PlayerInvulnerable(TEXT("SW.DevTest.PlayerInvulnerable"), TEXT("Player invulnerability 0|1 (default 1, requires Session)"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("PlayerInvulnerable")); }));
 FAutoConsoleCommandWithWorldAndArgs SkipCampaign(TEXT("SW.DevTest.Campaign.Skip"), TEXT("After Yi dialogue: Recon|SupplyPatrol|Decipher|Suppress|Uldolmok|Ending"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) {
   if (A.Num() == 1) if (USWDevTestInputComponent* Input = FindDevelopmentInput(W)) Input->RequestCampaignSkip(FName(*A[0]));
  }));
 FAutoConsoleCommandWithWorldAndArgs CampaignList(TEXT("SW.DevTest.Campaign.List"), TEXT("List supported dialogue checkpoints"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld*) {
-  UE_LOG(LogSWDevTestInput, Display, TEXT("After Yi dialogue: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending. Includes prior side branches; forward only."));
+  UE_LOG(LogSWDevTestInput, Display, TEXT("After Yi dialogue: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending. Replaces story progress and restarts the level regardless of current progress. Does not grant items or skills."));
  }));
 FAutoConsoleCommandWithWorldAndArgs DevelopmentStatus(TEXT("SW.DevTest.Status"), TEXT("Print active development option mask and campaign targets"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* W) {
-  UE_LOG(LogSWDevTestInput, Display, TEXT("Mask=%d (Session=16 Upgrade=1 Crafting=2 Skills=4 Cooldown=8). Campaign: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending"), SWDevelopmentOptions::GetMask(W));
+  UE_LOG(LogSWDevTestInput, Display, TEXT("Mask=%d (Session=16 Upgrade=1 Crafting=2 Skills=4 Cooldown=8 PlayerInvulnerable=32). Campaign: Recon, SupplyPatrol, Decipher, Suppress, Uldolmok, Ending"), SWDevelopmentOptions::GetMask(W));
  }));
 }
 #endif

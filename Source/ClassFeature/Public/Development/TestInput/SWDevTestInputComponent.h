@@ -8,6 +8,7 @@ class UEnhancedInputComponent;
 class UEnhancedInputLocalPlayerSubsystem;
 class USWDevTestInputWidget;
 class ABasePlayer;
+class UAbilitySystemComponent;
 UENUM()
 enum class ESWDevTestAction : uint8 { KillSelf, KillBoth, SinkPlayerShip, EnterFinalEncounter };
 UCLASS()
@@ -20,6 +21,7 @@ public:
  void SetLocalInputDesired(bool bDesired);
  void RequestSessionEnabled(bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerSetDevelopmentOption(FName Option, bool bEnabled);
+ UFUNCTION(Server, Reliable) void ServerSetShipSpeedMultiplier(float Multiplier);
  UFUNCTION(Server, Reliable) void ServerSkipCampaign(FName Target, int32 ExpectedGeneration);
  void RequestCampaignSkip(FName Target);
  /** Console and key input share the same session, UI, generation and server policy. */
@@ -38,9 +40,11 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
  friend class FPlayerDeathDevelopmentTest;
+ friend class FDevelopmentPlayerInvulnerabilityTest;
 #endif
  void RefreshDevelopmentOptions();
  int32 LastDevelopmentMask = INDEX_NONE;
+ TWeakObjectPtr<UAbilitySystemComponent> DevelopmentInvulnerableASC;
  bool MatchesCurrentLife(ABasePlayer* ExpectedLifeCharacter, int32 ExpectedWaitingGeneration) const;
  UFUNCTION() void OnRep_SessionEnabled();
  UFUNCTION() void OnRep_ServerRestoreGeneration();

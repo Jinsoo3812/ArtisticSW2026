@@ -4,6 +4,7 @@
 #include "BaseGameplayTags.h"
 #include "GameFramework/Actor.h"
 #include "Skills/SkillUseProvider.h"
+#include "WeaponInputAbilitySystemComponent.h"
 
 UPlayerSkillGameplayAbility::UPlayerSkillGameplayAbility()
 {
@@ -24,7 +25,14 @@ bool UPlayerSkillGameplayAbility::CanActivateAbility(
 
 	const AActor* Avatar = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
 	const ISkillUseProvider* Provider = Cast<ISkillUseProvider>(Avatar);
-	return SkillTag.IsValid() && Provider && Provider->CanUseSkill(SkillTag);
+	const bool bAllowed = SkillTag.IsValid() && Provider && Provider->CanUseSkill(SkillTag);
+	if (!bAllowed && UWeaponInputAbilitySystemComponent::IsInputDiagnosticsEnabled())
+	{
+		UE_LOG(LogTemp, Display, TEXT("[SWCombatInput] Event=SkillUseRejected Avatar=%s Authority=%d Ability=%s Skill=%s Provider=%d DevMask=%d"),
+			*GetNameSafe(Avatar), Avatar && Avatar->HasAuthority(), *GetName(), *SkillTag.ToString(), Provider != nullptr,
+			SWDevelopmentOptions::GetMask(Avatar));
+	}
+	return bAllowed;
 }
 
 bool UPlayerSkillGameplayAbility::HasSkillUseAvailable() const

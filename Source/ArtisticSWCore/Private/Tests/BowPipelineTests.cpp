@@ -237,7 +237,9 @@ bool FBowSocketAndPresentationAssetTest::RunTest(const FString& Parameters)
 			ItemData->FindItemDefinition(Item_Id_Weapon_Bow_ShortBow1);
 		if (TestNotNull(TEXT("ShortBow1 item definition exists"), ShortBowDefinition))
 		{
-			const UEquippableWeaponDefinition* WeaponDefinition = ShortBowDefinition->WeaponDefinition.LoadSynchronous();
+			FString ResolveError;
+			const UEquippableWeaponDefinition* WeaponDefinition = ItemData->CreateWeaponDefinition(
+				Item_Id_Weapon_Bow_ShortBow1, GetTransientPackage(), ResolveError);
 			TestTrue(TEXT("ShortBow1 spawns BP_Arrow through its combat definition"),
 				WeaponDefinition && WeaponDefinition->CombatData
 					&& WeaponDefinition->CombatData->ProjectileClass.LoadSynchronous() == ArrowBlueprintClass);

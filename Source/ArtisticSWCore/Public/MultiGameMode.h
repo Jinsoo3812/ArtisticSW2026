@@ -52,6 +52,7 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FPlayerCorpseLifecycleTest;
 	friend class FPlayerDeathDevelopmentTest;
+	friend class FDevelopmentPlayerInvulnerabilityTest;
 	friend class FYiDialogueCVarServerApplyTest;
 #endif
 

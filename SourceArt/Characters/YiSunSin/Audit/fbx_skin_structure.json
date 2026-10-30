@@ -1,0 +1,149 @@
+{
+  "fbx_models": [
+    [
+      "SK_YiSunSin_Latest",
+      "Null"
+    ],
+    [
+      "spine",
+      "Root"
+    ],
+    [
+      "spine_001",
+      "LimbNode"
+    ],
+    [
+      "spine_002",
+      "LimbNode"
+    ],
+    [
+      "spine_003",
+      "LimbNode"
+    ],
+    [
+      "spine_004",
+      "LimbNode"
+    ],
+    [
+      "spine_006",
+      "LimbNode"
+    ],
+    [
+      "shoulder_L",
+      "LimbNode"
+    ]
+  ],
+  "fbx_model_count": 85,
+  "clusters": [
+    {
+      "cluster": "",
+      "bones": [
+        "spine"
+      ],
+      "vertices": 7070,
+      "sum": 4336.791091130581
+    },
+    {
+      "cluster": "",
+      "bones": [
+        "spine_001"
+      ],
+      "vertices": 967,
+      "sum": 735.2632784585003
+    },
+    {
+      "cluster": "",
+      "bones": [
+        "spine_002"
+      ],
+      "vertices": 3616,
+      "sum": 1642.4267649017274
+    },
+    {
+      "cluster": "",
+      "bones": [
+        "spine_003"
+      ],
+      "vertices": 3854,
+      "sum": 2164.2617539726198
+    },
+    {
+      "cluster": "",
+      "bones": [
+        "spine_004"
+      ],
+      "vertices": 173,
+      "sum": 55.8818799527362
+    },
+    {
+      "cluster": "",
+      "bones": [
+        "spine_006"
+      ],
+      "vertices": 45635,
+      "sum": 45569.43360048812
+    },
+    {
+      "cluster": "",
+      "bones": [
+        "shoulder_L"
+      ],
+      "vertices": 66,
+      "sum": 19.141237447038293
+    },
+    {
+      "cluster": "",
+      "bones": [
+        "upper_arm_L"
+      ],
+      "vertices": 369,
+      "sum": 197.7292740959674
+    }
+  ],
+  "cluster_count": 83,
+  "vertex_groups": [
+    "spine_001",
+    "spine_002",
+    "spine_003",
+    "spine_004",
+    "spine_006",
+    "shoulder_L",
+    "upper_arm_L",
+    "forearm_L",
+    "hand_L",
+    "twist_01_upper_arm_L",
+    "shoulder_R",
+    "upper_arm_R",
+    "forearm_R",
+    "hand_R",
+    "twist_01_upper_arm_R",
+    "thigh_L",
+    "thigh_L_001",
+    "knee_pad_L",
+    "shin_L",
+    "shin_L_001",
+    "foot_L",
+    "toe_L",
+    "shin_pad_L",
+    "twist_01_thigh_L",
+    "thigh_R",
+    "thigh_R_001",
+    "knee_pad_R",
+    "shin_R",
+    "shin_R_001",
+    "foot_R",
+    "toe_R",
+    "shin_pad_R",
+    "twist_01_thigh_R",
+    "bag_01_R",
+    "bag_02_R",
+    "bag_03_L",
+    "holster",
+    "gun"
+  ],
+  "weight_sums": {
+    "zero": 2621,
+    "partial": 4449,
+    "max": 1.0000000409781933
+  }
+}

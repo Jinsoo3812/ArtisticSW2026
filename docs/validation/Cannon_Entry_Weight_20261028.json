@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-28",
+  "profile_volume_before": 0.9,
+  "profile_volume_after": 1.0,
+  "impact_seconds_max": 1.2,
+  "counts": {
+    "player/2/0": 1,
+    "player/3/0": 1,
+    "player/2/1": 1,
+    "player/3/1": 1,
+    "enemy/2/0": 1,
+    "enemy/3/0": 1,
+    "enemy/2/1": 1,
+    "enemy/3/1": 1
+  },
+  "recordings": [
+    {
+      "file": "network_verified_enemy_cannon_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 4.309333333333333,
+      "rms": 0.03003701210942367,
+      "peak": 0.233551025390625,
+      "clipped_samples": 0,
+      "active_samples": 351650
+    },
+    {
+      "file": "network_verified_enemy_cannon_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 4.906666666666666,
+      "rms": 0.03162532914229782,
+      "peak": 0.224334716796875,
+      "clipped_samples": 0,
+      "active_samples": 417584
+    },
+    {
+      "file": "network_verified_player_cannon_device0.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.338666666666667,
+      "rms": 0.021135810134615123,
+      "peak": 0.23114013671875,
+      "clipped_samples": 0,
+      "active_samples": 577535
+    },
+    {
+      "file": "network_verified_player_cannon_device1.wav",
+      "rate": 48000,
+      "channels": 2,
+      "seconds": 7.957333333333334,
+      "rms": 0.0245783029845616,
+      "peak": 0.222991943359375,
+      "clipped_samples": 0,
+      "active_samples": 635538
+    }
+  ],
+  "automation_passed": 17,
+  "scope": "Actual accepted shots and sea contact on both ships in two-peer PIE. Recordings include firing; subjective timbre and packaged play remain unverified."
+}

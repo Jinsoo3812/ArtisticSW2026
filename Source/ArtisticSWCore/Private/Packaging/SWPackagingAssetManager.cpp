@@ -73,7 +73,6 @@ void USWPackagingAssetManager::ModifyCook(TConstArrayView<const ITargetPlatform*
 			TEXT("CraftingRecipeDataTable"), TEXT("ProgressionBalanceData"), TEXT("FixedChestDropData") };
 		for (const TCHAR* Key : ItemKeys) AddConfigRoot(TEXT("/Script/ArtisticSWCore.Settings_Item"), Key);
 		AddConfigRoot(TEXT("/Script/Enemy.EnemyShipWeakeningSettings"), TEXT("WeakeningData"));
-		AddConfigRoot(TEXT("/Script/Story.StorySettings"), TEXT("DefaultStoryDefinition"));
 	}
 	else
 	{

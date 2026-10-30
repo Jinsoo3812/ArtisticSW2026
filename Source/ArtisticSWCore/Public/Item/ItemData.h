@@ -56,7 +56,11 @@ struct FItemDefinition
 {
 	GENERATED_BODY()
 
-	/** Required for weapon items. Legacy ability/spawn fields below are for non-weapons only. */
+	/** Authoritative weapon data. No individual weapon definition asset is required. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon", meta = (RowType = "/Script/ArtisticSWCore.WeaponBalanceRow"))
+	FDataTableRowHandle WeaponBalanceRow;
+
+	/** Legacy serialized field; migrated catalog entries leave this empty. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon")
 	TSoftObjectPtr<UEquippableWeaponDefinition> WeaponDefinition;
 
@@ -129,6 +133,9 @@ public:
 	{
 		return ItemDefinitions.Find(ItemTag);
 	}
+
+	/** Builds transient runtime data from a direct DT row; the world subsystem owns its cache. */
+	UEquippableWeaponDefinition* CreateWeaponDefinition(FGameplayTag ItemTag, UObject* Outer, FString& OutError) const;
 
 	/** Candidate tags for recipe-editor pickers; returns only materials valid for the output kind. */
 	UFUNCTION(BlueprintCallable, Category = "Item|Progression")

@@ -73,19 +73,14 @@ const FNPCDialogueRule* UNPCDialogueSourceComponent::ResolveBestRule(
 	}
 
 	const FNPCDialogueRule* BestRule = nullptr;
-	const bool bTestMode = DialogueData->IsYiSunSinTestMode();
 	for (const FNPCDialogueRule& Rule : DialogueData->Rules)
 	{
 		if (!IsRuleAvailable(Rule, Story, Inventory))
 		{
 			continue;
 		}
-		const bool bProgressRule = Rule.bCompleteStoryNode || Rule.bRequireFinalDepartureNotCompleted;
-		const bool bBestProgress = BestRule && (BestRule->bCompleteStoryNode || BestRule->bRequireFinalDepartureNotCompleted);
 		if (!BestRule
-			|| (bTestMode && bProgressRule && !bBestProgress)
-			|| (bTestMode && bProgressRule == bBestProgress && Rule.Priority < BestRule->Priority)
-			|| (!bTestMode && Rule.Priority > BestRule->Priority)
+			|| Rule.Priority > BestRule->Priority
 			|| (Rule.Priority == BestRule->Priority && Rule.RuleId.LexicalLess(BestRule->RuleId)))
 		{
 			BestRule = &Rule;
@@ -105,18 +100,11 @@ bool UNPCDialogueSourceComponent::IsRuleAvailable(
 	}
 	if (Rule.bRequireFinalDepartureNotCompleted)
 	{
-		if (DialogueData && DialogueData->IsYiSunSinTestMode())
-		{
-			if (Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)) return false;
-		}
-		else
-		{
-			const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-			const USWRoomProgressSubsystem* Room = GameInstance
-				? GameInstance->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
-			if (!Room || !Room->IsHostedRoom() || !Room->GetActiveRoom()
-				|| Room->GetActiveRoom()->bFinalDepartureCompleted) return false;
-		}
+		const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+		const USWRoomProgressSubsystem* Room = GameInstance
+			? GameInstance->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+		if (!Room || !Room->IsHostedRoom() || !Room->GetActiveRoom()
+			|| Room->GetActiveRoom()->bFinalDepartureCompleted) return false;
 	}
 	for (const EStoryNode Node : Rule.RequiredStoryNodes)
 	{
@@ -140,7 +128,6 @@ bool UNPCDialogueSourceComponent::IsRuleAvailable(
 	{
 		return false;
 	}
-	if (DialogueData && DialogueData->IsYiSunSinTestMode()) return true;
 	if (!Rule.RequiredItems.IsEmpty() && !Inventory)
 	{
 		return false;

@@ -31,9 +31,9 @@ namespace
 constexpr uint16 RoomPort = 7777;
 constexpr float ServerStartTimeoutSeconds = 90.0f;
 const TCHAR* LobbyMap = TEXT("/Game/Level/ConnectionLobby");
-TAutoConsoleVariable<int32> CVarRoomServerBackend(TEXT("sw.Room.ServerBackend"), 0,
+TAutoConsoleVariable<int32> CVarRoomServerBackend(TEXT("sw.Room.ServerBackend"), 1,
 	TEXT("Local room server: 0=UnrealEditor, 1=packaged dedicated server. Applies to the next hosting request."));
-FString GRoomServerExeOverride;
+FString GRoomServerExeOverride = TEXT("C:/Unreal Projects/ArtisticSW2026/Packaged/Server/WindowsServer/ArtisticSW2026/Binaries/Win64/ArtisticSW2026Server.exe");
 FAutoConsoleVariableRef CVarRoomServerExe(TEXT("sw.Room.ServerExe"), GRoomServerExeOverride,
 	TEXT("Packaged server internal executable path. Empty uses SWRoomServerExe or SWLocalPackagedServer settings."));
 
@@ -52,6 +52,8 @@ bool IsLocalRoomTestEnabled()
 }
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+// Disabled: use the normal room UI and sw.Room.ServerBackend for development tests.
+/*
 FAutoConsoleCommandWithWorldAndArgs LocalHostCommand(
 	TEXT("SW.DevTest.Local.Host"), TEXT("Create a local room and auto-join: SW.DevTest.Local.Host [Name]"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
@@ -70,6 +72,7 @@ FAutoConsoleCommandWithWorldAndArgs LocalJoinCommand(
 			if (!Room->JoinLocalTestRoom(Args.IsEmpty() ? TEXT("Guest") : Args[0], Args.Num() < 2 ? TEXT("127.0.0.1") : Args[1]))
 				UE_LOG(LogSWConnection, Warning, TEXT("Local.Join failed. Use an idle client, valid name and private/loopback IPv4."));
 	}));
+*/
 #endif
 
 bool NormalizeLocalFilePath(FString& Path)

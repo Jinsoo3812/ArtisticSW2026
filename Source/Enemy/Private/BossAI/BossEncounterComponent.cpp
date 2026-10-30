@@ -361,6 +361,8 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 		return false;
 	}
 
+	Boss->bCompleteStoryNodeOnDeath = true;
+	Boss->CompletedStoryNodeOnDeath = StopAfterStoryNode;
 	SpawnedBoss = Boss;
 	if (!HostShip->RegisterBossEnemy(Boss))
 	{

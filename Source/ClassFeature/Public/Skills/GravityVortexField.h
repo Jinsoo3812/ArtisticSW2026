@@ -13,6 +13,7 @@ struct FSWRoomGravityFieldState
 	UPROPERTY(SaveGame) float RemainingLife = 0.f;
 	UPROPERTY(SaveGame) float RefreshAccumulator = 0.f;
 	UPROPERTY(SaveGame) TArray<FGuid> AffectedShipIds;
+	UPROPERTY(SaveGame) uint64 SurfaceOrder = 0;
 };
 
 class AShip;
@@ -61,8 +62,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Effects", meta = (Units = "cm"))
 	float FieldEffectHeightOffset = 0.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Pull", meta = (ClampMin = "1.0", Units = "cm"))
+	UPROPERTY(EditDefaultsOnly, Replicated, BlueprintReadOnly, Category = "Gravity Vortex|Pull", meta = (ClampMin = "1.0", Units = "cm"))
 	float PullRadius = 5000.0f;
+
+	UPROPERTY(EditDefaultsOnly, Replicated, BlueprintReadOnly, Category = "Gravity Vortex|Effects")
+	FLinearColor SurfaceTint = FLinearColor(1.0f, 0.05f, 0.02f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Pull", meta = (ClampMin = "0.0", Units = "cm/s^2"))
 	float PullAcceleration = 900.0f;
@@ -96,7 +100,7 @@ public:
 	bool bSuppressEnemyPropulsion = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Debug")
-	bool bDrawDebug = true;
+	bool bDrawDebug = false;
 
 	/** Raises the range visualization above the water to avoid depth fighting. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Debug", meta = (Units = "cm"))
@@ -119,6 +123,11 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	void UpdateSurfaceOverlay();
+
+	UPROPERTY(Replicated)
+	uint64 SurfaceOrder = 0;
+
 	void RefreshTargets();
 	void ReleaseShip(AShip* Ship);
 	FVector CalculateAcceleration(AShip* Ship) const;

@@ -33,21 +33,7 @@ namespace StoryTests
 		return Query;
 	}
 
-	FStoryStateRule MakeRule(
-		FGameplayTag StateTag,
-		FGameplayTag RequiredFact,
-		FGameplayTag GrantedFact = FGameplayTag())
-	{
-		FStoryStateRule Rule;
-		Rule.StateTag = StateTag;
-		Rule.DisplayName = FText::FromString(StateTag.ToString());
-		Rule.ActivationCondition.FactQuery = MatchAll(RequiredFact);
-		if (GrantedFact.IsValid())
-		{
-			Rule.GrantedFacts.AddTag(GrantedFact);
-		}
-		return Rule;
-	}
+
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -132,37 +118,32 @@ bool FStoryConditionTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FStoryStateChainTest,
-	"ArtisticSW.Story.AdditiveStateChain",
+	FStoryLegacyDefinitionTest,
+	"ArtisticSW.Story.LegacyDefinitionIgnored",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FStoryStateChainTest::RunTest(const FString& Parameters)
+bool FStoryLegacyDefinitionTest::RunTest(const FString& Parameters)
 {
+	UGameInstance* Instance = NewObject<UGameInstance>();
+	UStorySubsystem* Story = NewObject<UStorySubsystem>(Instance);
 	const FGameplayTag Trigger = StoryTests::Tag(TEXT("Story.Test.Fact.Trigger"));
-	const FGameplayTag Granted = StoryTests::Tag(TEXT("Story.Test.Fact.Granted"));
-	const FGameplayTag FirstState = StoryTests::Tag(TEXT("Story.Test.State.First"));
-	const FGameplayTag SecondState = StoryTests::Tag(TEXT("Story.Test.State.Second"));
-
-	UStoryDefinition* Definition = NewObject<UStoryDefinition>();
-	Definition->StateRules.Add(StoryTests::MakeRule(FirstState, Trigger, Granted));
-	Definition->StateRules.Add(StoryTests::MakeRule(SecondState, FirstState));
-
-	TArray<FText> Errors;
-	TestTrue(TEXT("Valid definition passes validation"), Definition->ValidateDefinition(Errors));
-
-	UGameInstance* GameInstance = NewObject<UGameInstance>();
-	UStorySubsystem* Story = NewObject<UStorySubsystem>(GameInstance);
-	TestTrue(TEXT("Definition config succeeds"), Story->ConfigureDefinition(Definition, true));
-	TestFalse(TEXT("First state starts inactive"), Story->HasFact(FirstState));
-
-	TestTrue(TEXT("Adding a new shared fact changes progress"), Story->AddFact(Trigger));
-	TestTrue(TEXT("First state activates"), Story->HasFact(FirstState));
-	TestTrue(TEXT("First state grants its fact"), Story->HasFact(Granted));
-	TestTrue(TEXT("Dependent state activates in the same evaluation"), Story->HasFact(SecondState));
-	TestFalse(TEXT("Adding an existing fact is idempotent"), Story->AddFact(Trigger));
-
-	Definition->StateRules.Add(StoryTests::MakeRule(FirstState, Trigger));
-	TestFalse(TEXT("Duplicate state tags fail validation"), Definition->ValidateDefinition(Errors));
+	const FGameplayTag Counter = StoryTests::Tag(TEXT("Story.Test.Counter.Kills"));
+	Story->AddFact(Trigger);
+	Story->SetCounter(Counter, 7);
+	UStoryDefinition* Legacy = NewObject<UStoryDefinition>();
+	TestFalse(TEXT("Legacy definition configuration is rejected"), Story->ConfigureDefinition(Legacy));
+	TestNull(TEXT("No runtime definition is retained"), Story->GetDefinition());
+	TestTrue(TEXT("Rejected legacy configuration preserves progress"), Story->HasFact(Trigger));
+	UStorySaveGame* Save = Story->BuildRoomProgress();
+	if (!TestNotNull(TEXT("Progress capture needs no definition"), Save)) return false;
+	TestFalse(TEXT("New saves have no definition ID"), Save->StoryDefinitionId.IsValid());
+	Save->StoryDefinitionId = FPrimaryAssetId(FName(TEXT("StoryDefinition")), FName(TEXT("RetiredCampaign")));
+	Story->ResetProgress();
+	TestTrue(TEXT("Legacy definition IDs do not block room restoration"), Story->ApplyRoomProgress(Save));
+	TestTrue(TEXT("Legacy save restores facts"), Story->HasFact(Trigger));
+	TestEqual(TEXT("Legacy save restores counters"), Story->GetCounter(Counter), 7);
+	Save->SaveVersion = 999;
+	TestFalse(TEXT("Unsupported save versions remain rejected"), Story->ApplyRoomProgress(Save));
 	return true;
 }
 
@@ -177,17 +158,12 @@ bool FStoryPersistenceTest::RunTest(const FString& Parameters)
 	const FGameplayTag FirstState = StoryTests::Tag(TEXT("Story.Test.State.First"));
 	const FGameplayTag KillCounter = StoryTests::Tag(TEXT("Story.Test.Counter.Kills"));
 
-	UStoryDefinition* Definition = NewObject<UStoryDefinition>();
-	Definition->StateRules.Add(StoryTests::MakeRule(FirstState, Trigger));
-
 	UGameInstance* GameInstance = NewObject<UGameInstance>();
 	UStorySubsystem* Story = NewObject<UStorySubsystem>(GameInstance);
-	if (!TestTrue(TEXT("Definition config succeeds"), Story->ConfigureDefinition(Definition, true)))
-	{
-		return false;
-	}
+	TestTrue(TEXT("Progress resets without a definition"), Story->ResetProgress());
 
 	Story->AddFact(Trigger);
+	Story->AddFact(FirstState);
 	Story->SetCounter(KillCounter, 7);
 	const FString Slot = FString::Printf(
 		TEXT("StoryAutomation_%s"),
@@ -199,7 +175,7 @@ bool FStoryPersistenceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Reset removes runtime counter"), Story->GetCounter(KillCounter), 0);
 	TestTrue(TEXT("Shared campaign progress loads"), Story->LoadProgressFromSlot(Slot));
 	TestTrue(TEXT("Load restores source fact"), Story->HasFact(Trigger));
-	TestTrue(TEXT("Load restores derived story state"), Story->HasFact(FirstState));
+	TestTrue(TEXT("Load restores explicit story state"), Story->HasFact(FirstState));
 	TestEqual(TEXT("Load restores shared counter"), Story->GetCounter(KillCounter), 7);
 
 	UGameplayStatics::DeleteGameInSlot(Slot, 0);
@@ -216,12 +192,31 @@ bool FStoryDevelopmentCheckpointTest::RunTest(const FString& Parameters)
  UGameInstance* GI = NewObject<UGameInstance>();
  UStorySubsystem* Story = NewObject<UStorySubsystem>(GI);
  UStoryFacadeSubsystem* Facade = NewObject<UStoryFacadeSubsystem>(GI);
- UStoryDefinition* Definition = NewObject<UStoryDefinition>(GI, TEXT("DevelopmentCheckpointDefinition"));
- Story->ConfigureDefinition(Definition);
  Facade->ConfigureForUseCase(Story);
  Facade->StartNewCampaign();
  FString Error;
  TestNull(TEXT("Unknown target rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Unknown"), Error));
+ const FName Targets[] = { TEXT("Recon"), TEXT("SupplyPatrol"), TEXT("Decipher"), TEXT("Suppress"), TEXT("Uldolmok"), TEXT("Ending") };
+ const EStoryNode Nodes[] = { EStoryNode::ReconQuestAccepted, EStoryNode::SupplyPatrolQuestAccepted,
+  EStoryNode::DecipherQuestAccepted, EStoryNode::SuppressJapaneseForcesQuestAccepted,
+  EStoryNode::UldolmokBattleQuestAccepted, EStoryNode::EndingDialogueCompleted };
+ const EStoryNode NextBoss[] = { EStoryNode::MiddleBoss1Defeated, EStoryNode::MiddleBoss2Defeated,
+  EStoryNode::MiddleBoss3Defeated, EStoryNode::MiddleBoss3Defeated, EStoryNode::FinalBossDefeated };
+ for (int32 Index = 0; Index < UE_ARRAY_COUNT(Targets); ++Index)
+ {
+  Facade->StartNewCampaign();
+  UStorySaveGame* Checkpoint = Facade->BuildDevelopmentCheckpoint(Targets[Index], Error);
+  if (!TestNotNull(*FString::Printf(TEXT("%s prepares without a definition"), *Targets[Index].ToString()), Checkpoint)) return false;
+  TestFalse(TEXT("Preparing does not mutate live campaign"), Facade->IsStoryNodeReached(Nodes[Index]));
+  TestFalse(TEXT("Checkpoint needs no definition ID"), Checkpoint->StoryDefinitionId.IsValid());
+  TestTrue(TEXT("Checkpoint restores without a definition"), Story->ApplyRoomProgress(Checkpoint));
+  TestTrue(TEXT("Requested dialogue is reached"), Facade->IsStoryNodeReached(Nodes[Index]));
+  if (Index < UE_ARRAY_COUNT(NextBoss)) TestFalse(TEXT("Next boss remains alive"), Facade->IsStoryNodeReached(NextBoss[Index]));
+  UStorySaveGame* Repeated = Facade->BuildDevelopmentCheckpoint(Targets[Index], Error);
+  TestNotNull(TEXT("Current checkpoint can be reapplied"), Repeated);
+  if (Index > 0) TestNotNull(TEXT("Earlier dialogue can be selected"), Facade->BuildDevelopmentCheckpoint(Targets[Index - 1], Error));
+ }
+ Facade->StartNewCampaign();
  UStorySaveGame* Prepared = Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error);
  if (!TestNotNull(TEXT("Final dialogue checkpoint prepared"), Prepared)) return false;
  TestFalse(TEXT("Preparing a checkpoint does not mutate live story"), Facade->IsStoryNodeReached(EStoryNode::ReconQuestAccepted));
@@ -231,13 +226,33 @@ bool FStoryDevelopmentCheckpointTest::RunTest(const FString& Parameters)
   EStoryNode::DecipherQuestAccepted, EStoryNode::UldolmokBattleQuestAccepted };
  for (EStoryNode Node : Required) TestTrue(TEXT("Prior main and branch nodes restored"), Facade->IsStoryNodeReached(Node));
  TestFalse(TEXT("Final boss remains alive"), Facade->IsStoryNodeReached(EStoryNode::FinalBossDefeated));
- TestNull(TEXT("Repeated checkpoint rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error));
- TestNull(TEXT("Backward checkpoint rejected"), Facade->BuildDevelopmentCheckpoint(TEXT("Recon"), Error));
+ TestNotNull(TEXT("Current final battle checkpoint can be reapplied"), Facade->BuildDevelopmentCheckpoint(TEXT("Uldolmok"), Error));
+ TestNotNull(TEXT("Backward checkpoint accepted"), Facade->BuildDevelopmentCheckpoint(TEXT("Recon"), Error));
  Prepared = Facade->BuildDevelopmentCheckpoint(TEXT("Ending"), Error);
  if (!TestNotNull(TEXT("Ending can follow final checkpoint"), Prepared)) return false;
  TestTrue(TEXT("Ending restored"), Story->ApplyRoomProgress(Prepared));
  TestTrue(TEXT("Ending includes final defeat"), Facade->IsStoryNodeReached(EStoryNode::FinalBossDefeated));
  TestTrue(TEXT("Ending dialogue complete"), Facade->IsStoryNodeReached(EStoryNode::EndingDialogueCompleted));
+ for (int32 Index = UE_ARRAY_COUNT(Targets) - 1; Index >= 0; --Index)
+ {
+  UStorySaveGame* Previous = Story->BuildRoomProgress();
+  if (!TestNotNull(TEXT("Previous state captured"), Previous)) return false;
+  Previous->Facts.AddTag(StoryTests::TestGranted);
+  FStoryCounterValue& OldCounter = Previous->Counters.AddDefaulted_GetRef();
+  OldCounter.CounterTag = StoryTests::TestKillCounter; OldCounter.Value = 10;
+  Previous->AppliedActionKeys.Add(TEXT("PreviousCampaignAction"));
+  TestTrue(TEXT("Previous campaign history seeded"), Story->ApplyRoomProgress(Previous));
+  Prepared = Facade->BuildDevelopmentCheckpoint(Targets[Index], Error);
+  if (!TestNotNull(TEXT("Any checkpoint can follow later progress"), Prepared)) return false;
+  TestFalse(TEXT("Previous facts cleared"), Prepared->Facts.HasTagExact(StoryTests::TestGranted));
+  TestTrue(TEXT("Selected state restores"), Story->ApplyRoomProgress(Prepared));
+  TestTrue(TEXT("Selected dialogue reached"), Facade->IsStoryNodeReached(Nodes[Index]));
+  for (int32 Later = Index + 1; Later < UE_ARRAY_COUNT(Nodes); ++Later)
+   TestFalse(TEXT("Later dialogue cleared"), Facade->IsStoryNodeReached(Nodes[Later]));
+  if (Index < UE_ARRAY_COUNT(NextBoss)) TestFalse(TEXT("Next boss defeat cleared"), Facade->IsStoryNodeReached(NextBoss[Index]));
+  TestTrue(TEXT("Old counters cleared"), Prepared->Counters.IsEmpty());
+  TestTrue(TEXT("Old action history cleared"), Prepared->AppliedActionKeys.IsEmpty());
+ }
  return true;
 }
 #endif
