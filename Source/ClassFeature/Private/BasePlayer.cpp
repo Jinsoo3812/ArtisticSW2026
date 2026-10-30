@@ -2,6 +2,9 @@
 
 
 #include "BasePlayer.h"
+#include "GAS/Ability/GA_UseConsumable.h"
+#include "Effects/ConsumableGameplayEffects.h"
+#include "UObject/StrongObjectPtr.h"
 #include "Development/SWDevelopmentOptions.h"
 #include "Components/SWFoleyComponent.h"
 #include "Audio/SWFoleyAudioProfile.h"
@@ -1597,22 +1600,47 @@ void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
 	}
 
 	const FInventoryCursorItem& CursorItem = InventoryComponent->GetCursorItem();
-	if (!CursorItem.IsValid() || !CanQuickSlotAcceptItem(QuickSlotIndex, CursorItem.ItemTag))
+	if (!CursorItem.IsValid())
 	{
 		return;
 	}
 
-	const FGameplayTag AssignedItemTag = CursorItem.ItemTag;
+	AssignQuickSlotItem(QuickSlotIndex, CursorItem.ItemTag);
+}
+
+void ABasePlayer::AssignQuickSlotItem(int32 QuickSlotIndex, FGameplayTag ItemTag)
+{
+	if (!HasAuthority())
+	{
+		ServerAssignQuickSlotItem(QuickSlotIndex, ItemTag);
+		return;
+	}
+
+	if (!InventoryComponent || !CanQuickSlotAcceptItem(QuickSlotIndex, ItemTag))
+	{
+		return;
+	}
+
+	const FInventoryCursorItem& CursorItem = InventoryComponent->GetCursorItem();
+	const bool bMatchesCursorItem = CursorItem.IsValid() && CursorItem.ItemTag == ItemTag;
+	if (!bMatchesCursorItem && InventoryComponent->GetMaterialCount(ItemTag) <= 0)
+	{
+		return;
+	}
+
 	for (FQuickSlotReference& Slot : QuickSlots)
 	{
-		if (Slot.ItemTag == AssignedItemTag)
+		if (Slot.ItemTag == ItemTag)
 		{
 			Slot.ItemTag = FGameplayTag();
 		}
 	}
 
-	QuickSlots[QuickSlotIndex].ItemTag = AssignedItemTag;
-	InventoryComponent->ReturnCursorToOriginalSlot();
+	QuickSlots[QuickSlotIndex].ItemTag = ItemTag;
+	if (bMatchesCursorItem)
+	{
+		InventoryComponent->ReturnCursorToOriginalSlot();
+	}
 	OnQuickSlotsChanged.Broadcast();
 
 	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
@@ -1625,6 +1653,12 @@ void ABasePlayer::ServerAssignQuickSlotFromInventory_Implementation(int32 QuickS
 {
 	if (!CanMutateLifeGameplay()) return;
 	AssignQuickSlotFromInventory(QuickSlotIndex);
+}
+
+void ABasePlayer::ServerAssignQuickSlotItem_Implementation(int32 QuickSlotIndex, FGameplayTag ItemTag)
+{
+	if (!CanMutateLifeGameplay()) return;
+	AssignQuickSlotItem(QuickSlotIndex, ItemTag);
 }
 
 void ABasePlayer::ClearQuickSlot(int32 QuickSlotIndex)
@@ -1828,6 +1862,21 @@ bool ABasePlayer::HasSelectedQuickSlotConsumable() const
 		&& Items && Items->GetCategoryTag(Slot.ItemTag).MatchesTag(Item_Category_Consumable);
 }
 
+float ABasePlayer::GetConsumableCooldownRemaining(FGameplayTag ItemTag) const
+{
+    if (!CachedAbilitySystemComponent.IsValid() || !GetWorld()) return 0.f;
+    const UItemSubsystem* Items = GetWorld()->GetSubsystem<UItemSubsystem>();
+    const FItemDefinition* Item = Items ? Items->GetItemDefinition(ItemTag) : nullptr;
+    FConsumableDefinition Definition;
+    if (!Item || !FConsumableDefinition::Resolve(ItemTag, Item->Consumable, Definition)) return 0.f;
+    const FGameplayTag Tag = Definition.IsRecovery() ? ConsumableTags::CooldownRecovery : ConsumableTags::CooldownUtility;
+    float Remaining = 0.f;
+    for (float Time : CachedAbilitySystemComponent->GetActiveEffectsTimeRemaining(
+        FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(Tag))))
+        Remaining = FMath::Max(Remaining, Time);
+    return Remaining;
+}
+
 void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
 {
 	if (!CanPerformCombatAction())
@@ -1939,31 +1988,16 @@ bool ABasePlayer::EquipInventoryItem(FGameplayTag ItemTag)
 
 bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
 {
-	if (!HasAuthority() || !InventoryComponent || !CachedAbilitySystemComponent.IsValid())
-	{
-		return false;
-	}
+    if (!HasAuthority() || !CanPerformCombatAction() || !InventoryComponent
+        || InventoryComponent->IsItemUseInProgress() || InventoryComponent->GetItemCount(ItemTag) < 1
+        || !CachedAbilitySystemComponent.IsValid()) return false;
 
-	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
-	if (!ItemSubsystem || !ItemSubsystem->GetCategoryTag(ItemTag).MatchesTag(Item_Category_Consumable))
-	{
-		return false;
-	}
-
-	TSubclassOf<UGameplayAbility> AbilityClass = ItemSubsystem->GetGrantedAbilityClass(ItemTag).LoadSynchronous();
-	if (!AbilityClass)
-	{
-		return false;
-	}
-
-	FGameplayAbilitySpec AbilitySpec(AbilityClass, 1, INDEX_NONE, this);
-	const FGameplayAbilitySpecHandle Handle = CachedAbilitySystemComponent->GiveAbilityAndActivateOnce(AbilitySpec);
-	if (!Handle.IsValid())
-	{
-		return false;
-	}
-
-	return InventoryComponent->RemoveMaterial(ItemTag, 1);
+    // A per-request source preserves identity even if selection changes during an effect callback.
+    TStrongObjectPtr<UConsumableUseRequest> Request(NewObject<UConsumableUseRequest>(this));
+    Request->ItemTag = ItemTag;
+    FGameplayAbilitySpec Spec(UGA_UseConsumable::StaticClass(), 1, INDEX_NONE, Request.Get());
+    CachedAbilitySystemComponent->GiveAbilityAndActivateOnce(Spec);
+    return Request->bSucceeded;
 }
 
 void ABasePlayer::HandleInventoryContentsChanged()

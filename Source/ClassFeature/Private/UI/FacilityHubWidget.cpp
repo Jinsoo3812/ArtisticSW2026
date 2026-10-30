@@ -25,6 +25,9 @@ namespace FacilityCraftingMenu
 	FText GetKoreanCategoryLabel(const FString& Segment)
 	{
 		static const TMap<FString, FText> KoreanLabels = {
+			{TEXT("Item"), NSLOCTEXT("CraftingCategory", "Item", "단서")},
+			{TEXT("Quest"), NSLOCTEXT("CraftingCategory", "Quest", "퀘스트")},
+			{TEXT("QuestItem"), NSLOCTEXT("CraftingCategory", "QuestItem", "퀘스트 아이템")},
 			{TEXT("Material"), NSLOCTEXT("CraftingCategory", "Material", "재료")},
 			{TEXT("WeaponMaterial"), NSLOCTEXT("CraftingCategory", "WeaponMaterial", "무기 재료")},
 			{TEXT("ConsumablesMaterial"), NSLOCTEXT("CraftingCategory", "ConsumablesMaterial", "소비 아이템 재료")},
@@ -672,7 +675,10 @@ void UFacilityHubWidget::AddCraftingMenuRecipe(const FCraftingListEntry& Entry, 
 	UCraftingMenuEntryWidget* Row = CreateWidget<UCraftingMenuEntryWidget>(this, RowClass);
 	if (Row)
 	{
-		Row->SetupRecipe(Entry.RecipeId, Entry.DisplayName, Depth, Entry.RecipeId == PendingCraftingRecipeId);
+		const FText DisplayName = Entry.RecipeId == FName(TEXT("QuestItem"))
+			? NSLOCTEXT("CraftingMenu", "CipherRecipe", "암호해독서")
+			: Entry.DisplayName;
+		Row->SetupRecipe(Entry.RecipeId, DisplayName, Depth, Entry.RecipeId == PendingCraftingRecipeId);
 		Row->OnRecipeActivated.BindUObject(this, &UFacilityHubWidget::HandleCraftingRecipeClicked);
 		VerticalBox_CraftingMenu->AddChild(Row);
 		SpawnedCraftingMenuEntries.Add(Row);

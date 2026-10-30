@@ -33,7 +33,7 @@ protected:
 	// Optional bindings allow custom layouts to compile while migrating.
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidgetSwitcher> LobbySwitcher;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> HomePanel;
-	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> FormPanel;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> ConnectionPanel;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> ConfirmPanel;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> ConfirmPanel1;
 	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> NameSection;
