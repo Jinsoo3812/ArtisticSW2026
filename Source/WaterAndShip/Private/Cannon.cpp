@@ -1,6 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannon.h"
+#include "CannonOperatorStationProfile.h"
+#include "CollisionChannels.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Audio/SWWorldAudio.h"
 #include "CannonRiderInterface.h"
 #include "MountedDamageUserInterface.h"
@@ -63,19 +66,33 @@ ACannon::ACannon()
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
 	InteractableComponent->InteractableIdTag = Interactable_Id_Ship_Cannon;
 
-	// Keep the player fixed to the cannon root. Only the cannon meshes rotate while aiming.
+	// A fixed operating station prevents foot orbit/sliding without a stepping animation.
+	OperatorPivot = CreateDefaultSubobject<USceneComponent>(TEXT("OperatorPivot"));
+	OperatorPivot->SetupAttachment(RootComponent);
 	PlayerMountPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerMountPoint"));
-	PlayerMountPoint->SetupAttachment(RootComponent);
-	PlayerMountPoint->SetRelativeLocation(FVector(-120.0f, 0.0f, 0.0f));
+	PlayerMountPoint->SetupAttachment(OperatorPivot);
+	PlayerMountPoint->SetRelativeLocation(FVector(-160.0f, 0.0f, 0.0f));
 	PlayerMountPoint->SetRelativeRotation(FRotator::ZeroRotator);
 	PlayerMountPoint->SetMobility(EComponentMobility::Movable);
 
 	// Player Exit Point (Attached to RootComponent so exit location stays fixed on deck)
 	PlayerExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerExitPoint"));
 	PlayerExitPoint->SetupAttachment(RootComponent);
-	PlayerExitPoint->SetRelativeLocation(FVector(-140.0f, 0.0f, 0.0f));
+	PlayerExitPoint->SetRelativeLocation(FVector(-160.0f, 0.0f, 0.0f));
 	PlayerExitPoint->SetRelativeRotation(FRotator::ZeroRotator);
 	PlayerExitPoint->SetMobility(EComponentMobility::Movable);
+	LeftHandGrip = CreateDefaultSubobject<USceneComponent>(TEXT("LeftHandGrip"));
+	LeftHandGrip->SetupAttachment(OperatorPivot);
+	LeftHandGrip->SetRelativeLocation(FVector(-140.f, -20.f, 45.f));
+	RightHandGrip = CreateDefaultSubobject<USceneComponent>(TEXT("RightHandGrip"));
+	RightHandGrip->SetupAttachment(OperatorPivot);
+	RightHandGrip->SetRelativeLocation(FVector(-140.f, 20.f, 45.f));
+	LeftFootPlant = CreateDefaultSubobject<USceneComponent>(TEXT("LeftFootPlant"));
+	LeftFootPlant->SetupAttachment(PlayerMountPoint);
+	LeftFootPlant->SetRelativeLocation(FVector(0.f, -18.f, -90.f));
+	RightFootPlant = CreateDefaultSubobject<USceneComponent>(TEXT("RightFootPlant"));
+	RightFootPlant->SetupAttachment(PlayerMountPoint);
+	RightFootPlant->SetRelativeLocation(FVector(0.f, 18.f, -90.f));
 
 	bReplicates = true;
 	SetReplicateMovement(false); // We replicate rotations manually via AimRotation
@@ -86,14 +103,55 @@ ACannon::ACannon()
 void ACannon::BeginPlay()
 {
 	Super::BeginPlay();
+	// Read from the class so stale inherited component overrides on ship child
+	// actors cannot restore the old station. Existing cannons without a profile
+	// keep their authored components and all gameplay settings.
+	if (const UCannonOperatorStationProfile* Profile=GetClass()->GetDefaultObject<ACannon>()->OperatorStationProfile)
+	{
+		// Old ship child-actor templates can retain BaseMesh as the mount parent.
+		// Positions alone cannot fix that: pin the whole presentation hierarchy.
+		OperatorPivot->AttachToComponent(RootComponent,FAttachmentTransformRules::KeepRelativeTransform);
+		OperatorPivot->SetRelativeTransform(FTransform::Identity);
+		PlayerMountPoint->AttachToComponent(OperatorPivot,FAttachmentTransformRules::KeepRelativeTransform);
+		PlayerExitPoint->AttachToComponent(RootComponent,FAttachmentTransformRules::KeepRelativeTransform);
+		LeftFootPlant->AttachToComponent(PlayerMountPoint,FAttachmentTransformRules::KeepRelativeTransform);
+		RightFootPlant->AttachToComponent(PlayerMountPoint,FAttachmentTransformRules::KeepRelativeTransform);
+		LeftHandGrip->AttachToComponent(OperatorPivot,FAttachmentTransformRules::KeepRelativeTransform);
+		RightHandGrip->AttachToComponent(OperatorPivot,FAttachmentTransformRules::KeepRelativeTransform);
+		PlayerMountPoint->SetRelativeTransform(Profile->Mount);
+		PlayerExitPoint->SetRelativeTransform(Profile->Exit);
+		LeftFootPlant->SetRelativeLocation(Profile->LeftFoot);
+		RightFootPlant->SetRelativeLocation(Profile->RightFoot);
+		LeftHandGrip->SetRelativeTransform(Profile->LeftPalm);
+		RightHandGrip->SetRelativeTransform(Profile->RightPalm);
+		TInlineComponentArray<UStaticMeshComponent*> ContactSurfaces(this);
+		for (UStaticMeshComponent* Surface : ContactSurfaces)
+		{
+			if (Profile->ContactSurfaceTag.IsNone() || !Surface->ComponentHasTag(Profile->ContactSurfaceTag)) continue;
+			// Fallback contacts are in the same moving mesh frame as its sockets.
+			LeftHandGrip->AttachToComponent(Surface,FAttachmentTransformRules::KeepRelativeTransform);
+			RightHandGrip->AttachToComponent(Surface,FAttachmentTransformRules::KeepRelativeTransform);
+			LeftHandGrip->SetRelativeTransform(Profile->LeftPalm);
+			RightHandGrip->SetRelativeTransform(Profile->RightPalm);
+			if (!Profile->LeftPalmSocket.IsNone() && Surface->DoesSocketExist(Profile->LeftPalmSocket))
+				LeftHandGrip->AttachToComponent(Surface,FAttachmentTransformRules::SnapToTargetNotIncludingScale,Profile->LeftPalmSocket);
+			if (!Profile->RightPalmSocket.IsNone() && Surface->DoesSocketExist(Profile->RightPalmSocket))
+				RightHandGrip->AttachToComponent(Surface,FAttachmentTransformRules::SnapToTargetNotIncludingScale,Profile->RightPalmSocket);
+			break;
+		}
+	}
 
 	// Capture initial rotations
 	if (BaseMesh)
 	{
+		// The operator stands on the deck, not on rotating wheels/barrel edges.
+		// BP collision profiles may otherwise make the foot solver chase the gun.
+		BaseMesh->SetCollisionResponseToChannel(ECC_FootPlacement,ECR_Ignore);
 		InitialBaseRotation = BaseMesh->GetRelativeRotation();
 	}
 	if (BarrelMesh)
 	{
+		BarrelMesh->SetCollisionResponseToChannel(ECC_FootPlacement,ECR_Ignore);
 		InitialBarrelRotation = BarrelMesh->GetRelativeRotation();
 	}
 	VisualAimRotation = AimRotation;
@@ -140,7 +198,12 @@ void ACannon::Tick(float DeltaTime)
 			VisualAimRotation.Yaw, AimRotation.Yaw, DeltaTime, RemoteAimInterpolationSpeed);
 	}
 
-	// Apply the smoothed render rotation to meshes.
+	if (RidingPlayer && RidingPlayer->GetRootComponent()->GetAttachParent()==OperatorPivot)
+	{
+		// Discard stale pre-possession movement/attachment corrections on every peer.
+		RidingPlayer->SetActorRelativeTransform(PlayerMountPoint->GetRelativeTransform(),false,nullptr,ETeleportType::TeleportPhysics);
+	}
+	// Only the cannon meshes rotate; the operating station remains planted on deck.
 	if (BaseMesh)
 	{
 		FRotator TargetBaseRot = InitialBaseRotation;
@@ -154,14 +217,55 @@ void ACannon::Tick(float DeltaTime)
 		TargetBarrelRot.Pitch += VisualAimRotation.Pitch;
 		BarrelMesh->SetRelativeRotation(TargetBarrelRot);
 	}
+	// Possession and rider replication can arrive in either order. Reconcile locally
+	// on the authority too, and catch equipment attached after the initial OnRep.
+	RiderVisibilityRefreshElapsed += DeltaTime;
+	if (RiderVisibilityRefreshElapsed >= .25f)
+	{
+		RiderVisibilityRefreshElapsed = 0.f;
+		RefreshLocalRiderVisibility();
+	}
+}
+
+void ACannon::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	RefreshLocalControllerPresentation();
+	RefreshLocalRiderVisibility();
+}
+
+void ACannon::EndPlay(const EEndPlayReason::Type Reason)
+{
+	ClearLocalControllerPresentation();
+	ClearLocalRiderHiddenActors();
+	Super::EndPlay(Reason);
+}
+
+void ACannon::Destroyed()
+{
+	// APawn::Destroyed detaches its controller before AActor routes EndPlay.
+	// Restore the rider while possession still identifies the owning controller.
+	if (HasAuthority() && RidingPlayer) ExitAimMode();
+	else if (RidingPlayer)
+	{
+		// Destruction can replace the final RidingPlayer=null replication update.
+		// Run the same replica detach/movement/tick cleanup as a normal exit;
+		// possession returning on the controller alone does not restore MOVE_None.
+		APawn* PreviousRider = RidingPlayer;
+		RidingPlayer = nullptr;
+		OnRep_RidingPlayer(PreviousRider);
+	}
+	ClearLocalRiderHiddenActors();
+	ClearLocalControllerPresentation();
+	Super::Destroyed();
 }
 
 void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Ship의 SetupPlayerInputComponent와 동일 패턴: CachedPlayerController 캐싱
-	CachedPlayerController = Cast<APlayerController>(GetController());
+	RefreshLocalControllerPresentation();
+	RefreshLocalRiderVisibility();
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -191,6 +295,8 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void ACannon::UnPossessed()
 {
+	ClearLocalControllerPresentation();
+	ClearLocalRiderHiddenActors();
 	if (HasAuthority())
 	{
 		CancelWaterBombAbilityAuthoritative();
@@ -348,8 +454,8 @@ void ACannon::Board(APawn* PlayerPawn)
 	RidingPlayer->SetReplicateMovement(false);
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// First use the authored mount pose, then freeze that world-space pose against
-	// the non-aiming root. The player follows the ship but never orbits with BaseMesh.
+	// Match the authored mount pose in the yaw-only operator frame. Barrel pitch
+	// cannot tilt the body, and stale character rotations yield to this frame.
 	if (PlayerMountPoint)
 	{
 		RidingPlayer->TeleportTo(
@@ -358,7 +464,8 @@ void ACannon::Board(APawn* PlayerPawn)
 			false,
 			true);
 	}
-	RidingPlayer->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
+	RidingPlayer->AttachToComponent(OperatorPivot, FAttachmentTransformRules::KeepWorldTransform);
+	if (ACharacter* Character=Cast<ACharacter>(RidingPlayer)) Character->GetMesh()->AddTickPrerequisiteActor(this);
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player snapped to mount pose and fixed to cannon root. Relative location: %s, relative rotation: %s"),
 		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
 		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
@@ -602,6 +709,7 @@ void ACannon::ExitAimMode()
 	// Detach, then move to the authored player exit point while collision is still
 	// disabled. This avoids the cannon/ship hull rejecting the teleport.
 	PlayerToRestore->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	if (ACharacter* Character=Cast<ACharacter>(PlayerToRestore)) Character->GetMesh()->RemoveTickPrerequisiteActor(this);
 	if (PlayerExitPoint)
 	{
 		PlayerToRestore->TeleportTo(
@@ -637,6 +745,11 @@ void ACannon::ExitAimMode()
 	if (PC)
 	{
 		PC->Possess(PlayerToRestore);
+		// Cannon cameras ignore ControlRotation. Synchronize the returning camera
+		// too, or the client's old view immediately requests a spurious 90/180 TIP.
+		const FRotator ExitView(0.f,PlayerToRestore->GetActorRotation().Yaw,0.f);
+		PC->SetControlRotation(ExitView);
+		PC->ClientSetRotation(ExitView,true);
 	}
 
 	RidingPlayer = nullptr;
@@ -645,27 +758,20 @@ void ACannon::ExitAimMode()
 
 void ACannon::ClearLocalRiderHiddenActors()
 {
-	if (UWorld* World = GetWorld())
+	if (APlayerController* LocalPC = RiderHiddenController.Get())
 	{
-		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		for (const TWeakObjectPtr<AActor>& HiddenActor : LocallyHiddenRiderActors)
 		{
-			APlayerController* LocalPC = Cast<APlayerController>(It->Get());
-			if (!LocalPC || !LocalPC->IsLocalController())
-			{
-				continue;
-			}
-
-			for (const TWeakObjectPtr<AActor>& HiddenActor : LocallyHiddenRiderActors)
-			{
-				if (HiddenActor.IsValid())
-				{
-					LocalPC->HiddenActors.Remove(HiddenActor.Get());
-				}
-			}
+			if (HiddenActor.IsValid()) LocalPC->HiddenActors.Remove(HiddenActor.Get());
 		}
 	}
-
 	LocallyHiddenRiderActors.Reset();
+	RiderHiddenController.Reset();
+}
+
+bool ACannon::IsOperatorHiddenForController(APlayerController* PC) const
+{
+	return RidingPlayer && PC && PC->IsLocalController() && PC->HiddenActors.Contains(RidingPlayer);
 }
 
 void ACannon::RefreshLocalRiderVisibility()
@@ -677,13 +783,14 @@ void ACannon::RefreshLocalRiderVisibility()
 	{
 		return;
 	}
+	RiderHiddenController = LocalPC;
 
 	TArray<AActor*> ActorsToHide;
 	ActorsToHide.Add(RidingPlayer);
 	RidingPlayer->GetAttachedActors(ActorsToHide, false, true);
 	for (AActor* ActorToHide : ActorsToHide)
 	{
-		if (IsValid(ActorToHide))
+		if (IsValid(ActorToHide) && !LocalPC->HiddenActors.Contains(ActorToHide))
 		{
 			LocalPC->HiddenActors.AddUnique(ActorToHide);
 			LocallyHiddenRiderActors.AddUnique(ActorToHide);
@@ -998,6 +1105,7 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 	{
 		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
 		OldPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		if (ACharacter* Character=Cast<ACharacter>(OldPlayer)) Character->GetMesh()->RemoveTickPrerequisiteActor(this);
 		if (PlayerExitPoint)
 		{
 			OldPlayer->TeleportTo(
@@ -1031,7 +1139,7 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 		{
 			CannonRider->PrepareForCannonControl();
 		}
-		// Match the authored mount pose once, then preserve it under the non-aiming root.
+		// Match the server's authored mount pose under the yaw-only operator pivot.
 		if (PlayerMountPoint)
 		{
 			RidingPlayer->TeleportTo(
@@ -1040,7 +1148,8 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 				false,
 				true);
 		}
-		RidingPlayer->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
+		RidingPlayer->AttachToComponent(OperatorPivot, FAttachmentTransformRules::KeepWorldTransform);
+		if (ACharacter* Character=Cast<ACharacter>(RidingPlayer)) Character->GetMesh()->AddTickPrerequisiteActor(this);
 		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
 			Char->GetCharacterMovement()->DisableMovement();
@@ -1052,60 +1161,40 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 	RefreshLocalRiderVisibility();
 }
 
-// Ship의 OnRep_Controller()와 완전히 동일한 패턴
 void ACannon::OnRep_Controller()
 {
 	Super::OnRep_Controller();
+	RefreshLocalControllerPresentation();
+	RefreshLocalRiderVisibility();
+}
 
-	if (Controller == nullptr)
+void ACannon::ClearLocalControllerPresentation()
+{
+	if (CachedPlayerController && CachedPlayerController->GetLocalPlayer())
 	{
-		ClearLocalRiderHiddenActors();
-
-		if (CachedPlayerController)
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
-			{
-				if (CannonInputMappingContext)
-				{
-					Subsystem->RemoveMappingContext(CannonInputMappingContext);
-					// UE_LOG(LogTemp, Log, TEXT("ACannon: Removed CannonInputMappingContext in OnRep_Controller."));
-				}
-			}
-
-			// UI 정리
-			if (AimWidgetInstance)
-			{
-				AimWidgetInstance->RemoveFromParent();
-				AimWidgetInstance = nullptr;
-			}
-
-			CachedPlayerController = nullptr;
-		}
+		const ACannon* NewCannon=Cast<ACannon>(CachedPlayerController->GetPawn());
+		const bool bContextTransferred=NewCannon && NewCannon!=this && NewCannon->CannonInputMappingContext==CannonInputMappingContext;
+		if (auto* Subsystem=ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
+			if (CannonInputMappingContext && !bContextTransferred) Subsystem->RemoveMappingContext(CannonInputMappingContext);
 	}
-	else
-	{
-		CachedPlayerController = Cast<APlayerController>(Controller);
-		RefreshLocalRiderVisibility();
-		if (CachedPlayerController)
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
-			{
-				if (CannonInputMappingContext)
-				{
-					Subsystem->AddMappingContext(CannonInputMappingContext, CannonInputPriority);
-					// UE_LOG(LogTemp, Log, TEXT("ACannon: Added CannonInputMappingContext in OnRep_Controller."));
-				}
-			}
+	if (AimWidgetInstance) AimWidgetInstance->RemoveFromParent();
+	AimWidgetInstance=nullptr;
+	CachedPlayerController=nullptr;
+}
 
-			// UI 생성
-			if (AimWidgetClass && !AimWidgetInstance)
-			{
-				AimWidgetInstance = CreateWidget<UUserWidget>(CachedPlayerController, AimWidgetClass);
-				if (AimWidgetInstance)
-				{
-					AimWidgetInstance->AddToViewport();
-				}
-			}
-		}
+void ACannon::RefreshLocalControllerPresentation()
+{
+	APlayerController* PC=Cast<APlayerController>(GetController());
+	if (!PC || !PC->IsLocalController() || !PC->GetLocalPlayer()) PC=nullptr;
+	if (CachedPlayerController!=PC) ClearLocalControllerPresentation();
+	CachedPlayerController=PC;
+	if (!PC) return;
+	if (auto* Subsystem=ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		if (CannonInputMappingContext && !Subsystem->HasMappingContext(CannonInputMappingContext))
+			Subsystem->AddMappingContext(CannonInputMappingContext,CannonInputPriority);
+	if (AimWidgetClass && !AimWidgetInstance)
+	{
+		AimWidgetInstance=CreateWidget<UUserWidget>(PC,AimWidgetClass);
+		if (AimWidgetInstance) AimWidgetInstance->AddToViewport();
 	}
 }

@@ -1050,6 +1050,10 @@ protected:
 
     // State Controller Runtime Playback Hold Data
     EStateControllerPresentationState StateControllerPlaybackHoldState = EStateControllerPresentationState::None;
+    bool bWasMountedForStateController = false;
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FCannonOperatorLifecycleTest;
+#endif
     /** Current gameplay presentation request, before the one-shot hold policy is applied. */
     EStateControllerPresentationState StateControllerRequestedPresentationState = EStateControllerPresentationState::None;
     float StateControllerPlaybackHoldElapsed = 0.0f;

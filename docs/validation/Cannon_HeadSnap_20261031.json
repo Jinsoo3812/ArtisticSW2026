@@ -1,0 +1,124 @@
+{
+  "before": {
+    "0:BP_Player_Woman_C_0": {
+      "max_head_step_deg": 83.12337686992717,
+      "max_neck_step_deg": 83.12674993856469,
+      "frames": 815,
+      "max_hand_error_cm": 0.616487375304371,
+      "max_foot_error_cm": 5.7892286611538735e-08,
+      "worst_frame": {
+        "time": 9.238488532602787,
+        "yaw": -8.64621290937066,
+        "pitch": 0
+      }
+    },
+    "0:BP_Player_Man_C_0": {
+      "max_head_step_deg": 89.04663204835148,
+      "max_neck_step_deg": 89.53603919698104,
+      "frames": 815,
+      "max_hand_error_cm": 0.12356030873434332,
+      "max_foot_error_cm": 3.1627131639019415e-05,
+      "worst_frame": {
+        "time": 10.232709743082523,
+        "yaw": 6.267105247825384,
+        "pitch": 0
+      }
+    },
+    "1:BP_Player_Man_C_0": {
+      "max_head_step_deg": 87.31308556897741,
+      "max_neck_step_deg": 88.36235692171783,
+      "frames": 815,
+      "max_hand_error_cm": 0.12355929971780183,
+      "max_foot_error_cm": 3.1627135948462205e-05,
+      "worst_frame": {
+        "time": 10.728908244520426,
+        "yaw": 13.710082769393921,
+        "pitch": 0
+      }
+    },
+    "1:BP_Player_Woman_C_0": {
+      "max_head_step_deg": 87.04777909252691,
+      "max_neck_step_deg": 89.41521411522363,
+      "frames": 815,
+      "max_hand_error_cm": 0.7337578035266112,
+      "max_foot_error_cm": 5.7891048354869556e-08,
+      "worst_frame": {
+        "time": 9.205155033618212,
+        "yaw": -9.14621539413929,
+        "pitch": 0
+      }
+    }
+  },
+  "after": {
+    "0:BP_Player_Woman_C_0": {
+      "max_head_step_deg": 4.036931263497808,
+      "max_neck_step_deg": 4.0000400883169815,
+      "frames": 811,
+      "max_hand_error_cm": 0.7694435466128183,
+      "max_foot_error_cm": 5.7889063788645504e-08,
+      "worst_frame": {
+        "time": 19.998381935060024,
+        "yaw": 2.590702660381794,
+        "pitch": 45
+      }
+    },
+    "0:BP_Player_Man_C_0": {
+      "max_head_step_deg": 4.057805691371006,
+      "max_neck_step_deg": 4.000035225332042,
+      "frames": 811,
+      "max_hand_error_cm": 0.10589733314069127,
+      "max_foot_error_cm": 3.162713622747072e-05,
+      "worst_frame": {
+        "time": 20.06504873558879,
+        "yaw": 3.590704668313265,
+        "pitch": 45
+      }
+    },
+    "1:BP_Player_Man_C_0": {
+      "max_head_step_deg": 4.057802794047017,
+      "max_neck_step_deg": 4.000039256868122,
+      "frames": 811,
+      "max_hand_error_cm": 0.10589914897101348,
+      "max_foot_error_cm": 3.162713109705361e-05,
+      "worst_frame": {
+        "time": 20.03171533346176,
+        "yaw": 3.090703636407852,
+        "pitch": 45
+      }
+    },
+    "1:BP_Player_Woman_C_0": {
+      "max_head_step_deg": 4.239490818659388,
+      "max_neck_step_deg": 4.000041236042069,
+      "frames": 811,
+      "max_hand_error_cm": 0.7027541879049549,
+      "max_foot_error_cm": 5.789122828995084e-08,
+      "worst_frame": {
+        "time": 10.219498626887798,
+        "yaw": 5.907453037798405,
+        "pitch": 0
+      }
+    }
+  },
+  "classification": "Root-cause fix for rear-contact yaw branch switching; neck limits and rate bound additional abrupt target changes.",
+  "before_source": "Saved/AudioIntegration/Live/35516/head_motion.json",
+  "after_source": "Saved/AudioIntegration/Live/30024/head_motion.json",
+  "native_tests_passed": 30,
+  "build_log": "Saved/CannonOperatorValidation/HeadSnap_Build.log",
+  "automation_log": "Saved/CannonOperatorValidation/HeadSnap_After.log",
+  "exit_max_bone_step_cm": {
+    "pelvis": 3.786616721088838,
+    "head": 7.537867287168185,
+    "calf_l": 3.7716630185577875,
+    "calf_r": 3.3248253132939434,
+    "foot_l": 1.9910967420723553,
+    "foot_r": 2.4845074604749318
+  },
+  "scope": "Two-player listen-server PIE; male/female on both peers; steady sweeps at 30fps. 30/60/120fps limits and rear-contact boundary also covered by native math tests.",
+  "untested": [
+    "Dedicated server/high packet loss",
+    "Other causes of head movement outside the cannon operator overlay"
+  ],
+  "exit_state_restored": true,
+  "editor_settings_restored": true,
+  "editor_clean_exit": true
+}

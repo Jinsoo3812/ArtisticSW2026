@@ -2,6 +2,7 @@
 #include "AbilitySystemComponent.h"
 #include "BaseItem.h"
 #include "BasePlayer.h"
+#include "Camera/SWPlayerCameraZoomComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Projectiles/GrenadeProjectile.h"
 #include "Projectiles/ClusterGrenadeProjectile.h"
@@ -54,6 +55,8 @@ void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle H
       }
 
       // Wait for Mouse Wheel Events
+      ReservedCameraZoom = Player->GetCameraZoom();
+      if (ReservedCameraZoom.IsValid()) ReservedCameraZoom->ReserveWheel(this, true);
       WheelUpTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_WheelUp);
       if (WheelUpTask)
       {
@@ -74,6 +77,8 @@ void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle H
 
 void UGA_ThrowClusterGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
+  if (ReservedCameraZoom.IsValid()) ReservedCameraZoom->ReserveWheel(this, false);
+  ReservedCameraZoom.Reset();
   if (SelectionWidget)
   {
       SelectionWidget->RemoveFromParent();

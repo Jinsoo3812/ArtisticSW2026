@@ -41,6 +41,7 @@ public class ClassFeatureEditor : ModuleRules
 			"Landscape",
 			"GeometryCore",
 			"MeshConversion",
+			"MeshDescription",
 			"AssetRegistry",
 			"PropertyEditor",
 			"ImageCore"

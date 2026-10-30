@@ -35,6 +35,7 @@ public class ClassFeature: ModuleRules
             "PoseSearch",
             "BlendStack",
             "AnimGraphRuntime",
+            "AnimationCore",
             "AnimationWarpingRuntime",
             "Chooser",
             "MotionTrajectory",

@@ -22,6 +22,8 @@ DECLARE_MULTICAST_DELEGATE(FOnConsumableQuickSlotInputChangedDelegate);
 
 class USWFoleyComponent;
 class USpringArmComponent;
+class USWPlayerCameraZoomComponent;
+class UMeshComponent;
 class UCameraComponent;
 class UInputAction;
 struct FInputActionValue;
@@ -99,12 +101,19 @@ public:
 	virtual void OnJumped_Implementation() override;
 	virtual void SetMountedDamageMode(bool bEnabled) override;
 	virtual bool IsMountedForDamage() const override { return bMountedDamageMode; }
+	/** Presentation only: do not use the shared mounted damage flag as an animation mode. */
+	UFUNCTION(BlueprintPure, Category="Cannon|Operator")
+	bool IsOperatingCannon() const;
 	virtual void PrepareForHealthDeath() override;
 	UFUNCTION() void OnRep_MountedDamageMode();
 	UPROPERTY(ReplicatedUsing=OnRep_MountedDamageMode) bool bMountedDamageMode = false;
 	bool bMountedCollisionSaved = false;
 	ECollisionEnabled::Type SavedMountedCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	ECollisionEnabled::Type SavedMountedMeshCollision = ECollisionEnabled::QueryOnly;
+	EVisibilityBasedAnimTickOption SavedMountedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPose;
+	void RefreshMountedEquipmentPresentation();
+	TWeakObjectPtr<ABaseItem> MountedPresentationItem;
+	TMap<TWeakObjectPtr<UMeshComponent>, bool> MountedEquipmentVisibility;
 	bool bInventoryProgressRestored = false;
 	bool bStartingInventoryDecisionMade = false;
 	void FinalizeStartingInventory(bool bFreshInventory);
@@ -693,10 +702,14 @@ protected:
 	/* --- 카메라 ---*/
 public:
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+	USWPlayerCameraZoomComponent* GetCameraZoom() const { return CameraZoom; }
+	bool CanAdjustManualCameraZoom() const;
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USWPlayerCameraZoomComponent> CameraZoom;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> FollowCamera;

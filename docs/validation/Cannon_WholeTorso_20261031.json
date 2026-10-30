@@ -1,0 +1,128 @@
+{
+  "date": "2026-10-31",
+  "upper_body_direction_passed": true,
+  "time_samples": 239,
+  "actors": [
+    {
+      "peer": 0,
+      "player": "BP_Player_Woman_C_0",
+      "max_head_aim_error_deg": 0.00038297434677402845,
+      "spine_rotation_range_deg": {
+        "spine_01": 66.38539091702283,
+        "spine_02": 66.38539091702282,
+        "spine_03": 66.38539091702282
+      },
+      "max_foot_error_cm": 5.789148457771364e-08,
+      "max_hand_contact_error_cm": 89.2200799166978
+    },
+    {
+      "peer": 0,
+      "player": "BP_Player_Man_C_0",
+      "max_head_aim_error_deg": 0.0004441461476916289,
+      "spine_rotation_range_deg": {
+        "spine_01": 66.38539091702285,
+        "spine_02": 66.38539091702287,
+        "spine_03": 66.3853909170229
+      },
+      "max_foot_error_cm": 3.162713022724157e-05,
+      "max_hand_contact_error_cm": 90.81118666875712
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Man_C_0",
+      "max_head_aim_error_deg": 0.00038297054008009236,
+      "spine_rotation_range_deg": {
+        "spine_01": 66.38539091702283,
+        "spine_02": 66.38539091702283,
+        "spine_03": 66.38539091702282
+      },
+      "max_foot_error_cm": 3.162713021302871e-05,
+      "max_hand_contact_error_cm": 90.8111866687779
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Woman_C_0",
+      "max_head_aim_error_deg": 0.0006988417620866433,
+      "spine_rotation_range_deg": {
+        "spine_01": 66.38539091702287,
+        "spine_02": 66.38539091702287,
+        "spine_03": 66.38539091702285
+      },
+      "max_foot_error_cm": 5.789043703333196e-08,
+      "max_hand_contact_error_cm": 89.22004823924985
+    }
+  ],
+  "exit_max_bone_step_cm": {
+    "pelvis": 3.5229012966743567,
+    "head": 7.5373983073347075,
+    "calf_l": 3.4767826334231042,
+    "calf_r": 3.3658220917696915,
+    "foot_l": 0.7206256905108674,
+    "foot_r": 1.1161981860502106
+  },
+  "full_hand_reach_passed": false,
+  "raw_directory": "Saved\\AudioIntegration\\Live\\31504",
+  "settings": [
+    {
+      "sex": "Man",
+      "settings": {
+        "max_torso_yaw": 60.0,
+        "max_torso_pitch": 25.0,
+        "torso_yaw_follow": 1.0,
+        "max_side_lean": 10.0,
+        "max_head_aim_correction": 80.0,
+        "extra_waist_bend": 6.0,
+        "turn_waist_bend": 8.0,
+        "max_waist_bend": 75.0
+      }
+    },
+    {
+      "sex": "Woman",
+      "settings": {
+        "max_torso_yaw": 60.0,
+        "max_torso_pitch": 25.0,
+        "torso_yaw_follow": 1.0,
+        "max_side_lean": 10.0,
+        "max_head_aim_correction": 80.0,
+        "extra_waist_bend": 6.0,
+        "turn_waist_bend": 8.0,
+        "max_waist_bend": 75.0
+      }
+    }
+  ],
+  "whole_torso_pivot_passed": true,
+  "whole_torso": [
+    {
+      "peer": 0,
+      "player": "BP_Player_Woman_C_0",
+      "max_shoulder_yaw_error_deg": 0.00816345244820127,
+      "shoulder_motion_cm": 36.987460212317885,
+      "waist_shoulder_radius_ratio": 1.0000000000009348,
+      "max_pelvis_motion_cm": 4.134476263912591e-11
+    },
+    {
+      "peer": 0,
+      "player": "BP_Player_Man_C_0",
+      "max_shoulder_yaw_error_deg": 0.009859122758683725,
+      "shoulder_motion_cm": 42.19765145376022,
+      "waist_shoulder_radius_ratio": 1.0000000000008684,
+      "max_pelvis_motion_cm": 3.4555944387576076e-11
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Man_C_0",
+      "max_shoulder_yaw_error_deg": 0.00985912271804068,
+      "shoulder_motion_cm": 42.197651453743134,
+      "waist_shoulder_radius_ratio": 1.0000000000008462,
+      "max_pelvis_motion_cm": 4.306995131731547e-11
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Woman_C_0",
+      "max_shoulder_yaw_error_deg": 0.008163452428817664,
+      "shoulder_motion_cm": 36.987460212314055,
+      "waist_shoulder_radius_ratio": 1.0000000000009828,
+      "max_pelvis_motion_cm": 4.313823639169981e-11
+    }
+  ]
+}

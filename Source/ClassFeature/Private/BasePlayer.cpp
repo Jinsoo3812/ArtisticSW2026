@@ -16,6 +16,8 @@
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/SWCameraSpringArmComponent.h"
+#include "Camera/SWPlayerCameraZoomComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -56,6 +58,7 @@
 #include "PhysicsEngine/SkeletalBodySetup.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/MeshComponent.h"
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
@@ -123,7 +126,8 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 		TEXT("/Game/Audio/Foley/DA_Mannequin_Foley.DA_Mannequin_Foley")));
 
 	// 카메라 붐(SpringArm) 생성 및 설정
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom = CreateDefaultSubobject<USWCameraSpringArmComponent>(TEXT("CameraBoom"));
+	CameraZoom = CreateDefaultSubobject<USWPlayerCameraZoomComponent>(TEXT("CameraZoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 400.0f;
 	CameraBoom->bUsePawnControlRotation = true;
@@ -139,7 +143,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 
 	// 아이템 포인터 초기화
 	EquippedItem = nullptr;
-	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->ProbeSize = 12.0f;
 	CameraBoom->ProbeChannel = ECC_Camera;
 
@@ -258,6 +262,9 @@ void ABasePlayer::BeginPlay()
 		DialogueComponent->OnBossQuestAccepted.BindUObject(this, &ABasePlayer::HandleBossQuestAccepted);
 	}
 	InitializeSwimmingAnimLayers();
+	CameraZoom->InitializeDistance(DefaultTargetArmLength);
+	// Apply after serialized Blueprint defaults, including existing player assets.
+	CameraBoom->bDoCollisionTest = CameraZoom->bEnableCameraCollision;
 
 	// Apply presentation-only smoothing after Blueprint defaults are loaded.
 	// ControlRotation remains immediate; only the SpringArm view catches up.
@@ -636,7 +643,7 @@ void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 		}
 	}
 	OutProgress.ControlRotation = RoomController ? RoomController->GetControlRotation() : GetActorRotation();
-	OutProgress.CameraZoom = CameraBoom ? CameraBoom->TargetArmLength : 0.0f;
+	OutProgress.CameraZoom = CameraZoom ? CameraZoom->GetDistance() : DefaultTargetArmLength;
 	if (HealthComponent)
 	{
 		OutProgress.CurrentHealth = HealthComponent->GetHealth();
@@ -725,7 +732,7 @@ void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
 			Movement->Velocity = Progress.WorldVelocity;
 		}
 	if (GetController()) GetController()->SetControlRotation(Progress.ControlRotation);
-	if (CameraBoom && Progress.CameraZoom > 0.0f) CameraBoom->TargetArmLength = Progress.CameraZoom;
+	if (CameraZoom && Progress.CameraZoom > 0.0f) CameraZoom->RestoreDistance(Progress.CameraZoom);
 }
 
 bool ABasePlayer::FinalizeRoomProgressEffects(FString& OutError)
@@ -852,6 +859,7 @@ void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 Pr
 void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	RefreshMountedEquipmentPresentation();
 	// Physics components keep ticking, but a retired pawn must not read the next life's combat state.
 	if (bLifeAbilityBindingsRetired) return;
 
@@ -910,8 +918,12 @@ void ABasePlayer::Tick(float DeltaTime)
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->UpdateAnimationState(DeltaTime);
-		ApplyCombatRotationMode(true);
-		ApplyCombatTurnInPlaceRotation(DeltaTime);
+		const ACannon* MountedCannon = Cast<ACannon>(GetAttachParentActor());
+		if (!MountedCannon || MountedCannon->GetRidingPlayer()!=this)
+		{
+			ApplyCombatRotationMode(true);
+			ApplyCombatTurnInPlaceRotation(DeltaTime);
+		}
 
 		if (!HasAuthority() && IsLocallyControlled())
 		{
@@ -939,10 +951,10 @@ void ABasePlayer::Tick(float DeltaTime)
 		ShipRepairProgressWidget->SetRepairProgress(Elapsed / LocalShipRepairDuration);
 	}
 
-	float TargetArmLength = DefaultTargetArmLength;
+	float TargetArmLength = CameraZoom->GetDistance();
 	FVector TargetSocketOffset = DefaultSocketOffset;
 	float TargetFOV = DefaultFOV;
-	float CurrentInterpSpeed = CameraInterpSpeed;
+	float CurrentInterpSpeed = CameraZoom->GetSafeInterpSpeed();
 	float TargetVignette = 0.0f;
 
 	const bool bIsSprinting = AnimStateComponent && AnimStateComponent->bIsSprinting;
@@ -965,7 +977,7 @@ void ABasePlayer::Tick(float DeltaTime)
 		}
 		else if (bIsSprinting)
 		{
-			TargetArmLength = SprintTargetArmLength;
+			TargetArmLength = CameraZoom->GetSprintDistance(DefaultTargetArmLength, SprintTargetArmLength);
 			TargetFOV = SprintFOV;
 			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
 			CurrentInterpSpeed = SprintCameraInterpSpeed;
@@ -978,27 +990,15 @@ void ABasePlayer::Tick(float DeltaTime)
 
 		if (bIsSprinting)
 		{
-			TargetArmLength = SprintTargetArmLength;
+			TargetArmLength = CameraZoom->GetSprintDistance(DefaultTargetArmLength, SprintTargetArmLength);
 			TargetFOV = SprintFOV;
 			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
 			CurrentInterpSpeed = SprintCameraInterpSpeed;
 		}
 	}
 
-	// 조준/스나이핑 중이 아니고 질주도 아닐 때의 복귀 보간 속도 설정
-	if (!bIsSniping && !bIsAiming && !bIsSprinting)
-	{
-		// 질주 후 복귀(줌아웃 상태에서 복귀) 시에는 부드러운 SprintCameraInterpSpeed 사용,
-		// 조준 후 복귀(줌인 상태에서 복귀) 시에는 빠른 CameraInterpSpeed 사용
-		if (CameraBoom && CameraBoom->TargetArmLength > DefaultTargetArmLength)
-		{
-			CurrentInterpSpeed = SprintCameraInterpSpeed;
-		}
-		else
-		{
-			CurrentInterpSpeed = CameraInterpSpeed;
-		}
-	}
+	// Normal zoom and return use the manual zoom speed selected above. Arm length
+	// alone no longer identifies sprint exit: manual zoom can move either direction.
 
 	// Rotation ownership is selected by ApplyCombatRotationMode() above:
 	// controller yaw while moving in Strafe, selected TIP root yaw while idle.
@@ -1431,6 +1431,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
+		CameraZoom->BindInput(EnhancedInputComponent);
 		// Jumping
 		if (JumpAction)
 		{
@@ -2167,6 +2168,17 @@ void ABasePlayer::OnAreaSlowSkillPressed()
 void ABasePlayer::OnAreaSlowSkillReleased()
 {
 	OnAbilityInputReleased(Key_Skill_AreaSlow);
+}
+
+bool ABasePlayer::CanAdjustManualCameraZoom() const
+{
+	const ABasePlayerController* PC = Cast<ABasePlayerController>(GetController());
+	const bool bAimOwnsCamera = CachedAbilitySystemComponent.IsValid()
+		&& (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping));
+	return IsLocallyControlled() && CanMutateLifeGameplay() && !bAimOwnsCamera
+		&& PC && PC->GetPawn() == this && PC->GetViewTarget() == this
+		&& !PC->bShowMouseCursor && !PC->IsLookInputIgnored() && !PC->IsGameplayInputBlockedByUI();
 }
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
@@ -3932,6 +3944,12 @@ bool ABasePlayer::CanMutateLifeGameplay() const
  return !HasAuthority();
 }
 
+bool ABasePlayer::IsOperatingCannon() const
+{
+ const ACannon* Cannon=Cast<ACannon>(GetAttachParentActor());
+ return IsValid(Cannon) && Cannon->GetRidingPlayer()==this;
+}
+
 void ABasePlayer::SetMountedDamageMode(bool bEnabled)
 {
  if (!HasAuthority() || bMountedDamageMode == bEnabled) return;
@@ -3959,24 +3977,47 @@ void ABasePlayer::FinalizeStartingInventory(bool bFreshInventory)
 
 void ABasePlayer::OnRep_MountedDamageMode()
 {
+ RefreshMountedEquipmentPresentation();
  if (bMountedDamageMode)
  {
   if (!bMountedCollisionSaved)
   {
    SavedMountedCapsuleCollision = GetCapsuleComponent()->GetCollisionEnabled();
    SavedMountedMeshCollision = GetMesh()->GetCollisionEnabled();
+   SavedMountedAnimTickOption = GetMesh()->VisibilityBasedAnimTickOption;
    bMountedCollisionSaved = true;
   }
   SetActorEnableCollision(true);
   GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
   GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+  GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
  }
  else if (bMountedCollisionSaved)
  {
   GetCapsuleComponent()->SetCollisionEnabled(SavedMountedCapsuleCollision);
   GetMesh()->SetCollisionEnabled(SavedMountedMeshCollision);
+  GetMesh()->VisibilityBasedAnimTickOption = SavedMountedAnimTickOption;
   bMountedCollisionSaved = false;
  }
+}
+
+void ABasePlayer::RefreshMountedEquipmentPresentation()
+{
+	ABaseItem* Desired = IsOperatingCannon() ? EquippedItem.Get() : nullptr;
+	if (MountedPresentationItem.Get()==Desired && (Desired || MountedEquipmentVisibility.IsEmpty())) return;
+	for (const auto& Entry : MountedEquipmentVisibility)
+	{
+		if (UMeshComponent* ItemMesh=Entry.Key.Get()) ItemMesh->SetVisibility(Entry.Value,false);
+	}
+	MountedEquipmentVisibility.Empty();
+	MountedPresentationItem = Desired;
+	if (!Desired) return;
+	TInlineComponentArray<UMeshComponent*> Meshes(Desired);
+	for (UMeshComponent* ItemMesh : Meshes)
+	{
+		MountedEquipmentVisibility.Add(ItemMesh,ItemMesh->IsVisible());
+		ItemMesh->SetVisibility(false,false);
+	}
 }
 
 void ABasePlayer::PrepareForHealthDeath()
