@@ -187,6 +187,8 @@ protected:
 
 	void BindHostShip();
 	void UnbindHostShip();
+	TWeakObjectPtr<AEnemyShip> BoundRuntimeHost;
+	FDelegateHandle HostRuntimeStateHandle;
 	void ApplyHiddenPresentation();
 	bool IsExclusiveBossAIState(FGameplayTag StateTag) const;
 	void ReleaseSummonedDeckEnemies();

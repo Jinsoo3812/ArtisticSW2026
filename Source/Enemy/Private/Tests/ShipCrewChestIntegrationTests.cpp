@@ -192,7 +192,7 @@ void FShipCrewChestIntegrationTest::GetTests(TArray<FString>& Names, TArray<FStr
 {
 	for (const TCHAR* Case : {TEXT("Crew.ChestBeforeActivation"), TEXT("Crew.ChestAfterActivation"), TEXT("Crew.ProfileReassignment"), TEXT("Crew.PooledDeckPreparation"),
 		TEXT("Boss.ChestBeforeSpawn"), TEXT("Boss.ChestAfterSpawn"), TEXT("Boss.FailedSpawn"),
-		TEXT("Boss.AuthoredMid1"), TEXT("Boss.AuthoredMid3"), TEXT("Boss.WithLivingCrew"), TEXT("Boss.IdleReturnCleanup")})
+		TEXT("Boss.AuthoredMid1"), TEXT("Boss.AuthoredMid3"), TEXT("Boss.WithLivingCrew"), TEXT("Boss.IdleReturnCleanup"), TEXT("Boss.HostShipDestroyedFirst")})
 	{
 		Names.Add(Case);
 		Commands.Add(Case);
@@ -409,10 +409,11 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 	// Native test boss intentionally has no authored combat tree; combat AI is outside this fixture.
 	const bool bIdleCleanup = Parameters == TEXT("Boss.IdleReturnCleanup");
 	if (!bAuthored) AddExpectedError(TEXT("Boss has no Behavior Tree. BT-only AI will remain stopped."), EAutomationExpectedErrorFlags::Contains, bIdleCleanup ? 2 : 1);
-	const bool bMixedGuards = Parameters.Contains(TEXT("WithLivingCrew")) || bIdleCleanup;
+	const bool bShipDestroyedFirst = Parameters == TEXT("Boss.HostShipDestroyedFirst");
+	const bool bMixedGuards = Parameters.Contains(TEXT("WithLivingCrew")) || bIdleCleanup || bShipDestroyedFirst;
 	if (bMixedGuards)
 	{
-		for (int32 Index = 0; Index < 2; ++Index)
+		for (int32 Index = 0; Index < (bShipDestroyedFirst ? 1 : 2); ++Index)
 		{
 			ADeckEnemy* Activated = nullptr;
 			TestTrue(TEXT("Real spawner activates a regular guard before boss spawn"), Spawner->ActivateEnemyAtPoint(101 + Index, nullptr, Activated));
@@ -438,6 +439,32 @@ bool FShipCrewChestIntegrationTest::RunTest(const FString& Parameters)
 		Fixture.Manager->EnsureBossGuaranteedLoot(Fixture.Points[Index]);
 		for (const FStorageItemEntry& Item : RewardItems)
 			TestEqual(TEXT("Repeated reward application is idempotent"), ShipCrewChestIntegration::CountItem(Chest, Item.ItemTag), Item.Count);
+	}
+	if (bShipDestroyedFirst)
+	{
+		TestFalse(TEXT("Living boss starts visible"), Boss->IsHidden());
+		for (ADeckEnemy* Enemy : Crew)
+			if (Enemy->IsPoolActive()) TestFalse(TEXT("Living crew starts visible"), Enemy->IsHidden());
+		// This isolated fixture has no finalized campaign progression loot rolls.
+		AddExpectedError(TEXT("Sunk chest spawned empty: no finalized progression drops or item definitions."), EAutomationExpectedErrorFlags::Contains, 1);
+		Fixture.Ship->FindComponentByClass<UBaseHealthComponent>()->StartDeath();
+		TestTrue(TEXT("Hull death retains the existing sinking path"), Fixture.Ship->IsSinking());
+		TestTrue(TEXT("Boss disappears before the hull is removed"), Boss->IsHidden());
+		TestFalse(TEXT("Hidden boss cannot block the deck"), Boss->GetActorEnableCollision());
+		// A delayed Vanish update must not reveal a boss on a destroyed ship.
+		Boss->ProcessEvent(Boss->FindFunctionChecked(TEXT("OnRep_BossHidden")), nullptr);
+		TestTrue(TEXT("Late boss presentation cannot undo hull-death hiding"), Boss->IsHidden());
+		for (ADeckEnemy* Enemy : Crew)
+		{
+			TestTrue(TEXT("Crew disappears before the hull is removed"), Enemy->IsHidden());
+			TestFalse(TEXT("Hidden crew cannot block the deck"), Enemy->GetActorEnableCollision());
+			TestFalse(TEXT("Hiding preserves crew lifetime until existing host cleanup"), Enemy->IsActorBeingDestroyed());
+		}
+		TestFalse(TEXT("Hiding preserves boss lifetime until existing host cleanup"), Boss->IsActorBeingDestroyed());
+		Fixture.Ship->Destroy();
+		TestTrue(TEXT("Existing host destruction still removes the boss"), Boss->IsActorBeingDestroyed());
+		for (ADeckEnemy* Enemy : Crew) TestTrue(TEXT("Existing host destruction still removes pooled crew"), Enemy->IsActorBeingDestroyed());
+		return !HasAnyErrors();
 	}
 	if (bIdleCleanup)
 	{

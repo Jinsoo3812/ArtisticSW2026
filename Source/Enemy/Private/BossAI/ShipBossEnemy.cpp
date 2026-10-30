@@ -766,25 +766,43 @@ void AShipBossEnemy::HandleHostShipDestroyed(AActor* DestroyedActor)
 
 void AShipBossEnemy::BindHostShip()
 {
-	if (HostShip)
+	if (BoundRuntimeHost.Get() != HostShip)
 	{
-		HostShip->OnDestroyed.AddUniqueDynamic(this, &AShipBossEnemy::HandleHostShipDestroyed);
+		UnbindHostShip();
+		BoundRuntimeHost = HostShip;
+		if (HostShip)
+		{
+			HostShip->OnDestroyed.AddUniqueDynamic(this, &AShipBossEnemy::HandleHostShipDestroyed);
+			HostRuntimeStateHandle = (HasAuthority() ? HostShip->OnRuntimeStateChanged : HostShip->OnRuntimePresentationChanged)
+				.AddWeakLambda(this, [this](const FEnemyShipRuntimeState&, const FEnemyShipRuntimeState&)
+				{
+					ApplyHiddenPresentation();
+				});
+		}
 	}
+	// The host reference and terminal state can arrive in either order.
+	ApplyHiddenPresentation();
 }
 
 void AShipBossEnemy::UnbindHostShip()
 {
-	if (HostShip)
+	if (AEnemyShip* BoundHost = BoundRuntimeHost.Get())
 	{
-		HostShip->OnDestroyed.RemoveDynamic(this, &AShipBossEnemy::HandleHostShipDestroyed);
+		BoundHost->OnDestroyed.RemoveDynamic(this, &AShipBossEnemy::HandleHostShipDestroyed);
+		(HasAuthority() ? BoundHost->OnRuntimeStateChanged : BoundHost->OnRuntimePresentationChanged).Remove(HostRuntimeStateHandle);
 	}
+	BoundRuntimeHost.Reset();
+	HostRuntimeStateHandle.Reset();
 }
 
 void AShipBossEnemy::ApplyHiddenPresentation()
 {
 	// Death replication can arrive before the final Vanish visibility update.
 	const bool bIsDead = bDeathHandled || (GetHealthComponent() && GetHealthComponent()->IsDead());
-	const bool bShouldHide = bBossHidden && !bIsDead;
+	const bool bHostDestroyed = HostShip && (HostShip->IsDeathHandled() || HostShip->IsSinking()
+		|| HostShip->GetRuntimeStateSnapshot().Phase == EEnemyShipRuntimePhase::Terminal);
+	const bool bShouldHide = bHostDestroyed || (bBossHidden && !bIsDead);
+	if (bHostDestroyed) SetActorEnableCollision(false);
 	UCapsuleComponent* Capsule = GetCapsuleComponent();
 	if (bShouldHide)
 	{

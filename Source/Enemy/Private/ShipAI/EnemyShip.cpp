@@ -1640,6 +1640,28 @@ void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
+	// Hide the crew as soon as the hull dies. Keep the existing sinking,
+	// encounter, reward and eventual host-destruction cleanup paths intact.
+	TArray<ABaseEnemy*> CrewToHide;
+	for (ABaseEnemy* Crew : RegisteredCrewEnemies) CrewToHide.AddUnique(Crew);
+	CrewToHide.AddUnique(RegisteredBoss);
+	for (ABaseEnemy* Crew : CrewToHide)
+	{
+		if (!IsValid(Crew)) continue;
+		Crew->FlushNetDormancy();
+		Crew->SetActorHiddenInGame(true);
+		Crew->SetActorEnableCollision(false);
+		TArray<AActor*> Equipment;
+		Crew->GetAttachedActors(Equipment, true, true);
+		for (AActor* Actor : Equipment)
+		{
+			Actor->FlushNetDormancy();
+			Actor->SetActorHiddenInGame(true);
+			Actor->SetActorEnableCollision(false);
+			Actor->ForceNetUpdate();
+		}
+		Crew->ForceNetUpdate();
+	}
 	if (IsFinalBossSquadShip() && EnemyShipArchetype
 		&& EnemyShipArchetype->GetPathName() == FinalBossShipArchetypePath)
 	{
