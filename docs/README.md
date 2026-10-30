@@ -6,6 +6,7 @@
 
 | 내용 | 문서 |
 | --- | --- |
+| 총잡이 보스 전체 구현 순서·에셋·검증 기준 (2026-10-31 재작성) | [총잡이 보스 전체 계획](../Planning/Gunner_Boss_Full_Implementation_Plan_2026-10-30.md) |
 | Player 끼임 감지·3초 홀드 탈출 설정 | [Player 끼임 복구 가이드](Player_Stuck_Recovery_Editor_Guide.md) |
 | Lvl_CY 사운드 적용·음원 제작·2인 PIE·추가 에셋 목록 | [World audio 통합](World_Audio_Integration.md) |
 | 플레이어 Notify·적 접촉·표면별 발소리 | [Foley 시스템](Foley_Audio_System.md) |
