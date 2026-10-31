@@ -33,6 +33,10 @@
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/LocalLightComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "CollisionChannels.h"
 #include "PhysicsEngine/BodyInstance.h"
 #include "Engine/StaticMesh.h"
@@ -482,6 +486,7 @@ void AEnemyShip::BeginPlay()
 	ApplyEffectiveDormancyState();
 	ApplyStoryGatePresentation();
 	ApplyStoryGateToSpawnedChests();
+	InitializeCabinLighting();
 	if (bMeasureInit)
 	{
 		InitialBeginPlayMs = (FPlatformTime::Seconds() - Start) * 1000.;
@@ -495,9 +500,64 @@ void AEnemyShip::BeginPlay()
 
 }
 
+void AEnemyShip::InitializeCabinLighting()
+{
+	if (GetNetMode() == NM_DedicatedServer) return;
+	TInlineComponentArray<ULocalLightComponent*> Lights(this);
+	for (ULocalLightComponent* Light : Lights)
+	{
+		if (IsValid(Light) && Light->IsVisible() && !Light->bHiddenInGame
+			&& (Light->IsA<UPointLightComponent>() || Light->IsA<USpotLightComponent>()))
+		{
+			CabinLights.Add(Light);
+			Light->SetHiddenInGame(true);
+		}
+	}
+	if (CabinLights.IsEmpty()) return;
+	UpdateCabinLighting();
+	GetWorldTimerManager().SetTimer(CabinLightingTimer, this, &AEnemyShip::UpdateCabinLighting, 0.5f, true);
+}
+
+void AEnemyShip::UpdateCabinLighting()
+{
+	if (GetNetMode() == NM_DedicatedServer || !HasActorBegunPlay() || bEndingPlay) return;
+	const bool bCanIlluminate = !bEffectiveDormancyApplied && !bBundlePoolIdle && IsBundlePresentationReady()
+		&& !IsStoryGateDormant() && !IsSinking() && !bDeathHandled && !IsHidden();
+	bool bShouldEnable = false;
+	if (bCanIlluminate)
+	{
+		const float EnableDistance = FMath::IsFinite(CabinLightEnableDistance)
+			? FMath::Max(0.0f, CabinLightEnableDistance) : 3000.0f;
+		const float DisableDistance = FMath::IsFinite(CabinLightDisableDistance)
+			? FMath::Max(EnableDistance, CabinLightDisableDistance) : FMath::Max(EnableDistance, 4000.0f);
+		const float DistanceSquared = FMath::Square(bCabinLightsEnabled ? DisableDistance : EnableDistance);
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			const APlayerController* LocalController = It->Get();
+			if (!IsValid(LocalController) || !LocalController->IsLocalController() || !LocalController->PlayerCameraManager) continue;
+			FVector ViewLocation;
+			FRotator ViewRotation;
+			LocalController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+			if (!ViewLocation.ContainsNaN() && FVector::DistSquared(ViewLocation, GetActorLocation()) <= DistanceSquared)
+			{
+				bShouldEnable = true;
+				break;
+			}
+		}
+	}
+	bCabinLightsEnabled = bShouldEnable;
+	for (const TWeakObjectPtr<ULocalLightComponent>& WeakLight : CabinLights)
+	{
+		if (ULocalLightComponent* Light = WeakLight.Get(); Light && Light->bHiddenInGame != !bShouldEnable)
+			Light->SetHiddenInGame(!bShouldEnable);
+	}
+}
+
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEndingPlay = true;
+	GetWorldTimerManager().ClearTimer(CabinLightingTimer);
+	CabinLights.Reset();
 	PublishRuntimeState();
 	if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>())
 		Room->OnRestoreCompleted.Remove(RoomRestoreCompletedHandle);

@@ -50,6 +50,7 @@ namespace EnemyShipLocalSafety
 			if (PhysicsBox.IsValid) Local += PhysicsBox;
 		}
 		const FVector Scale = Root->GetComponentScale().GetAbs();
+		Out.HullLength = Root->GetStaticMesh()->GetBoundingBox().GetSize().X * Scale.X;
 		Out.Actor = &Ship;
 		Out.Position = Root->GetComponentLocation();
 		Out.Yaw = Root->GetComponentRotation().Yaw;
@@ -104,16 +105,16 @@ namespace EnemyShipLocalSafety
 		UPrimitiveComponent* Component = Hit.GetComponent();
 		if (!Actor || !Component || Actor == &Ship || Actor->IsAttachedTo(&Ship)
 			|| Actor->IsA<AWaterBody>() || Component->IsA<UWaterBodyComponent>()
-			|| Component->GetCollisionProfileName() == TEXT("Water") || !Component->IsPhysicsCollisionEnabled()
-			|| Component->GetCollisionResponseToChannel(Ship.BuoyancyRoot->GetCollisionObjectType()) != ECR_Block) return false;
-		if (Component->IsA<UStaticMeshComponent>()) return true;
+			|| Component->GetCollisionProfileName() == TEXT("Water")) return false;
+		// Navigation treats a Landscape query hit as terrain regardless of hull physics responses.
 		for (const UClass* Class = Actor->GetClass(); Class; Class = Class->GetSuperClass())
 			if (Class->GetName().StartsWith(TEXT("Landscape"))) return true;
-		return false;
+		return Component->IsA<UStaticMeshComponent>() && Component->IsPhysicsCollisionEnabled()
+			&& Component->GetCollisionResponseToChannel(Ship.BuoyancyRoot->GetCollisionObjectType()) == ECR_Block;
 	}
 
 	static FResult TerrainSegment(AEnemyShip& Ship, const FHull& Start, const FHull& End,
-		float Margin, const TArray<TWeakObjectPtr<AActor>>& Water)
+		float Margin, const TArray<TWeakObjectPtr<AActor>>& Water, bool bAllowSeparating = true, FString* Diagnostics = nullptr)
 	{
 		UWorld* World = Ship.GetWorld();
 		if (!World) return { false, EThreat::Invalid, nullptr, TEXT("WorldUnavailable") };
@@ -126,10 +127,29 @@ namespace EnemyShipLocalSafety
 		TArray<FHitResult> Hits;
 		World->SweepMultiByObjectType(Hits, Start.Center(), End.Center(), FRotator(0, Start.Yaw, 0).Quaternion(),
 			Objects, FCollisionShape::MakeBox(Extent), Params);
+		if (Diagnostics)
+		{
+			*Diagnostics = FString::Printf(TEXT("Start=%s End=%s Extent=%s Yaw=%.2f ObjectQuery=WorldStatic IgnoredWater=%d Hits=%d ShipObjectType=%d"),
+				*Start.Center().ToCompactString(), *End.Center().ToCompactString(), *Extent.ToCompactString(), Start.Yaw,
+				Water.Num(), Hits.Num(), static_cast<int32>(Ship.BuoyancyRoot->GetCollisionObjectType()));
+			for (int32 Index = 0; Index < FMath::Min(Hits.Num(), 4); ++Index)
+			{
+				const FHitResult& Hit = Hits[Index];
+				const UPrimitiveComponent* Component = Hit.GetComponent();
+				*Diagnostics += FString::Printf(TEXT(" Hit%d={Actor=%s Class=%s Component=%s Blocking=%d TerrainAccepted=%d ObjectType=%d Enabled=%d Physics=%d ShipResponse=%d Profile=%s Distance=%.1f Penetrating=%d Depth=%.1f}"),
+					Index, *GetNameSafe(Hit.GetActor()), *GetNameSafe(Hit.GetActor() ? Hit.GetActor()->GetClass() : nullptr),
+					*GetNameSafe(Component), Hit.bBlockingHit, IsTerrain(Hit, Ship),
+					Component ? static_cast<int32>(Component->GetCollisionObjectType()) : -1,
+					Component ? static_cast<int32>(Component->GetCollisionEnabled()) : -1,
+					Component && Component->IsPhysicsCollisionEnabled(),
+					Component ? static_cast<int32>(Component->GetCollisionResponseToChannel(Ship.BuoyancyRoot->GetCollisionObjectType())) : -1,
+					Component ? *Component->GetCollisionProfileName().ToString() : TEXT("None"), Hit.Distance, Hit.bStartPenetrating, Hit.PenetrationDepth);
+			}
+		}
 		for (const FHitResult& Hit : Hits)
 		{
 			if (!Hit.bBlockingHit || !IsTerrain(Hit, Ship)) continue;
-			if (Hit.bStartPenetrating && FMath::IsFinite(Hit.PenetrationDepth) && !Hit.Normal.IsNearlyZero())
+			if (bAllowSeparating && Hit.bStartPenetrating && FMath::IsFinite(Hit.PenetrationDepth) && !Hit.Normal.IsNearlyZero())
 			{
 				const float Separating = FVector::DotProduct(End.Center() - Start.Center(), Hit.Normal);
 				if (Separating > RotationMargin + UE_KINDA_SMALL_NUMBER) continue;
@@ -147,7 +167,8 @@ namespace EnemyShipLocalSafety
 	FQuery::FQuery(AEnemyShip& Ship, const TArray<TWeakObjectPtr<AActor>>& WaterBodies)
 		: Owner(Ship), Settings(*GetDefault<UEnemyShipAvoidanceSettings>()), IgnoredWater(WaterBodies)
 	{
-		bValid = MakeHull(Ship, {}, Hull);
+		bTerrainHullValid = MakeHull(Ship, {}, Hull);
+		bValid = bTerrainHullValid;
 		if (!bValid || !Ship.GetWorld()) return;
 		TArray<TWeakObjectPtr<AEnemyShip>> Nearby;
 		if (const UShipSwarmSubsystem* Swarm = Ship.GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
@@ -198,6 +219,22 @@ namespace EnemyShipLocalSafety
 		Result.Segments = Path.Num() - 1;
 		Result.Peers = Peers.Num();
 		const float Dt = Duration / (Path.Num() - 1);
+		for (int32 Index = 1; Index < Path.Num(); ++Index)
+		{
+			const FResult Terrain = TerrainSegment(Owner, Path[Index - 1], Path[Index], Margin, IgnoredWater);
+			++Result.TerrainSweeps;
+			if (!Terrain.bSafe)
+			{
+				FResult Blocked = Terrain;
+				Blocked.Margin = Margin;
+				Blocked.Segment = Index;
+				Blocked.Segments = Result.Segments;
+				Blocked.Peers = Result.Peers;
+				Blocked.TerrainSweeps = Result.TerrainSweeps;
+				Blocked.PredictionTime = Dt * Index;
+				return Blocked;
+			}
+		}
 		float OwnReach = 0.0f;
 		for (const FHull& Pose : Path)
 			OwnReach = FMath::Max(OwnReach, static_cast<float>((Pose.Center() - Path[0].Position).Size2D()));
@@ -241,23 +278,29 @@ namespace EnemyShipLocalSafety
 				PreviousGap = Gap;
 			}
 		}
-		for (int32 Index = 1; Index < Path.Num(); ++Index)
-		{
-			const FResult Terrain = TerrainSegment(Owner, Path[Index - 1], Path[Index], Margin, IgnoredWater);
-			++Result.TerrainSweeps;
-			if (!Terrain.bSafe)
-			{
-				FResult Blocked = Terrain;
-				Blocked.Margin = Margin;
-				Blocked.Segment = Index;
-				Blocked.Segments = Result.Segments;
-				Blocked.Peers = Result.Peers;
-				Blocked.TestedPeers = Result.TestedPeers;
-				Blocked.TerrainSweeps = Result.TerrainSweeps;
-				Blocked.PredictionTime = Dt * Index;
-				return Blocked;
-			}
-		}
+		return Result;
+	}
+
+	FResult FQuery::CheckTerrainHeading(float YawOffset, bool bDiagnostics) const
+	{
+		if (!bTerrainHullValid || !FMath::IsFinite(Hull.HullLength) || Hull.HullLength <= 2.0f)
+			return { false, EThreat::Invalid, nullptr, TEXT("TerrainHullUnavailable") };
+		const float Distance = 1.5f * Hull.HullLength;
+		const FVector Forward = FRotator(0, Hull.Yaw + YawOffset, 0).Vector();
+		FHull Start = Hull;
+		Start.Yaw += YawOffset;
+		Start.Position = Hull.Center() + Forward;
+		Start.CenterOffset = FVector::ZeroVector;
+		Start.Extent.X = 1.0f;
+		Start.Extent.Y += Value(Settings.SafetyMargin, 150);
+		FHull End = Start;
+		End.Position += Forward * (Distance - 2.0f);
+		FString Diagnostics;
+		FResult Result = TerrainSegment(Owner, Start, End, 0, IgnoredWater, false, bDiagnostics ? &Diagnostics : nullptr);
+		if (bDiagnostics)
+			Result.TerrainDiagnostics = FString::Printf(TEXT("HullLength=%.1f ProbeDistance=%.1f %s"), Hull.HullLength, Distance, *Diagnostics);
+		Result.TerrainSweeps = 1;
+		Result.HitDistance = Result.bSafe ? Distance : FMath::Max(0.0f, Result.HitDistance);
 		return Result;
 	}
 

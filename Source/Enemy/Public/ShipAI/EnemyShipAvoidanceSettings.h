@@ -13,6 +13,7 @@ class ENEMY_API UEnemyShipAvoidanceSettings : public UDeveloperSettings
 public:
 	virtual FName GetCategoryName() const override { return TEXT("Game"); }
 	UPROPERTY(Config, EditAnywhere, Category = "LocalSafety") float SafetyEvaluationInterval = 0.1f;
+	UPROPERTY(Config, EditAnywhere, Category = "LocalSafety") float TerrainForwardProbeInterval = 0.2f;
 	UPROPERTY(Config, EditAnywhere, Category = "LocalSafety") float SafetyPredictionTime = 1.5f;
 	UPROPERTY(Config, EditAnywhere, Category = "LocalSafety") float SafetyPredictionStep = 0.25f;
 	UPROPERTY(Config, EditAnywhere, Category = "LocalSafety") float SafetyMaximumYawStep = 5.0f;

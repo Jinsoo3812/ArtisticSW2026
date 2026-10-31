@@ -344,6 +344,12 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 	}
 }
 
+void UGA_EnemyShipCharge::StopForNavigationSafety()
+{
+	if (IsActive())
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+}
+
 void UGA_EnemyShipCharge::BeginCharge()
 {
 	AEnemyShip* Ship = ActiveShip.Get();
@@ -352,6 +358,11 @@ void UGA_EnemyShipCharge::BeginCharge()
 		return;
 	}
 
+	if (const auto* Navigation = Ship->GetNavigationComponent(); Navigation && Navigation->IsAvoidanceManeuverActive())
+	{
+		StopForNavigationSafety();
+		return;
+	}
 	bChargeStarted = true;
 	if (auto* Navigation = Ship->GetNavigationComponent()) Navigation->ResetLocalSafety();
 	ChargeStartTime = TerrainProgressTime = Ship->GetWorld()->GetTimeSeconds();

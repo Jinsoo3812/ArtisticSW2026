@@ -18,6 +18,7 @@ namespace EnemyShipLocalSafety
 		FVector Velocity = FVector::ZeroVector;
 		FVector CenterOffset = FVector::ZeroVector;
 		FVector Extent = FVector::ZeroVector;
+		float HullLength = 0.0f;
 		float Yaw = 0.0f;
 		float YawRate = 0.0f;
 		float Acceleration = 0.0f;
@@ -59,6 +60,7 @@ namespace EnemyShipLocalSafety
 		float LinearDamping = 0.0f;
 		float AngularDamping = 0.0f;
 		FVector HullExtent = FVector::ZeroVector;
+		FString TerrainDiagnostics;
 	};
 
 	struct FQuery
@@ -66,6 +68,7 @@ namespace EnemyShipLocalSafety
 		FQuery(AEnemyShip& Ship, const TArray<TWeakObjectPtr<AActor>>& WaterBodies);
 		FResult Check(const FEnemyShipNavigationOverrideRequest& Control, bool bEscape, float ExtraMargin = 0.0f) const;
 		FResult CheckTransform(const FTransform& Start, const FTransform& End) const;
+		FResult CheckTerrainHeading(float YawOffset = 0.0f, bool bDiagnostics = false) const;
 		bool IsValid() const { return bValid; }
 
 	private:
@@ -76,6 +79,7 @@ namespace EnemyShipLocalSafety
 		TArray<FHull> Peers;
 		TArray<TWeakObjectPtr<AActor>> IgnoredWater;
 		bool bValid = false;
+		bool bTerrainHullValid = false;
 	};
 
 	bool HasTerrainAhead(AEnemyShip& Ship, float Distance);
