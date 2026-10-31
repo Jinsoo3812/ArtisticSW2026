@@ -117,7 +117,8 @@ bool UBaseHitReactionGameplayAbility::PlayHitReactionMontage(EBaseHitReactionDir
 		HitReactionMontageStartSection,
 		bStopHitReactionMontageWhenAbilityEnds,
 		/* AnimRootMotionTranslationScale */ 1.0f,
-		/* StartTimeSeconds */ 0.0f);
+		/* StartTimeSeconds */ 0.0f,
+		/* bAllowInterruptAfterBlendOut */ true);
 
 	if (!HitReactionMontageTask)
 	{

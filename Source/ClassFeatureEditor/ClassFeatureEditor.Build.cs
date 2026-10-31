@@ -7,6 +7,10 @@ public class ClassFeatureEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AssetTools",
+			"Niagara",
+			"BehaviorTreeEditor",
+			"AIGraph",
+			"AIModule",
 			"AudioEditor",
 			"RenderCore",
 			"RHI",

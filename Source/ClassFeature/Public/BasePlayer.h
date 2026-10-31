@@ -44,6 +44,8 @@ class UPlayerDialogueComponent;
 class UPlayerAimComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
+class UStuckRecoveryComponent;
+class UStuckRecoveryInputComponent;
 struct FSWPlayerProgressSnapshot;
 
 UENUM(BlueprintType)
@@ -82,6 +84,11 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProv
 	friend class ULocomotionAnimStateComponent;
 
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Recovery")
+	TObjectPtr<UStuckRecoveryComponent> StuckRecoveryComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Recovery")
+	TObjectPtr<UStuckRecoveryInputComponent> StuckRecoveryInputComponent;
+
 	/** Cosmetic contact audio, inherited by male/female player Blueprints. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio|Foley")
 	TObjectPtr<USWFoleyComponent> FoleyComponent;
@@ -143,17 +150,11 @@ private:
 	void RetireLifeAbilityBindings();
 	bool bLifeAbilityBindingsRetired = false;
 
-	UPROPERTY(ReplicatedUsing = OnRep_ShipDeathMovement)
-	bool bShipDeathMovement = false;
-	bool bShipDeathMovementPrepared = false;
-	UFUNCTION()
-	void OnRep_ShipDeathMovement();
-
 public:
 
+	/** Legacy ragdoll entry points now hide the player without starting physics. */
 	virtual void ApplyLocalDeathRagdoll() override;
 	virtual void PrepareDeathMovement() override;
-	virtual bool ShouldKeepCharacterMovementOnDeath() const override { return bShipDeathMovement; }
 	virtual bool IsMoveInputIgnored() const override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:

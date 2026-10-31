@@ -428,7 +428,7 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 
 	const FVector ExplosionLocation = GetActorLocation();
 	const float EffectiveRadius = FMath::Max(0.0f, SplashDamageRadius);
-	DrawDebugSphere(GetWorld(), ExplosionLocation, EffectiveRadius, 24, FColor::Red, false, 2.0f);
+	//DrawDebugSphere(GetWorld(), ExplosionLocation, EffectiveRadius, 24, FColor::Red, false, 2.0f);
 
 	// Object queries do not depend on the projectile collision profile's response
 	// table. Pawn capsules and ShipDamage hulls therefore remain compatible without

@@ -136,7 +136,10 @@ void UBossEncounterComponent::BeginPlay()
 
 void UBossEncounterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	GetWorld()->GetTimerManager().ClearTimer(SightEvaluationTimerHandle);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SightEvaluationTimerHandle);
+	}
 	if (auto* Host = Cast<AEnemyShip>(GetOwner())) Host->OnRuntimeStateChanged.Remove(HostRuntimeStateHandle);
 	UnbindItemBox();
 	if (AChestSpawnPoint* Point = ResolveTriggerChestPoint())

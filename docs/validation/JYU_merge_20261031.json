@@ -1,0 +1,238 @@
+{
+  "date": "2026-10-31",
+  "branch": "JYU_merge",
+  "inputs": {
+    "fix-lss": "e08604dc5ead926255ee080f717cba07a5882f12",
+    "origin/master": "1bab6c96b16ca97fc34e4cdc99eccfa303739806",
+    "origin/KKH/ShipAI": "150dacd2222c56492e1dedabff5b9f6e175ba259",
+    "origin/pr/124": "cf44a8350d1bb907d3006e376dc4f0e335f340e4",
+    "origin/Jiwon_UI": "a590563d8d1ae9c0dc8e27ae696a3cdc3a846491"
+  },
+  "build": "UE 5.7.4 ArtisticSW2026Editor Win64 Development: succeeded",
+  "project_tests": {
+    "total": 277,
+    "passed": 253,
+    "failed": 24
+  },
+  "all_selected_tests": {
+    "total": 344,
+    "passed": 320,
+    "failed": 24
+  },
+  "catalog": {
+    "entries": 78,
+    "ui_icons_restored": 59,
+    "other_fields_preserved": true,
+    "verified_in_fresh_process": true
+  },
+  "failures": [
+    {
+      "test": "ArtisticSW.AreaSlow.InputLifecycle",
+      "errors": [
+        "Expected 'Holding the dedicated skill input enters Area Slow aiming' to be true.",
+        "Expected 'Area Slow can re-enter aiming after cancellation' to be true.",
+        "Expected 'One confirmation spawns one replicated visual' to be 1, but it was 0."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Bombardment.GameplayAbilityShipIntegration",
+      "errors": [
+        "Expected 'Helming preserves the living player's skill permission' to be true.",
+        "Expected 'Bombardment GA activates by ability tag' to be true.",
+        "Expected 'GA activation enters ship targeting mode' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Chest.FixedDrops.AuthoredChances",
+      "errors": [
+        "Expected 'Five rare item entries' to be 5, but it was 8.",
+        "Expected 'Mid1 chance is 50 percent' to be true.",
+        "Expected 'Mid1 chance is 50 percent' to be true.",
+        "Expected 'Mid2 is disabled' to be 0.000000, but it was 1.000000 and outside tolerance 0.000100.",
+        "Expected 'Mid1 chance is 50 percent' to be true.",
+        "Expected 'Mid3 is disabled' to be 0.000000, but it was 1.000000 and outside tolerance 0.000100.",
+        "Expected 'Mid1 chance is 50 percent' to be true.",
+        "Expected 'Final is disabled' to be 0.000000, but it was 1.000000 and outside tolerance 0.000100.",
+        "Expected 'Mid1 chance is 50 percent' to be true.",
+        "Expected 'Final is disabled' to be 0.000000, but it was 1.000000 and outside tolerance 0.000100."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Chest.MapPlacedLogic",
+      "errors": [
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_0",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_1",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_2",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_3",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_4",
+        "Expected 'Placed map spawns two low, one high, and two guarded chests' to be 5, but it was 2.",
+        "Expected 'Low random group activates two of three points' to be 2, but it was 0.",
+        "Expected 'High random group activates one of two points' to be 1, but it was 0."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Enemy.Balance.HitCounts",
+      "errors": [
+        "Expected 'T1_BossSummon_Ranged actual GAS damage count' to be 4, but it was 2.",
+        "Expected 'T2_Ground_Melee actual GAS damage count' to be 5, but it was 6.",
+        "Expected 'T2_Deck_Melee actual GAS damage count' to be 5, but it was 6.",
+        "Expected 'T2_BossSummon_Ranged actual GAS damage count' to be 4, but it was 3.",
+        "Expected 'T3_Deck_Melee actual GAS damage count' to be 6, but it was 5.",
+        "Expected 'T3_Deck_Ranged actual GAS damage count' to be 5, but it was 3.",
+        "Expected 'T3_BossSummon_Ranged actual GAS damage count' to be 4, but it was 3."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Enemy.Balance.Initialization",
+      "errors": [
+        "LogTemp: [EnemyBalance] Invalid stats: Enemy=BaseEnemy_0 Row=Bad"
+      ]
+    },
+    {
+      "test": "ArtisticSW.Enemy.DeckMVP.FixedAnchorLifecycle",
+      "errors": [
+        "Expected 'Server activates pooled enemy at a committed deck point' to be true.",
+        "Expected 'Active deck enemy restores walking movement' to be 1, but it was 0.",
+        "Expected 'Active deck enemy enables the live-waypoint movement contract' to be true.",
+        "Expected 'Active anchored enemy is visible' to be false.",
+        "Expected 'Activation restores mesh component visibility' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Enemy.DeckMVP.RangedCombatTreeHasAttackAndGraphMovement",
+      "errors": [
+        "Expected 'Combat subtree retains the ranged attack task' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Enemy.DeckMVP.SpawnerCompositionAndShipLocalTransform",
+      "errors": [
+        "Expected 'An external boss-style requester uses the shared spawn reservation path' to be true.",
+        "Expected 'The shared reservation activates one pooled enemy' to be true.",
+        "Both configured entries finish deployment: The two values are not equal.",
+        "Expected 'Both exact-class pool actors become active' to be 2, but it was 0.",
+        "Expected 'Spawner tracks both living deployed enemies' to be 2, but it was 0.",
+        "Expected 'The final owned enemy completes the ship encounter' to be true.",
+        "Expected 'EnemyShip exposes the same completion state' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Enemy.Ship.Anchor.Integration",
+      "errors": [
+        "Expected 'Move input applied after anchor raised' to be 1.000000, but it was 0.000000 and outside tolerance 0.000100.",
+        "Expected 'Turn input applied after anchor raised' to be 0.500000, but it was 0.000000 and outside tolerance 0.000100."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Enemy.Ship.Navigation.DeterministicAvoidance",
+      "errors": [
+        "Expected 'Yielding ship applies reverse thrust' to be true.",
+        "Expected 'Returning ship disables avoidance maneuvers' to be false."
+      ]
+    },
+    {
+      "test": "ArtisticSW.GAS.HitReaction.AuthorityRootMotion.Man",
+      "errors": [
+        "Expected 'Configured montage enables root motion' to be true.",
+        "Expected 'CMC moves the authority capsule with montage root motion' to be true.",
+        "Expected 'Configured montage enables root motion' to be true.",
+        "Expected 'CMC moves the authority capsule with montage root motion' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.GAS.HitReaction.AuthorityRootMotion.Woman",
+      "errors": [
+        "Expected 'Configured montage enables root motion' to be true.",
+        "Expected 'CMC moves the authority capsule with montage root motion' to be true.",
+        "Expected 'Configured montage enables root motion' to be true.",
+        "Expected 'CMC moves the authority capsule with montage root motion' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.GAS.HitReaction.PlayerConfiguration",
+      "errors": [
+        "Expected 'Montages without authored root motion receive a fallback push' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.GravityVortex.SelectionInputLifecycle",
+      "errors": [
+        "Expected 'Pressing the skill key enters Gravity Vortex aiming mode' to be true.",
+        "Expected 'The skill can enter aiming mode again' to be true.",
+        "Expected 'Releasing E preserves Gravity Vortex aiming mode' to be true.",
+        "Expected 'Gravity Vortex can be selected again after E cancels it' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Integration.LvlCY.CrewChestAuthoring",
+      "errors": [
+        "Expected 'BP_ES_Mid_1 actual boss class has exact-class guaranteed loot mapping' to be true.",
+        "Expected 'BP_ES_Mid_1 boss reward contains required items' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Integration.ShipCrewChest.Boss.IdleReturnCleanup",
+      "errors": [
+        "Expected 'Real spawner activates a regular guard before boss spawn' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Integration.ShipCrewChest.Boss.WithLivingCrew",
+      "errors": [
+        "Expected 'Real spawner activates a regular guard before boss spawn' to be true.",
+        "Expected 'Boss and one regular guard dead still leaves chest locked' to be true.",
+        "Expected 'Boss and one regular guard dead still leaves chest locked' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Integration.ShipCrewChest.Crew.ChestBeforeActivation",
+      "errors": [
+        "Crew activation timed out after five simulated seconds. WaitReason=CapsuleBlocked State=4 Active=1/0 HostDeployable=1"
+      ]
+    },
+    {
+      "test": "ArtisticSW.Network.SwimmingPredictionQuantitative",
+      "errors": [
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_0",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_1",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_2",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_3",
+        "LogTemp: Random chest point must use OceanRandom or IslandRandom. Point=ChestSpawnPoint_4"
+      ]
+    },
+    {
+      "test": "ArtisticSW.Status.PlayerPreview",
+      "errors": [
+        "Sword B data uses the sword preview idle: The two values are not equal.",
+        "Expected 'Configured player Blueprint loads' to be not null.",
+        "Expected 'Configured player spawns for preview' to be not null.",
+        "Expected 'Preview character is present in the ShowOnly list' to be true."
+      ]
+    },
+    {
+      "test": "ArtisticSW.Tools.BuildChestVisualTestMap",
+      "errors": [
+        "Expected 'Previous generated test map is removed' to be true.",
+        "Expected 'Visual guard Blueprint class loads' to be not null."
+      ]
+    },
+    {
+      "test": "ArtisticSW.UI.ItemQuickSlot.FUsePriority",
+      "errors": [
+        "Expected 'F consumes exactly one selected item' to be 1, but it was 2."
+      ]
+    },
+    {
+      "test": "ArtisticSW.WaterBomb.GameplayAbilityCannonIntegration",
+      "errors": [
+        "Expected 'Water Bomb GA activates by ability tag' to be true.",
+        "Expected 'GA activation changes cannon to Water Bomb mode' to be true.",
+        "LogTemp: ACannon::SpawnCannonball - Normal cannonball projectile class is null.",
+        "Expected 'Water Bomb fire consumes one material' to be 0, but it was 1.",
+        "Expected 'GA-selected Water Bomb projectile is spawned' to be not null.",
+        "Expected 'Water Bomb mode can be entered again' to be true.",
+        "Expected 'The reactivated GA changes the cannon mode' to be true."
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/InventoryPanelWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "BasePlayer.h"
 #include "Storage/StorageChest.h"
@@ -208,7 +209,7 @@ void UInventoryPanelWidget::RefreshItemInfo(FGameplayTag ItemTag, int32 Count)
 	{
 		if (UTexture2D* Icon = BoundInventoryComponent->GetMaterialIcon(ItemTag))
 		{
-			ItemInfoIconImage->SetBrushFromTexture(Icon, true);
+			UItemIconLibrary::SetItemIcon(ItemInfoIconImage, Icon, ItemTag);
 			ItemInfoIconImage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		}
 		else

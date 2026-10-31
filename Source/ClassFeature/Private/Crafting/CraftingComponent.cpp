@@ -215,7 +215,8 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree))
 	{
 		OutDetails.RequiredRecipeItem.bEnough = true;
-		for (FCraftingIngredientView& View : OutDetails.Ingredients) View.bEnough = true;
+		for (FCraftingIngredientView& View : OutDetails.Ingredients)
+			View.bEnough = true;
 		OutDetails.MaxCraftableCount = MaxCraftCountPerRequest;
 	}
 	return true;
