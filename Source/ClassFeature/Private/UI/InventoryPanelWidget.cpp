@@ -4,6 +4,8 @@
 #include "UI/ItemIconLibrary.h"
 
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
+#include "InputCoreTypes.h"
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "Components/Button.h"
@@ -12,6 +14,22 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "UI/InventoryEntryWidget.h"
+
+FReply UInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Tab)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer()))
+		{
+			if (!InKeyEvent.IsRepeat())
+			{
+				PlayerController->ToggleInventory();
+			}
+			return FReply::Handled();
+		}
+	}
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
 
 void UInventoryPanelWidget::NativeConstruct()
 {
