@@ -7,6 +7,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Development/TestInput/SWDevTestInputComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerDeathDevelopmentTest,
 	"ArtisticSW.Player.Death.LifeOwnership",
@@ -34,6 +35,7 @@ bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Null life request rejected"), Input->MatchesCurrentLife(nullptr, OriginalGeneration));
 	ABasePlayer* Replacement = Fixture.SpawnPlayer();
 	if (!TestNotNull(TEXT("Replacement"), Replacement)) return false;
+	Replacement->SetActorLocation(FVector(10000, 10000, 10000));
 	TestFalse(TEXT("Another pawn cannot be selected for suicide"), Input->MatchesCurrentLife(Replacement, OriginalGeneration));
 	const float Strength = ASC->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
 	AActor* Equipment = Fixture.World->SpawnActor<AActor>();
@@ -41,16 +43,39 @@ bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 	Equipment->SetRootComponent(EquipmentMesh);
 	EquipmentMesh->RegisterComponent();
 	Equipment->AttachToComponent(Life.Player->GetMesh(), FAttachmentTransformRules::KeepWorldTransform);
-	// Exercise DeathStarted separately: an authored death montage may finish later.
-	Life.Player->HandleDeathStarted(OldHealth);
-	TestTrue(TEXT("Player disappears at death start"), Life.Player->IsHidden());
-	TestFalse(TEXT("Hidden player no longer collides"), Life.Player->GetActorEnableCollision());
-	TestTrue(TEXT("Attached equipment disappears with the player"), Equipment->IsHidden());
-	TestFalse(TEXT("Player never enters ragdoll physics"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
-	TestEqual(TEXT("Invisible player cannot keep walking on the ship"), Life.Player->GetCharacterMovement()->MovementMode.GetValue(), MOVE_None);
+	// Exercise the replicated in-progress death independently of the fixture's
+	// immediate no-montage finish. Existing CMC based movement must keep working.
+	{
+		FReplicatedDeathPresentation* Presentation = FindFProperty<FStructProperty>(OldHealth->GetClass(), TEXT("DeathPresentation"))
+			->ContainerPtrToValuePtr<FReplicatedDeathPresentation>(OldHealth);
+		TGuardValue<EBaseDeathState> InProgress(Presentation->DeathState, EBaseDeathState::DeathStarted);
+		AActor* DeckActor = Fixture.World->SpawnActor<AActor>();
+		UStaticMeshComponent* Deck = NewObject<UStaticMeshComponent>(DeckActor);
+		DeckActor->SetRootComponent(Deck);
+		Deck->SetMobility(EComponentMobility::Movable);
+		Deck->RegisterComponent();
+		UCharacterMovementComponent* Movement = Life.Player->GetCharacterMovement();
+		Movement->SetMovementMode(MOVE_Walking);
+		Life.Player->SetBase(Deck);
+		Movement->SaveBaseLocation();
+		Life.Player->HandleDeathStarted(OldHealth);
+		Life.Player->ApplyLocalDeathRagdoll();
+		TestFalse(TEXT("Death montage player remains visible"), Life.Player->IsHidden());
+		TestTrue(TEXT("Death montage keeps floor collision"), Life.Player->GetActorEnableCollision());
+		TestTrue(TEXT("Death montage suppresses input"), Life.Player->IsMoveInputIgnored());
+		TestEqual(TEXT("Death montage retains walking CMC"), Movement->MovementMode.GetValue(), MOVE_Walking);
+		const FVector Before = Life.Player->GetActorLocation();
+		const FVector DeckDelta(100, 0, 50);
+		Deck->SetWorldLocation(Deck->GetComponentLocation() + DeckDelta);
+		Movement->UpdateBasedMovement(1.f / 60.f);
+		TestTrue(TEXT("Standard CMC transports dying player with moving floor"), (Life.Player->GetActorLocation() - Before).Equals(DeckDelta, 0.1f));
+		Life.Player->SetBase(nullptr);
+		DeckActor->Destroy();
+	}
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 0.0f);
 	TestTrue(TEXT("Existing death pipeline completes"), OldHealth->GetDeathState() == EBaseDeathState::DeathFinished);
 	Life.Player->ApplyLocalDeathRagdoll();
+	TestTrue(TEXT("Equipment disappears only after death finishes"), Equipment->IsHidden());
 	TestTrue(TEXT("Legacy ragdoll calls keep the player hidden"), Life.Player->IsHidden());
 	TestFalse(TEXT("Death completion never starts player physics"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
 	TestTrue(TEXT("Death tag remains on persistent ASC until new life"), ASC->HasMatchingGameplayTag(State_Dead));

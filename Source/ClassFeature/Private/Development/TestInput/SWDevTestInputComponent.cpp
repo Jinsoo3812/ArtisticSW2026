@@ -17,6 +17,7 @@
 #include "BaseGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "Ship.h"
+#include "SWNetworkWeatherActor.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -447,6 +448,23 @@ void USWDevTestInputComponent::RequestCampaignSkip(FName Target)
  ServerSkipCampaign(Target, ServerRestoreGeneration);
 }
 
+void USWDevTestInputComponent::ServerSetWeather_Implementation(int32 Hour, int32 Minute, int32 Weather)
+{
+ if (!SWDevTestInput::Allowed()) return;
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ const AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ if (!PC || !Mode || (GetWorld()->GetNetMode() != NM_Standalone && !Mode->IsRoomHostController(PC))) return;
+ for (TActorIterator<ASWNetworkWeatherActor> It(GetWorld()); It; ++It)
+ {
+  FString Message;
+  It->ApplyDevelopmentWeather(Hour, Minute, Weather, Message);
+  PC->ClientMessage(Message);
+  UE_LOG(LogSWDevTestInput, Display, TEXT("%s"), *Message);
+  return;
+ }
+ PC->ClientMessage(TEXT("No network weather actor in this world."));
+}
+
 void USWDevTestInputComponent::ServerSkipCampaign_Implementation(FName Target, int32 ExpectedGeneration)
 {
  if (!SWDevTestInput::Allowed()) return;
@@ -503,6 +521,14 @@ FAutoConsoleCommandWithWorldAndArgs ShipSpeedMultiplier(TEXT("SW.DevTest.ShipSpe
 FAutoConsoleCommandWithWorldAndArgs RepairPlanks(TEXT("SW.DevTest.RepairPlanks"), TEXT("Top up local host's ordinary/good wooden planks and iron plates to 50 each; requires Session 1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
   if (Args.IsEmpty()) if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerGrantRepairPlanks();
+ }));
+FAutoConsoleCommandWithWorldAndArgs WeatherSet(TEXT("SW.Weather.Set"), TEXT("Host: <hour 0-23> <minute 0-59> <weather ID>. No arguments lists authored weather IDs."),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  int32 Hour = 12, Minute = 0, Weather = -1;
+  if (!Args.IsEmpty() && (Args.Num() != 3 || !LexTryParseString(Hour, *Args[0])
+   || !LexTryParseString(Minute, *Args[1]) || !LexTryParseString(Weather, *Args[2]) || Weather < 0))
+  { UE_LOG(LogSWDevTestInput, Warning, TEXT("Usage: SW.Weather.Set [hour minute weatherID]")); return; }
+  if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetWeather(Hour, Minute, Weather);
  }));
 FAutoConsoleCommandWithWorldAndArgs FreeUpgrade(TEXT("SW.DevTest.ShipUpgradeFree"), TEXT("Ignore ship materials 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("ShipUpgradeFree")); }));

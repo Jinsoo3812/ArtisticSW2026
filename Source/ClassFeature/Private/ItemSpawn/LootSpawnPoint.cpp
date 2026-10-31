@@ -15,6 +15,7 @@
 #include "EngineUtils.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "Misc/ScopeExit.h"
 
 ALootSpawnPointBase::ALootSpawnPointBase()
 {
@@ -563,25 +564,33 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 	AShip* TargetShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
 	if (TargetShip)
 	{
+		// Pool preparation spawns chests before activating the ship's collision.
+		// Temporarily expose its deck queries, then restore the preparation state.
+		const bool bPreviousActorCollision = TargetShip->GetActorEnableCollision();
+		TargetShip->SetActorEnableCollision(true);
+		ON_SCOPE_EXIT { TargetShip->SetActorEnableCollision(bPreviousActorCollision); };
 		TArray<UStaticMeshComponent*> StaticMeshes;
 		TargetShip->GetComponents<UStaticMeshComponent>(StaticMeshes);
 		for (UStaticMeshComponent* MeshComp : StaticMeshes)
 		{
 			if (MeshComp && MeshComp->GetCollisionProfileName() == TEXT("ShipDeck"))
 			{
+				const ECollisionEnabled::Type PreviousCollision = MeshComp->GetCollisionEnabled();
+				if (PreviousCollision == ECollisionEnabled::NoCollision) MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+				ON_SCOPE_EXIT { MeshComp->SetCollisionEnabled(PreviousCollision); };
 				bFoundGround = MeshComp->LineTraceComponent(
 					GroundHit,
 					TraceStart,
 					TraceEnd,
 					QueryParams
 				);
-				break;
+				if (bFoundGround) break;
 			}
 		}
 	}
 
 	// 2. 일반 지상/육지인 경우: ECC_WorldStatic(Landscape/Mesh) -> ECC_Visibility -> ECC_Pawn 순으로 지형 검사
-	if (!bFoundGround)
+	if (!bFoundGround && !TargetShip)
 	{
 		bFoundGround = GetWorld()->LineTraceSingleByChannel(
 			GroundHit,
@@ -591,7 +600,7 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 			QueryParams
 		);
 	}
-	if (!bFoundGround)
+	if (!bFoundGround && !TargetShip)
 	{
 		bFoundGround = GetWorld()->LineTraceSingleByChannel(
 			GroundHit,
@@ -601,7 +610,7 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 			QueryParams
 		);
 	}
-	if (!bFoundGround)
+	if (!bFoundGround && !TargetShip)
 	{
 		bFoundGround = GetWorld()->LineTraceSingleByChannel(
 			GroundHit,

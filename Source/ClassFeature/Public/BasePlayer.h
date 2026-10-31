@@ -155,6 +155,7 @@ public:
 	/** Legacy ragdoll entry points now hide the player without starting physics. */
 	virtual void ApplyLocalDeathRagdoll() override;
 	virtual void PrepareDeathMovement() override;
+	virtual bool ShouldKeepCharacterMovementOnDeath() const override;
 	virtual bool IsMoveInputIgnored() const override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:

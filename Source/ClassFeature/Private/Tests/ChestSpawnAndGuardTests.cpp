@@ -17,6 +17,8 @@
 #include "Ship.h"
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 
 namespace ChestSystemTests
 {
@@ -315,6 +317,42 @@ bool FEmptyChestAutoDespawnTest::RunTest(const FString& Parameters)
 	Chest->HandleEmptyDestroyTimeout();
 	TestTrue(TEXT("Empty chest is marked for destruction on timeout"), Chest->IsActorBeingDestroyed());
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FShipChestDeckAlignmentTest, "ArtisticSW.Chest.ShipDeckAlignment",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FShipChestDeckAlignmentTest::RunTest(const FString& Parameters)
+{
+	ChestSystemTests::FTestWorld Fixture(TEXT("ShipChestAlignment"));
+	AShip* Ship = Fixture.World->SpawnActor<AShip>();
+	ChestSystemTests::AddHealthComponent(Ship, TEXT("ShipHealth"));
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		UStaticMeshComponent* Deck = NewObject<UStaticMeshComponent>(Ship);
+		Ship->AddInstanceComponent(Deck);
+		Deck->SetStaticMesh(Cube);
+		Deck->SetCollisionProfileName(TEXT("ShipDeck"));
+		Deck->SetWorldLocation(FVector(Index == 0 ? 5000 : 0, 0, 200));
+		Deck->RegisterComponent();
+	}
+	Ship->SetActorEnableCollision(false);
+	AChestSpawnPoint* Point = Fixture.World->SpawnActor<AChestSpawnPoint>(FVector(0,0,500), FRotator::ZeroRotator);
+	FChestSpawnPointChestSettings Settings;
+	Settings.SpawnMode = EChestSpawnMode::Guarded;
+	Settings.Environment = EChestEnvironment::ShipDeck;
+	Settings.OwningShip = Ship;
+	Settings.ChestClassOverride = LoadClass<AStorageChest>(nullptr, TEXT("/Game/Blueprints/Item/BP/Chest/BP_Storage_Chest.BP_Storage_Chest_C"));
+	FChestSpawnPointLootSettings Loot;
+	Loot.bAlignChestBottomToGround = true;
+	Point->ApplyAuthoringSettings(Settings, Loot);
+	AStorageChest* Chest = Point->SpawnConfiguredChest(nullptr, 123);
+	if (!TestNotNull(TEXT("Ship chest spawns"), Chest)) return false;
+	Chest->GetChestMesh()->UpdateBounds();
+	TestTrue(TEXT("Missed first deck does not skip the second deck; inactive ship can be queried"),
+		FMath::IsNearlyEqual(Chest->GetChestMesh()->Bounds.GetBox().Min.Z, 250. + Loot.GroundClearance, 0.1));
+	TestFalse(TEXT("Alignment preserves inactive ship collision"), Ship->GetActorEnableCollision());
 	return true;
 }
 

@@ -22,6 +22,7 @@ public:
  void RequestSessionEnabled(bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerSetDevelopmentOption(FName Option, bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerSetShipSpeedMultiplier(float Multiplier);
+ UFUNCTION(Server, Reliable) void ServerSetWeather(int32 Hour, int32 Minute, int32 Weather);
  /** Top up ordinary/good wooden planks and iron plates to 50 each; host-only, enabled test session only. */
  UFUNCTION(Server, Reliable) void ServerGrantRepairPlanks();
  UFUNCTION(Server, Reliable) void ServerSkipCampaign(FName Target, int32 ExpectedGeneration);

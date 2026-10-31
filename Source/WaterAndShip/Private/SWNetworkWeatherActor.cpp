@@ -224,7 +224,7 @@ namespace
 			if (!ValidateSegment(S) || S.Epoch != W.Epoch) return false;
 			if (S.SecondsPerHour == 0. && W.Segments.Num() != 1) return false;
 			if (Previous && (S.Sequence != Previous->Sequence + 1 || S.Hour != (Previous->Hour + 1) % 24
-				|| S.SecondsPerHour != Previous->SecondsPerHour || FMath::Abs(S.StartServerTime - Previous->StartServerTime - Previous->SecondsPerHour) > BoundaryTolerance)) return false;
+				|| FMath::Abs(S.StartServerTime - Previous->StartServerTime - Previous->SecondsPerHour) > BoundaryTolerance)) return false;
 			Previous = &S;
 		}
 		return true;
@@ -759,13 +759,70 @@ void ASWNetworkWeatherActor::EndPlay(const EEndPlayReason::Type Reason)
 	Super::EndPlay(Reason);
 }
 
+double ASWNetworkWeatherActor::CalculateHourDuration(int32 Hour, double BaseSeconds, double Sunrise, double Sunset, double DayFraction)
+{
+	if (BaseSeconds <= 0. || !FMath::IsFinite(BaseSeconds)) return 0.;
+	if (!FMath::IsFinite(Sunrise) || !FMath::IsFinite(Sunset) || Sunrise < 0. || Sunset > 24. || Sunrise >= Sunset) return BaseSeconds;
+	const double DayHours = Sunset - Sunrise;
+	const double DayOverlap = FMath::Max(0., FMath::Min(Hour + 1., Sunset) - FMath::Max(static_cast<double>(Hour), Sunrise));
+	const double Fraction = FMath::Clamp(DayFraction, 0.05, 0.95);
+	// Sunrise/sunset can lie inside an hour (Lvl_CY uses 5.142857/18.857142).
+	// Account for those mixed hours so the elapsed daylight really is 80%.
+	double DaySquared = 0., Mixed = 0., NightSquared = 0.;
+	for (int32 Index = 0; Index < 24; ++Index)
+	{
+		const double Overlap = FMath::Max(0., FMath::Min(Index + 1., Sunset) - FMath::Max(static_cast<double>(Index), Sunrise));
+		DaySquared += Overlap * Overlap;
+		Mixed += Overlap * (1. - Overlap);
+		NightSquared += FMath::Square(1. - Overlap);
+	}
+	const double Determinant = DaySquared * NightSquared - Mixed * Mixed;
+	if (Determinant <= UE_SMALL_NUMBER) return BaseSeconds;
+	const double DayRate = (Fraction * NightSquared - (1. - Fraction) * Mixed) / Determinant;
+	const double NightRate = ((1. - Fraction) * DaySquared - Fraction * Mixed) / Determinant;
+	if (DayRate <= 0. || NightRate <= 0.) return BaseSeconds;
+	return BaseSeconds * 24. * (DayOverlap * DayRate + (1. - DayOverlap) * NightRate);
+}
+
+double ASWNetworkWeatherActor::GetHourDuration(int32 Hour) const
+{
+	return CalculateHourDuration(Hour, ReadNumber(TEXT("1 Hour Seconds")),
+		ReadNumber(TEXT("RiseTime(DebugParam)")), ReadNumber(TEXT("DownTime(DebugParam)")), 0.8);
+}
+
+bool ASWNetworkWeatherActor::ApplyDevelopmentWeather(int32 Hour, int32 Minute, int32 Weather, FString& OutMessage)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	FProperty* Init = GetClass()->FindPropertyByName(TEXT("InitWeather"));
+	const FByteProperty* Byte = CastField<FByteProperty>(Init);
+	const FEnumProperty* Property = CastField<FEnumProperty>(Init);
+	const UEnum* Enum = Byte ? Byte->Enum.Get() : (Property ? Property->GetEnum() : nullptr);
+	if (!HasAuthority() || !bAdapterReady || !Enum) { OutMessage = TEXT("Weather actor is not ready on the server."); return false; }
+	if (Weather < 0)
+	{
+		OutMessage = TEXT("SW.Weather.Set <hour 0-23> <minute 0-59> <weather>:");
+		for (int32 Index = 0; Index < Enum->NumEnums() - 1; ++Index)
+			OutMessage += FString::Printf(TEXT(" %lld=%s"), Enum->GetValueByIndex(Index), *Enum->GetDisplayNameTextByIndex(Index).ToString());
+		return true;
+	}
+	if (Hour < 0 || Hour > 23 || Minute < 0 || Minute > 59 || Weather > 255
+		|| !Enum->IsValidEnumValue(Weather) || Enum->GetIndexByValue(Weather) >= Enum->NumEnums() - 1)
+	{ OutMessage = TEXT("Invalid weather/time. Run SW.Weather.Set with no arguments to list weather IDs."); return false; }
+	SetNetworkWeatherTime(Hour, Minute, static_cast<uint8>(Weather));
+	OutMessage = FString::Printf(TEXT("Weather set to %02d:%02d, %s; day/night 80/20."), Hour, Minute, *Enum->GetDisplayNameTextByValue(Weather).ToString());
+	return !bGenerationFailed;
+#else
+	return false;
+#endif
+}
+
 void ASWNetworkWeatherActor::SetNetworkWeatherTime(int32 Hour, int32 Minute, uint8 Weather)
 {
 	if (!HasAuthority() || !bAdapterReady) return;
 	if (PlannerState.Epoch == MAX_uint32) { LogOnce(PlannerState.Epoch, PlannerState.Sequence, TEXT("GenerationFailure.EpochOverflow")); return; }
 	const uint32 Epoch = PlannerState.Epoch + 1;
 	Hour = FMath::Clamp(Hour, 0, 23); Minute = FMath::Clamp(Minute, 0, 59);
-	const double Duration = ReadNumber(TEXT("1 Hour Seconds"));
+	const double Duration = GetHourDuration(Hour);
 	FProperty* Init = GetClass()->FindPropertyByName(TEXT("InitWeather"));
 	FByteProperty* Byte = CastField<FByteProperty>(Init);
 	FEnumProperty* EnumProperty = CastField<FEnumProperty>(Init);
@@ -911,6 +968,7 @@ void ASWNetworkWeatherActor::BuildFutureSegments(double Now)
 			if (!RestoreSegmentValues(PlannerState) || !Invoke(TEXT("ChangeMatParam"), {{TEXT("InputAlpha"), 1.}})) { FailGeneration(TEXT("PlannerRestore")); break; }
 			FSWWeatherPlaybackSegment Next = PlannerState;
 			Next.Sequence++; Next.Hour = (Next.Hour + 1) % 24; Next.StartServerTime += Next.SecondsPerHour;
+			Next.SecondsPerHour = GetHourDuration(Next.Hour);
 			PendingVisibilityFrom = PlannerState.SunVisibilityTo;
 			WriteNumber(TEXT("CurrentHour"), Next.Hour); WriteNumber(TEXT("Current Minute"), 0.);
 			if (!Invoke(TEXT("SetNextWeather"), {{TEXT("NextHour"), static_cast<double>(Next.Hour)}}) || !CaptureSegment(Next)) { FailGeneration(TEXT("PlannerCapture")); break; }
