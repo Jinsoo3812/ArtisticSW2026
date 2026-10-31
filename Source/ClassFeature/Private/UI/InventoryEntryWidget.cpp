@@ -190,8 +190,9 @@ void UInventoryEntryWidget::NativeOnDragDetected(const FGeometry& InGeometry, co
 	if (DisplayedIcon)
 	{
 		UImage* DragIcon = NewObject<UImage>(Operation);
-		DragIcon->SetBrushFromTexture(DisplayedIcon, true);
-		DragIcon->SetDesiredSizeOverride(FVector2D(64.f));
+		// Keep the drag brush independent of the source texture resolution.
+		DragIcon->SetBrushFromTexture(DisplayedIcon, false);
+		DragIcon->SetBrushSize(FVector2D(64.f, 64.f));
 		Operation->DefaultDragVisual = DragIcon;
 	}
 	UE_LOG(LogTemp, Display, TEXT("[QuickSlotDrag] Event=DragStarted Item=%s Slot=%d"),

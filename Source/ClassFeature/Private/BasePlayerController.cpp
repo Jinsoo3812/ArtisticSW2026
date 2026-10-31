@@ -640,6 +640,7 @@ void ABasePlayerController::ToggleInventory()
 
 	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
 	{
+		ToggleStatus();
 		return;
 	}
 
