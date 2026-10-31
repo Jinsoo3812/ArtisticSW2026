@@ -89,6 +89,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanStartEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanStartEvent);
 		HitScanStartEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	HitScanTickEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -101,6 +103,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanTickEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanTickEvent);
 		HitScanTickEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	HitScanEndEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -113,6 +117,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanEndEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanEndEvent);
 		HitScanEndEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	ComboCommitEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -125,6 +131,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		ComboCommitEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnComboCommitEvent);
 		ComboCommitEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	ComboInputEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -137,6 +145,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		ComboInputEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnComboInputEvent);
 		ComboInputEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	if (!PlayAttackMontage())
@@ -185,6 +195,8 @@ void UGA_PlayerBasicAttack::EndAbility(
 			Player->bIsAttacking = false;
 		}
 	}
+
+	OwnedStateTags.Reset();
 
 	CachedSword = nullptr;
 	CachedAttackMontage = nullptr;
@@ -502,7 +514,7 @@ void UGA_PlayerBasicAttack::AddAttackStateTag()
 		{
 			// Mark ownership first: tag callbacks can synchronously cancel the ability.
 			bOwnsAttackState = true;
-			ASC->AddLooseGameplayTag(State_Attacking);
+			OwnedStateTags.Set(ASC, State_Attacking, true);
 		}
 	}
 }
@@ -513,7 +525,7 @@ void UGA_PlayerBasicAttack::RemoveAttackStateTag()
 	bOwnsAttackState = false;
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Attacking);
+		OwnedStateTags.Set(ASC, State_Attacking, false);
 	}
 }
 

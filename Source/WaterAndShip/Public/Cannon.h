@@ -16,6 +16,7 @@ class APlayerController;
 class UUserWidget;
 class UGameplayAbility;
 class AWaterBombCannonball;
+class UCannonOperatorStationProfile;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnWaterBombModeChanged, bool);
 
@@ -52,6 +53,9 @@ class WATERANDSHIP_API ACannon : public APawn
 	GENERATED_BODY()
 	
 public:	
+	/** Class-owned presentation data also applies to pre-existing ship child-actor templates. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Cannon|Operator")
+	TObjectPtr<UCannonOperatorStationProfile> OperatorStationProfile;
 	ACannon();
 
 protected:
@@ -59,9 +63,12 @@ protected:
 
 public:	
 	virtual void Tick(float DeltaTime) override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+	virtual void Destroyed() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void UnPossessed() override;
 	virtual void OnRep_Controller() override;
+	virtual void PawnClientRestart() override;
 	class AShip* GetOwningShip() const;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -120,6 +127,13 @@ public:
 	bool IsWaterBombMode() const { return bWaterBombMode; }
 	FOnWaterBombModeChanged OnWaterBombModeChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
+	USceneComponent* GetOperatorTarget(int32 Index) const
+	{
+		return Index==0 ? LeftFootPlant.Get() : Index==1 ? RightFootPlant.Get() : Index==2 ? LeftHandGrip.Get() : Index==3 ? RightHandGrip.Get() : nullptr;
+	}
+	FVector2D GetVisualOperatorAim() const { return FVector2D(VisualAimRotation.Yaw, VisualAimRotation.Pitch); }
+	UFUNCTION(BlueprintPure, Category="Cannon|Operator")
+	bool IsOperatorHiddenForController(APlayerController* PlayerController) const;
 
 	bool ActivateWaterBombModeFromAbility(
 		UGameplayAbility* Ability,
@@ -156,10 +170,21 @@ protected:
 	/** Authored mounting point for the player character positioned behind the cannon. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> PlayerMountPoint;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Cannon|Operator")
+	TObjectPtr<USceneComponent> OperatorPivot;
 
 	/** Authored exit point when the player dismounts from the cannon. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> PlayerExitPoint;
+	/** Fixed deck station targets, editable per cannon BP independently of barrel rotation. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Cannon|Operator")
+	TObjectPtr<USceneComponent> LeftHandGrip;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Cannon|Operator")
+	TObjectPtr<USceneComponent> RightHandGrip;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Cannon|Operator")
+	TObjectPtr<USceneComponent> LeftFootPlant;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Cannon|Operator")
+	TObjectPtr<USceneComponent> RightFootPlant;
 
 	// ---- Properties ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Projectile")
@@ -233,6 +258,8 @@ protected:
 	void ExitAimMode();
 	/** Hides the rider and separately-attached equipment only from this cannon's local controller. */
 	void RefreshLocalRiderVisibility();
+	void RefreshLocalControllerPresentation();
+	void ClearLocalControllerPresentation();
 	void ClearLocalRiderHiddenActors();
 
 	// ---- Server RPCs ----
@@ -313,4 +340,6 @@ private:
 
 	/** Actors added to a local PlayerController's HiddenActors while aiming. */
 	TArray<TWeakObjectPtr<AActor>> LocallyHiddenRiderActors;
+	TWeakObjectPtr<APlayerController> RiderHiddenController;
+	float RiderVisibilityRefreshElapsed = 0.f;
 };

@@ -149,7 +149,7 @@ int32 UGunnerBossAuthoringCommandlet::Main(const FString& Params)
 	FKismetEditorUtilities::CompileBlueprint(BossBP);
 	if (BossBP->Status == BS_Error) return 1;
 	for (UObject* Asset : TArray<UObject*>{Tree, Combat, Set, GunBP, Weapons, BossBP})
-		if (!Save(Asset)) return 1;
+		if (!T1GunnerAuthoring::Save(Asset)) return 1;
 	UE_LOG(LogTemp, Display, TEXT("T1_GUNNER_AUTHORING_OK: BP, gun, registry, CombatData, shared root and dedicated Combat subtree saved. Manual: grip/muzzle sockets, montage/AnimBP, sound/flash, stats and encounter placement. PIE not verified."));
 	return 0;
 #else

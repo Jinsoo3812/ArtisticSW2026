@@ -1,0 +1,88 @@
+{
+  "date": "2026-10-31",
+  "upper_body_direction_passed": true,
+  "time_samples": 239,
+  "actors": [
+    {
+      "peer": 0,
+      "player": "BP_Player_Woman_C_0",
+      "max_head_aim_error_deg": 0.00038207109963825906,
+      "spine_rotation_range_deg": {
+        "spine_01": 12.504106261009131,
+        "spine_02": 30.045479635840266,
+        "spine_03": 50.06736179298331
+      },
+      "max_foot_error_cm": 5.788848771627881e-08,
+      "max_hand_contact_error_cm": 82.63349506010981
+    },
+    {
+      "peer": 0,
+      "player": "BP_Player_Man_C_0",
+      "max_head_aim_error_deg": 0.0004393011801068801,
+      "spine_rotation_range_deg": {
+        "spine_01": 12.504106315889937,
+        "spine_02": 30.037735094493442,
+        "spine_03": 50.02463824057862
+      },
+      "max_foot_error_cm": 3.1627131861124586e-05,
+      "max_hand_contact_error_cm": 83.73830737795781
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Man_C_0",
+      "max_head_aim_error_deg": 0.00038207491529351236,
+      "spine_rotation_range_deg": {
+        "spine_01": 12.504106315890052,
+        "spine_02": 30.037735094493442,
+        "spine_03": 50.02463824057862
+      },
+      "max_foot_error_cm": 3.162713525934223e-05,
+      "max_hand_contact_error_cm": 83.73830737796358
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Woman_C_0",
+      "max_head_aim_error_deg": 0.0006988417620866433,
+      "spine_rotation_range_deg": {
+        "spine_01": 12.504106261009131,
+        "spine_02": 30.04547963584022,
+        "spine_03": 50.06736179298331
+      },
+      "max_foot_error_cm": 5.789030459800875e-08,
+      "max_hand_contact_error_cm": 82.63348624458362
+    }
+  ],
+  "exit_max_bone_step_cm": {
+    "pelvis": 3.5037806864905523,
+    "head": 6.65991057947579,
+    "calf_l": 3.350047001806423,
+    "calf_r": 3.251131659872206,
+    "foot_l": 0.7297560599097918,
+    "foot_r": 1.115029131292768
+  },
+  "full_hand_reach_passed": false,
+  "raw_directory": "Saved\\AudioIntegration\\Live\\10792",
+  "settings": [
+    {
+      "sex": "Man",
+      "settings": {
+        "max_torso_yaw": 45.0,
+        "max_torso_pitch": 25.0,
+        "torso_yaw_follow": 0.7,
+        "max_side_lean": 10.0,
+        "max_head_aim_correction": 80.0
+      }
+    },
+    {
+      "sex": "Woman",
+      "settings": {
+        "max_torso_yaw": 45.0,
+        "max_torso_pitch": 25.0,
+        "torso_yaw_follow": 0.7,
+        "max_side_lean": 10.0,
+        "max_head_aim_correction": 80.0,
+        "forward_lean": 15.0
+      }
+    }
+  ]
+}

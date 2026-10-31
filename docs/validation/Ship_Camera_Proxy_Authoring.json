@@ -1,0 +1,9 @@
+{
+  "blueprint": "/Game/Blueprints/Ship/Blueprints/BP_PlayerShip_Kelvin",
+  "proxy": "/Game/Blueprints/Ship/Camera/SM_PlayerShip_Camera.SM_PlayerShip_Camera",
+  "source_triangles": 70838,
+  "proxy_triangles": 70390,
+  "removed_pillars": 16,
+  "removed_triangles": 448,
+  "original_source_unchanged": true
+}

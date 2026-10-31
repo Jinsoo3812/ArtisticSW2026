@@ -4,6 +4,7 @@
 
 #include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "AbilitySystemComponent.h"
+#include "PlayerLifeTestWorld.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
@@ -47,41 +48,18 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FWaterBombAbilityCannonIntegrationTest::RunTest(const FString& Parameters)
 {
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("WaterBombAbilityCannonWorld"));
-	if (!TestNotNull(TEXT("Transient game world is created"), World))
-	{
-		return false;
-	}
-	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
-	WorldContext.SetCurrentWorld(World);
-
-	auto CleanupWorld = [World]()
-	{
-		World->DestroyWorld(false);
-		GEngine->DestroyWorldContext(World);
-	};
-
-	ABasePlayerState* PlayerState = World->SpawnActor<ABasePlayerState>();
-	APlayerController* PlayerController = World->SpawnActor<APlayerController>();
-	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
+	// Use the real controller/life-ownership initialization. A bare PlayerController
+	// cannot pass the server's CanMutateLifeGameplay policy after cannon possession.
+	PlayerLifeTests::FWorld Fixture;
+	const auto Life = Fixture.SpawnLife();
+	UWorld* World = Fixture.World.Get();
+	ABasePlayerState* PlayerState = Life.State;
+	ABasePlayerController* PlayerController = Life.Controller;
+	ABasePlayer* Player = Life.Player;
 	ACannon* Cannon = World->SpawnActor<ACannon>();
-	if (!TestNotNull(TEXT("PlayerState is spawned"), PlayerState)
-		|| !TestNotNull(TEXT("PlayerController is spawned"), PlayerController)
-		|| !TestNotNull(TEXT("Player is spawned"), Player)
-		|| !TestNotNull(TEXT("Cannon is spawned"), Cannon))
-	{
-		CleanupWorld();
-		return false;
-	}
-
-	Player->SetPlayerState(PlayerState);
-	PlayerController->Possess(Player);
+	if (!TestNotNull(TEXT("Cannon is spawned"), Cannon)) return false;
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
-	if (!TestNotNull(TEXT("Player ASC is initialized by possession"), ASC))
-	{
-		CleanupWorld();
-		return false;
-	}
+	if (!TestNotNull(TEXT("Player ASC is initialized by possession"), ASC)) return false;
 
 	FGameplayTagContainer AbilityTags(GameplayAbility_Skill_WaterBomb);
 	bool bGranted = false;
@@ -145,7 +123,6 @@ bool FWaterBombAbilityCannonIntegrationTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Server tick exits Water Bomb mode when its material runs out externally"),
 		Cannon->IsWaterBombMode());
 
-	CleanupWorld();
 	return true;
 }
 

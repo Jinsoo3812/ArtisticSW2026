@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
 #include "Combat/PlayerAimComponent.h"
 #include "Item/Projectiles/ProjectileShotComponent.h"
@@ -150,8 +151,6 @@ protected:
 	TArray<TObjectPtr<UAbilityTask>> AimInputTasks;
 	bool bEndingAim = true;
 	bool bOwnsAimTag = false;
-	bool bOwnsAttackTag = false;
-	FGameplayTagContainer OwnedBowStateTags;
 	FTimerHandle ChargeTimerHandle;
 	/** Immutable for this release; independent of the animation-facing DrawAlpha. */
 	float PendingReleaseFireSpeed = 0.f;
@@ -169,4 +168,7 @@ protected:
 	bool bHasFiredCurrentShot = false;
 	bool bHasReceivedNockNotify = false;
 	bool bOwnsServerPoseRefresh = false;
+
+  private:
+	FSWOwnedLooseGameplayTags OwnedStateTags;
 };

@@ -56,7 +56,7 @@ void UGA_BowAimFire::ActivateAbility(
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		bOwnsAimTag = true;
-		ASC->AddLooseGameplayTag(State_Aiming);
+		OwnedStateTags.Set(ASC, State_Aiming, true);
 	}
 
 	if (!IsAimSessionActive()) return;
@@ -144,11 +144,8 @@ void UGA_BowAimFire::EndAbility(
 			if (Player->GetAimComponent()) Player->GetAimComponent()->SetObstructionQuery(FPlayerAimObstructionQuery());
 	}
 	ResetBowState();
-	if (bOwnsAimTag)
-	{
-		bOwnsAimTag = false;
-		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo()) ASC->RemoveLooseGameplayTag(State_Aiming);
-	}
+	bOwnsAimTag = false;
+	OwnedStateTags.Reset();
 	CachedBow = nullptr;
 	CachedBowComponent = nullptr;
 	ShotComponent.Reset();
@@ -280,7 +277,8 @@ void UGA_BowAimFire::UpdateDrawAlpha()
 
 	if (DrawAlpha >= FullDrawAlphaToRelease)
 	{
-		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+		if (GetWorld())
+			GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 		CachedBowComponent->SetDrawAlpha(1.0f);
 
 		// Make the full-draw pose available before the draw montage starts blending
@@ -400,7 +398,8 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 		PendingReleaseFireSpeed = CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha());
 	}
 
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	bIsDrawing = false;
 	bIsFullyDrawn = true;
 	bIsReleaseInProgress = true;
@@ -679,7 +678,8 @@ void UGA_BowAimFire::FinishShot()
 	if (bFinishingShot) return;
 	TGuardValue<bool> FinishingGuard(bFinishingShot, true);
 	CancelPendingShot();
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	const FWeaponAnimationEntry* Entry = GetBowAnimationEntry();
 	StopBowMontage(Entry ? Entry->AimCycleBlendOutTime : DrawMontageBlendOutTime);
 	RemoveBowStateTags();
@@ -775,26 +775,23 @@ void UGA_BowAimFire::AddBowStateTags()
 {
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		auto AddOwnedTag = [this, ASC](FGameplayTag Tag, bool bEnabled)
-		{
-			if (bEnabled && !OwnedBowStateTags.HasTagExact(Tag))
-			{
-				OwnedBowStateTags.AddTag(Tag);
-				ASC->AddLooseGameplayTag(Tag);
-			}
-		};
-		AddOwnedTag(State_Bow_Drawing, bIsDrawing);
-		AddOwnedTag(State_Bow_FullyDrawn, bIsFullyDrawn);
-		AddOwnedTag(State_Bow_Releasing, bIsReleaseInProgress);
+		if (bIsDrawing)
+			OwnedStateTags.Set(ASC, State_Bow_Drawing, true);
+		if (bIsFullyDrawn)
+			OwnedStateTags.Set(ASC, State_Bow_FullyDrawn, true);
+		if (bIsReleaseInProgress)
+			OwnedStateTags.Set(ASC, State_Bow_Releasing, true);
 	}
 }
 
 void UGA_BowAimFire::RemoveBowStateTags()
 {
-	const FGameplayTagContainer TagsToRemove = OwnedBowStateTags;
-	OwnedBowStateTags.Reset();
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-		ASC->RemoveLooseGameplayTags(TagsToRemove);
+	{
+		OwnedStateTags.Set(ASC, State_Bow_Drawing, false);
+		OwnedStateTags.Set(ASC, State_Bow_FullyDrawn, false);
+		OwnedStateTags.Set(ASC, State_Bow_Releasing, false);
+	}
 }
 
 void UGA_BowAimFire::SetBowDrawTagState(bool bDrawing, bool bFullyDrawn, bool bReleasing)
@@ -815,12 +812,9 @@ bool UGA_BowAimFire::IsAimSessionActive() const
 
 void UGA_BowAimFire::SetAttackTag(bool bEnabled)
 {
-	if (bOwnsAttackTag == bEnabled) return;
-	bOwnsAttackTag = bEnabled;
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		if (bEnabled) ASC->AddLooseGameplayTag(State_Attacking);
-		else ASC->RemoveLooseGameplayTag(State_Attacking);
+		OwnedStateTags.Set(ASC, State_Attacking, bEnabled);
 	}
 }
 
