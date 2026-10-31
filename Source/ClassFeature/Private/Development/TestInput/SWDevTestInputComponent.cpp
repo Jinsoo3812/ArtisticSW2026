@@ -333,7 +333,11 @@ void USWDevTestInputComponent::GrantRepairPlanks(bool bTopUp)
   if (bSessionRepairPlanksGranted) return;
   bSessionRepairPlanksGranted = true;
  }
- for (const FGameplayTag Tag : TArray<FGameplayTag>{Item_Id_Material_ShipMaterials_WoodenPlank, Item_Id_Material_ShipMaterials_GoodWoodenPlank})
+ for (const FGameplayTag Tag : TArray<FGameplayTag>{
+  Item_Id_Material_ShipMaterials_WoodenPlank,
+  Item_Id_Material_ShipMaterials_GoodWoodenPlank,
+  Item_Id_Material_ShipMaterials_IronPlate,
+  Item_Id_Material_ShipMaterials_GoodIronPlate})
  {
   const int32 Missing = bTopUp ? FMath::Max(0, 50 - Inventory->GetItemCount(Tag)) : 50;
   const int32 Added = Missing > 0 ? Inventory->AddItem(Tag, Missing) : 0;
@@ -496,7 +500,7 @@ FAutoConsoleCommandWithWorldAndArgs ShipSpeedMultiplier(TEXT("SW.DevTest.ShipSpe
   else if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetShipSpeedMultiplier(Multiplier);
   else UE_LOG(LogSWDevTestInput, Warning, TEXT("ShipSpeedMultiplier requires one local player controller."));
  }));
-FAutoConsoleCommandWithWorldAndArgs RepairPlanks(TEXT("SW.DevTest.RepairPlanks"), TEXT("Top up local host's ordinary/good repair planks to 50 each; requires Session 1"),
+FAutoConsoleCommandWithWorldAndArgs RepairPlanks(TEXT("SW.DevTest.RepairPlanks"), TEXT("Top up local host's ordinary/good wooden planks and iron plates to 50 each; requires Session 1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
   if (Args.IsEmpty()) if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerGrantRepairPlanks();
  }));
