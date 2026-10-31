@@ -659,10 +659,21 @@ void UPlayerHUDWidget::RefreshShipHealthContext(APawn* ControlledPawn)
 		return;
 	}
 
+	const auto ShowShipHealth = [this](AShip* Ship)
+	{
+		if (Ship->IsEnemyShipForEffects())
+		{
+			UnbindShipHealthSource();
+			HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerOnly);
+			return;
+		}
+		BindShipHealthSource(Ship);
+		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+	};
+
 	if (AShip* ControlledShip = Cast<AShip>(ControlledPawn))
 	{
-		BindShipHealthSource(ControlledShip);
-		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::ShipPrimaryWithPlayerSecondary);
+		ShowShipHealth(ControlledShip);
 		return;
 	}
 
@@ -670,8 +681,7 @@ void UPlayerHUDWidget::RefreshShipHealthContext(APawn* ControlledPawn)
 	{
 		if (AShip* OwningShip = ControlledCannon->GetOwningShip())
 		{
-			BindShipHealthSource(OwningShip);
-			HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+			ShowShipHealth(OwningShip);
 			return;
 		}
 	}
@@ -679,13 +689,12 @@ void UPlayerHUDWidget::RefreshShipHealthContext(APawn* ControlledPawn)
 	bool bHasWalkableFloor = false;
 	if (AShip* FloorShip = ResolveShipFromFloor(ControlledPawn, bHasWalkableFloor))
 	{
-		BindShipHealthSource(FloorShip);
-		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+		ShowShipHealth(FloorShip);
 		return;
 	}
 
 	AShip* LastShip = CachedShipHealthSource.Get();
-	if (!bHasWalkableFloor && IsValid(LastShip)
+	if (!bHasWalkableFloor && IsValid(LastShip) && !LastShip->IsEnemyShipForEffects()
 		&& !IsBeyondShipHealthHideDistance(ControlledPawn, LastShip))
 	{
 		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
