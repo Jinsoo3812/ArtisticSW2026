@@ -201,8 +201,9 @@ bool USWCharacterRigValidationLibrary::ConfigureRagdollTestGameMode(UBlueprint* 
 {
     if(!ConfigureTestGameMode(Blueprint))return false;
     auto* Mode=Cast<AGameModeBase>(Blueprint->GeneratedClass->GetDefaultObject());if(!Mode)return false;
+    if(Mode->PlayerStateClass==ABasePlayerState::StaticClass())return true;
     Mode->PlayerStateClass=ABasePlayerState::StaticClass();
-    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);FKismetEditorUtilities::CompileBlueprint(Blueprint,EBlueprintCompileOptions::SkipSave);
     return Blueprint->Status!=BS_Error;
 }
 

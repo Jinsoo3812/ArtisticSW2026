@@ -1,8 +1,9 @@
 """Read-only audit of tracked Unreal packages against staged Git LFS metadata."""
-import hashlib,json,re,subprocess,time
+import argparse,hashlib,json,re,subprocess,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-OUT=ROOT/'Saved/ShipAICorpseIntegration';OUT.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--baseline',default='1c41c6e0');parser.add_argument('--output',default='Saved/ShipAICorpseIntegration');args=parser.parse_args()
+OUT=ROOT/args.output;OUT.mkdir(parents=True,exist_ok=True)
 def git(*args):return subprocess.check_output(['git',*args],cwd=ROOT)
 entries=[]
 for row in git('ls-files','-s','-z').split(b'\0'):
@@ -12,7 +13,7 @@ for row in git('ls-files','-s','-z').split(b'\0'):
     if name.endswith(('.uasset','.umap')):
         assert stage=='0',f'Unmerged package: {name}'
         entries.append((name,oid))
-changed=set(git('diff','--name-only','1c41c6e0','--','Content').decode('utf8').splitlines())
+changed=set(git('diff','--name-only',args.baseline,'--','Content','SourceArt').decode('utf8').splitlines())
 proc=subprocess.Popen(['git','cat-file','--batch'],cwd=ROOT,stdin=subprocess.PIPE,stdout=subprocess.PIPE)
 report={'packages':len(entries),'errors':[],'suspicious':[],'hashed_changed_packages':0,'declared_lfs_bytes':0,'smallest':[]}
 sizes=[]

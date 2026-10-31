@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "rows": [
+    {
+      "source": "C:\\Users\\I\\Documents\\Unreal Projects\\GameAnimationSample\\Content\\Blueprints\\AnimNotifies\\E_FoleyEventSide.uasset",
+      "target": "Content\\Blueprints\\AnimNotifies\\E_FoleyEventSide.uasset",
+      "sha256": "26617b49c514f22241568835815aa2272ade0fcc03ef200189967f550853506e",
+      "bytes": 2743,
+      "saved_branches": [
+        "++UE5+Release-5.4",
+        "++UE5+Release-5.4"
+      ]
+    }
+  ]
+}

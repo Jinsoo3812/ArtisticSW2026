@@ -1,0 +1,422 @@
+{
+  "restored": [
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_01",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 660470,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_01.uasset",
+      "blob_oid": "a92a167d56a9255465b84ff7a01cc2e9cbb2634f"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Bishop",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 543842,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Bishop.uasset",
+      "blob_oid": "7a707d4373e14b4e65446f02c9489daf8fea7a4e"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Board",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 30064,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Board.uasset",
+      "blob_oid": "ec565f8f8a32d9acd6756bcd5dc7160bc8ada245"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_King",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 673575,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_King.uasset",
+      "blob_oid": "860c1e4f0cb8a61d286deecb9c6e47552ae9687d"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Knight",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 1345731,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Knight.uasset",
+      "blob_oid": "521f713bf545b7e1e817e8c6314877fdf3afdc6a"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Pawn",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 437540,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Pawn.uasset",
+      "blob_oid": "a4d52768b867a89682a230ec77b4065ebd08f23e"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Queen",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 766711,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Queen.uasset",
+      "blob_oid": "8f3306fad4de17557a616809e354c62f47e48baa"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Tower",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 591479,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Tower.uasset",
+      "blob_oid": "99b165848efa3b99bfba580a4a68b1c9029d5805"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_Circle",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 16471,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_Circle.uasset",
+      "blob_oid": "082390a03171f458144bfef7ab6d41e9c752484b"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_A",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 38234,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_A.uasset",
+      "blob_oid": "09653615bcb0221f41f226112c412331b36d2e33"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_B",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 38101,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_B.uasset",
+      "blob_oid": "e1bbb4adcbed9ea97b382fd12b3f325a29638135"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_MultipleID",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 46733,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_MultipleID.uasset",
+      "blob_oid": "ebee300fe8bae4ba0178404c971d45e18fe53856"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_01",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 174951,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_01.uasset",
+      "blob_oid": "1e034ed89c9a33f4df573b2bd9e35da2235d5c54"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_02",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 140832,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_02.uasset",
+      "blob_oid": "faf35223b11a9cef3c5fdf756b7c99d3543a350f"
+    },
+    {
+      "package": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ToyCar",
+      "referencers": [
+        "/Game/AdvStylizedFramework/Maps/Showcase_AdvancedStylizedMaterials"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "d086ec8ef7ea961fcc2f284d115657f9720543ff 2026-09-27T22:41:43+09:00 Chae_LV",
+      "bytes": 178355,
+      "source_commit": "3e96bbf3ab805e701eccbb4098e7f1b67551d2ff",
+      "path": "Content/AdvStylizedFramework/Mesh/Demo/SM_ToyCar.uasset",
+      "blob_oid": "b8d9f4c5e27ab82f4a96965fd73d1660390bdb40"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Mesh/SM_Item_ClusterGrenade",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/2/LQ/97LVIWKI4UYMWD3P8WPUPZ"
+      ],
+      "history_count": 3,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 35241,
+      "source_commit": "fa3bea046fedab38b1de201654252620c5034a97",
+      "path": "Content/Blueprints/Item/Item_Mesh/SM_Item_ClusterGrenade.uasset",
+      "blob_oid": "494ee7f40aca94b15dcd1133ac60a0cfb318b3a5"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Tool/BP_Item_ClusterGrenade",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/C/6W/3JZDWA65QKLC9GT1YG3WYS"
+      ],
+      "history_count": 4,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 36417,
+      "source_commit": "fa3bea046fedab38b1de201654252620c5034a97",
+      "path": "Content/Blueprints/Item/Item_Tool/BP_Item_ClusterGrenade.uasset",
+      "blob_oid": "0187f0228747d42f258de114db2ec3bf9a421def"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Mesh/SM_TrapBomb",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/A/2J/E387PZ6YBEZIVUT9CYJQG6"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 19259,
+      "source_commit": "991969f61039829bb3fc5bf0b7d870cd4c5b90fb",
+      "path": "Content/Blueprints/Item/Item_Mesh/SM_TrapBomb.uasset",
+      "blob_oid": "8636da305f5d1b658cd53c6f4be93394273c0f12"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Submunition/BP_Material_BombTrap",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/A/2J/E387PZ6YBEZIVUT9CYJQG6"
+      ],
+      "history_count": 3,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 36631,
+      "source_commit": "991969f61039829bb3fc5bf0b7d870cd4c5b90fb",
+      "path": "Content/Blueprints/Item/Item_Submunition/BP_Material_BombTrap.uasset",
+      "blob_oid": "1160ce371ff247460fe3ec3fefdcc00e8b2945a7"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Submunition/BP_Material_MiniBomb",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/4/RV/KJDWXE2W96QIQFLD95GF83"
+      ],
+      "history_count": 3,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 35910,
+      "source_commit": "991969f61039829bb3fc5bf0b7d870cd4c5b90fb",
+      "path": "Content/Blueprints/Item/Item_Submunition/BP_Material_MiniBomb.uasset",
+      "blob_oid": "24591617044a344b618d5cc854f355aa3e8c37f1"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Tool/BP_Item_SniperRifle",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/1/0I/1BGS4LMS4YI1L239FQDPI8"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 35449,
+      "source_commit": "a48daa2194f0deb3fcb4558db96805e53b33994e",
+      "path": "Content/Blueprints/Item/Item_Tool/BP_Item_SniperRifle.uasset",
+      "blob_oid": "285bc2b67a456b7e6efe426ffacb1c7d5bb5a16a"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestBlue",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/1/QW/VEWD15OY712LNX4ANAMHZH"
+      ],
+      "history_count": 4,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 35776,
+      "source_commit": "5a24f5e0596dc5326ec97d3486731ff02e8cabf9",
+      "path": "Content/Blueprints/Item/Item_Tool/BP_Item_TestBlue.uasset",
+      "blob_oid": "79efb66f37caea7c0c9f7029181e4b7cee71f89f"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestRed",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/3/QF/DWI0VEILOBBUFP9JVO4HH8"
+      ],
+      "history_count": 4,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 34751,
+      "source_commit": "5a24f5e0596dc5326ec97d3486731ff02e8cabf9",
+      "path": "Content/Blueprints/Item/Item_Tool/BP_Item_TestRed.uasset",
+      "blob_oid": "bc7dad386a5c8a1c7054fb0bc6719958e890b306"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestGrenade",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/5/WN/1EKTC2TLAQTX5V30HGWDT0"
+      ],
+      "history_count": 6,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 35910,
+      "source_commit": "e6d0a56d40e83bdc058553601d647b6f28bf7a7a",
+      "path": "Content/Blueprints/Item/Item_Tool/BP_Item_TestGrenade.uasset",
+      "blob_oid": "772f9e79981d33507f64a976b7f00984d5203bab"
+    },
+    {
+      "package": "/Game/Blueprints/Item/Item_Tool/BP_Item_Trap",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Legacy/Level_KKH/C/Z3/XZZAVH1B2QIKB39XPNZGRZ"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "7f3b3676388d1acde28cd67f4318afb14f16a5a9 2026-09-13T23:48:08+09:00 확률표 자동화 시스템",
+      "bytes": 38652,
+      "source_commit": "e6d0a56d40e83bdc058553601d647b6f28bf7a7a",
+      "path": "Content/Blueprints/Item/Item_Tool/BP_Item_Trap.uasset",
+      "blob_oid": "0b13e76538a953be12bd5c994864b2a49d35c116"
+    },
+    {
+      "package": "/Game/Level/Lvl_SJY",
+      "referencers": [
+        "/Game/__ExternalActors__/Level/Lvl_SJY/3/TA/PQCKCCGBJAEVXDTVGRRKZT",
+        "/Game/__ExternalActors__/Level/Lvl_SJY/5/Q9/PUZ3V0U5IYQUJG2NK0Z1FF"
+      ],
+      "history_count": 4,
+      "found": true,
+      "latest_change": "455ca9f1b1e7701c952e7b17c2bdc1b6893eb1ec 2026-08-19T16:38:16+09:00 멋있는 물! 그리고 폴더 정리",
+      "bytes": 49656,
+      "source_commit": "f8d02922186363f8470202fd8dc6c3cd36fe7f58",
+      "path": "Content/Level/Lvl_SJY.umap",
+      "blob_oid": "7599d074013102d7864cfb101cd92162187dfcc0"
+    },
+    {
+      "package": "/Game/New/Cannon/BP_Cannon",
+      "referencers": [
+        "/Game/Chae_test/Chae_Test_Level",
+        "/Game/jiwon/JW_CustomWater/JW_CustomWater",
+        "/Game/jiwon/JW_Water_Test2",
+        "/Game/jiwon/JW_Water_Test3"
+      ],
+      "history_count": 4,
+      "found": true,
+      "latest_change": "455ca9f1b1e7701c952e7b17c2bdc1b6893eb1ec 2026-08-19T16:38:16+09:00 멋있는 물! 그리고 폴더 정리",
+      "bytes": 37883,
+      "source_commit": "2ce75aa661f633a96e9d36e29eee6c9a8e0debae",
+      "path": "Content/New/Cannon/BP_Cannon.uasset",
+      "blob_oid": "dbc64abfab4c4f9b9e9692df4dc5e99646ccf41c"
+    },
+    {
+      "package": "/Game/New/Enemy_Ship/BP_EnemyShip",
+      "referencers": [
+        "/Game/Chae_test/Chae_Test_Level",
+        "/Game/jiwon/JW_CustomWater/JW_CustomWater",
+        "/Game/jiwon/JW_Water_Test2",
+        "/Game/jiwon/JW_Water_Test3"
+      ],
+      "history_count": 12,
+      "found": true,
+      "latest_change": "455ca9f1b1e7701c952e7b17c2bdc1b6893eb1ec 2026-08-19T16:38:16+09:00 멋있는 물! 그리고 폴더 정리",
+      "bytes": 2314,
+      "source_commit": "f5dcbb66b4fd2c3e4acb305087b483d735c62656",
+      "path": "Content/New/Enemy_Ship/BP_EnemyShip.uasset",
+      "blob_oid": "bb207c0d018b566d90986edcace377a9733f9c43"
+    },
+    {
+      "package": "/Game/New/Ship/BP_TestShip_SingleMesh",
+      "referencers": [
+        "/Game/Chae_test/Chae_Test_Level",
+        "/Game/jiwon/JW_CustomWater/JW_CustomWater",
+        "/Game/jiwon/JW_Water_Test2",
+        "/Game/jiwon/JW_Water_Test3"
+      ],
+      "history_count": 12,
+      "found": true,
+      "latest_change": "455ca9f1b1e7701c952e7b17c2bdc1b6893eb1ec 2026-08-19T16:38:16+09:00 멋있는 물! 그리고 폴더 정리",
+      "bytes": 51816,
+      "source_commit": "770bf383f2a3f3a9b16ff4ed2eb4f945c52bd7fc",
+      "path": "Content/New/Ship/BP_TestShip_SingleMesh.uasset",
+      "blob_oid": "3c08dfccce044e105664d49b1ddf547560cc03eb"
+    },
+    {
+      "package": "/Game/New/Ship/Mesh/SM_TestShip",
+      "referencers": [
+        "/Game/Blueprints/02_UI/UI_WorkTable/UI_ShipUpgrade/BP_UIShipPreview_Base",
+        "/Game/Chae_test/Chae_Test_Level",
+        "/Game/jiwon/JW_CustomWater/JW_CustomWater",
+        "/Game/jiwon/JW_Water_Test2",
+        "/Game/jiwon/JW_Water_Test3"
+      ],
+      "history_count": 3,
+      "found": true,
+      "latest_change": "455ca9f1b1e7701c952e7b17c2bdc1b6893eb1ec 2026-08-19T16:38:16+09:00 멋있는 물! 그리고 폴더 정리",
+      "bytes": 1319,
+      "source_commit": "a5d4c2bb40e6849a4c88514e01c1873213893be1",
+      "path": "Content/New/Ship/Mesh/SM_TestShip.uasset",
+      "blob_oid": "585ae3372500fe9da9c2c49d601f82120af744e9"
+    },
+    {
+      "package": "/Game/New/Water/Water_Material_Ocean_Custom",
+      "referencers": [
+        "/Game/Chae_test/Chae_Test_Level"
+      ],
+      "history_count": 2,
+      "found": true,
+      "latest_change": "455ca9f1b1e7701c952e7b17c2bdc1b6893eb1ec 2026-08-19T16:38:16+09:00 멋있는 물! 그리고 폴더 정리",
+      "bytes": 8297,
+      "source_commit": "dab0afa9bae2acbfcc0f2052a56000e2bea8f95d",
+      "path": "Content/New/Water/Water_Material_Ocean_Custom.uasset",
+      "blob_oid": "3e344d4e3f79091e14800f34dc1a48352c3e8476"
+    }
+  ],
+  "passed": true
+}

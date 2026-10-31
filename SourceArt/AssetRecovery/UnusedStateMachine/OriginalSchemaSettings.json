@@ -1,0 +1,33 @@
+{
+  "package": "/Game/Characters/UEFN_Mannequin/Animations/ExperimentalStateMachineData/PSS_SM_CMC_Idles",
+  "properties": {
+    "sample_rate": 30,
+    "data_preprocessor": 1,
+    "number_of_permutations": 1,
+    "permutations_sample_rate": 30,
+    "permutations_time_offset": 0.0,
+    "add_data_padding": false,
+    "inject_additional_debug_channels": false,
+    "draw_inject_additional_debug_channels": false
+  },
+  "skeletons": [
+    "(Skeleton=\"/Script/Engine.Skeleton'/Game/Characters/UEFN_Mannequin/Meshes/SK_UEFN_Mannequin.SK_UEFN_Mannequin'\",MirrorDataTable=None,Role=\"\")"
+  ],
+  "channels": [
+    {
+      "class": "PoseSearchFeatureChannel_Pose",
+      "properties": {
+        "weight": 1.0,
+        "input_query_pose": 0,
+        "use_character_space_velocities": true,
+        "permutation_time_type": 0
+      },
+      "sampled_bones": [
+        "(Reference=(BoneName=\"foot_l\"),Flags=2,NormalizationGroup=\"\",Weight=1.000000,DebugColor=(R=0.000000,G=1.000000,B=0.000000,A=1.000000))",
+        "(Reference=(BoneName=\"foot_r\"),Flags=2,NormalizationGroup=\"\",Weight=1.000000,DebugColor=(R=0.000000,G=1.000000,B=0.000000,A=1.000000))",
+        "(Reference=(BoneName=\"pelvis\"),Flags=2,NormalizationGroup=\"\",Weight=2.000000,DebugColor=(R=0.000000,G=1.000000,B=0.000000,A=1.000000))",
+        "(Reference=(BoneName=\"spine_05\"),Flags=2,NormalizationGroup=\"\",Weight=2.000000,DebugColor=(R=0.000000,G=1.000000,B=0.000000,A=1.000000))"
+      ]
+    }
+  ]
+}

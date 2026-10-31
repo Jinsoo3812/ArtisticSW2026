@@ -1,0 +1,87 @@
+[
+  {
+    "from": "/Game/Blueprints/Item/Item_Mesh/SM_Item_ClusterGrenade",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Mesh/SM_Item_ClusterGrenade",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_ClusterGrenade",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_ClusterGrenade",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Mesh/SM_TrapBomb",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Mesh/SM_TrapBomb",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Submunition/BP_Material_BombTrap",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Submunition/BP_Material_BombTrap",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Submunition/BP_Material_MiniBomb",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Submunition/BP_Material_MiniBomb",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_SniperRifle",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_SniperRifle",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestBlue",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestBlue",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestRed",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestRed",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestGrenade",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestGrenade",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_Trap",
+    "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_Trap",
+    "evidence": "7f3b3676 folder migration; preserved current Legacy authoring"
+  },
+  {
+    "from": "/Game/New/Cannon/BP_Cannon",
+    "to": "/Game/Blueprints/Ship/Cannon/BP_Cannon",
+    "evidence": "455ca9f1 folder reorganization"
+  },
+  {
+    "from": "/Game/New/Enemy_Ship/BP_EnemyShip",
+    "to": "/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip",
+    "evidence": "455ca9f1 folder reorganization and historical intermediate redirect"
+  },
+  {
+    "from": "/Game/New/Ship/BP_TestShip_SingleMesh",
+    "to": "/Game/Blueprints/Ship/Legacy/BP_TestShip_SingleMesh",
+    "evidence": "455ca9f1 folder reorganization"
+  },
+  {
+    "from": "/Game/New/Water/Water_Material_Ocean_Custom",
+    "to": "/Game/Blueprints/Water/Legacy/Water_Material_Ocean_Custom",
+    "evidence": "455ca9f1 folder reorganization"
+  },
+  {
+    "from": "/Game/LevelPrototyping/Interactable/Door/Assets/Meshes/SM_DoorFrame_Edge",
+    "to": "/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge",
+    "evidence": "canonical existing same-name mesh in moved Meshes folder"
+  },
+  {
+    "from": "/Game/EngineSky/BP_Sky_Sphere",
+    "to": "/Engine/EngineSky/BP_Sky_Sphere",
+    "evidence": "original stock engine sky asset, same object and class"
+  },
+  {
+    "from": "/Game/EngineSky/M_Sky_Panning_Clouds2",
+    "to": "/Engine/EngineSky/M_Sky_Panning_Clouds2",
+    "evidence": "original stock engine sky material, same object and class"
+  }
+]

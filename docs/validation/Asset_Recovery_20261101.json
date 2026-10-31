@@ -1,0 +1,1886 @@
+{
+  "branch": "JYU_merge",
+  "baseline": "d64d6ace256a6e5ddaf386f3c4c0c15a24edd745",
+  "incoming_shipai_commit": "2a4fe193edbf30e201151ebc66151ea5d8d5623d",
+  "initial_missing_reference_edges": 389,
+  "file_audit": {
+    "packages": 11499,
+    "errors": [],
+    "suspicious": [],
+    "hashed_changed_packages": 319,
+    "declared_lfs_bytes": 18240125772,
+    "smallest": [
+      {
+        "path": "Content/Input/Actions/IA_RoomMenu.uasset",
+        "bytes": 1118
+      },
+      {
+        "path": "Content/Blueprints/Player/QuickSlot_Input/IA_QuickSlot_1.uasset",
+        "bytes": 1166
+      },
+      {
+        "path": "Content/Blueprints/Player/QuickSlot_Input/IA_QuickSlot_2.uasset",
+        "bytes": 1166
+      },
+      {
+        "path": "Content/Blueprints/Player/QuickSlot_Input/IA_QuickSlot_3.uasset",
+        "bytes": 1166
+      },
+      {
+        "path": "Content/Blueprints/Player/QuickSlot_Input/IA_QuickSlot_4.uasset",
+        "bytes": 1166
+      },
+      {
+        "path": "Content/Blueprints/Player/QuickSlot_Input/IA_QuickSlot_5.uasset",
+        "bytes": 1166
+      },
+      {
+        "path": "Content/Input/Actions/IA_Interact.uasset",
+        "bytes": 1170
+      },
+      {
+        "path": "Content/Input/Actions/IA_UseSkill.uasset",
+        "bytes": 1170
+      },
+      {
+        "path": "Content/Blueprints/02_UI/UI_Input/IA_UI_I.uasset",
+        "bytes": 1174
+      },
+      {
+        "path": "Content/Blueprints/Player/Default_Input/IA_ESC.uasset",
+        "bytes": 1181
+      },
+      {
+        "path": "Content/Developer/Testing/Input/Actions/IA_DevTest_KillBoth.uasset",
+        "bytes": 1186
+      },
+      {
+        "path": "Content/Developer/Testing/Input/Actions/IA_DevTest_KillSelf.uasset",
+        "bytes": 1186
+      },
+      {
+        "path": "Content/Blueprints/02_UI/UI_Lobby/MP_Intro.uasset",
+        "bytes": 1188
+      },
+      {
+        "path": "Content/Blueprints/Player/Default_Input/IA_Dodge.uasset",
+        "bytes": 1191
+      },
+      {
+        "path": "Content/Blueprints/Player/Default_Input/IA_Space.uasset",
+        "bytes": 1191
+      },
+      {
+        "path": "Content/jiwon/Characters/Physics/PM_PlayerCorpse.uasset",
+        "bytes": 1198
+      },
+      {
+        "path": "Content/Blueprints/Ship/Input/IA_Bombardment.uasset",
+        "bytes": 1201
+      },
+      {
+        "path": "Content/Input/Actions/IA_InventoryToggle.uasset",
+        "bytes": 1205
+      },
+      {
+        "path": "Content/Blueprints/Player/Default_Input/IA_AreaSlow.uasset",
+        "bytes": 1206
+      },
+      {
+        "path": "Content/Blueprints/Player/Default_Input/IA_Interact.uasset",
+        "bytes": 1206
+      },
+      {
+        "path": "Content/Audio/Mix/SM_Ambient.uasset",
+        "bytes": 1208
+      },
+      {
+        "path": "Content/Blueprints/Ship/Cannon/IA_CannonCancel.uasset",
+        "bytes": 1208
+      },
+      {
+        "path": "Content/Developer/Testing/Input/Actions/IA_DevTest_SinkPlayerShip.uasset",
+        "bytes": 1210
+      },
+      {
+        "path": "Content/Blueprints/Player/Default_Input/IA_DoNothing.uasset",
+        "bytes": 1211
+      },
+      {
+        "path": "Content/Blueprints/Ship/Input/IA_ShipDisembark.uasset",
+        "bytes": 1211
+      },
+      {
+        "path": "Content/Blueprints/Ship/Input/IA_ShipSkillCancel.uasset",
+        "bytes": 1221
+      },
+      {
+        "path": "Content/Blueprints/Ship/Cannon/IA_CannonWaterBomb.uasset",
+        "bytes": 1223
+      },
+      {
+        "path": "Content/Blueprints/Player/Crafter/CrafterInput/IA_Crafter_R.uasset",
+        "bytes": 1225
+      },
+      {
+        "path": "Content/Blueprints/Player/Default_Input/IA_MouseWheelUp.uasset",
+        "bytes": 1226
+      },
+      {
+        "path": "Content/Blueprints/Ship/Input/IA_ShipSkillConfirm.uasset",
+        "bytes": 1226
+      }
+    ],
+    "passed": true,
+    "finished_at_epoch": 1793463572.097745
+  },
+  "engine_asset_audit": {
+    "registry_packages": 11281,
+    "missing_hard_references": [],
+    "loaded_changed": [
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_01.SM_ChessSet_01",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Bishop.SM_ChessSet_Bishop",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Board.SM_ChessSet_Board",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_King.SM_ChessSet_King",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Knight.SM_ChessSet_Knight",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Pawn.SM_ChessSet_Pawn",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Queen.SM_ChessSet_Queen",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Tower.SM_ChessSet_Tower",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_Circle.SM_Circle",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_A.SM_CoffeeCup_A",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_B.SM_CoffeeCup_B",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_MultipleID.SM_CoffeeCup_MultipleID",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_01.SM_Fruit_Apple_01",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_02.SM_Fruit_Apple_02",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/AdvStylizedFramework/Mesh/Demo/SM_ToyCar.SM_ToyCar",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/Anim_Logic/ABP_Player_Man.ABP_Player_Man",
+        "class": "AnimBlueprint"
+      },
+      {
+        "path": "/Game/Anim_Logic/ABP_Player_Man.ABP_Player_Man_C",
+        "class": "AnimBlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/Anim_Logic/ABP_Player_Woman.ABP_Player_Woman",
+        "class": "AnimBlueprint"
+      },
+      {
+        "path": "/Game/Anim_Logic/ABP_Player_Woman.ABP_Player_Woman_C",
+        "class": "AnimBlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/Blueprints/AnimNotifies/E_FoleyEventSide.E_FoleyEventSide",
+        "class": "UserDefinedEnum"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Mesh/SM_Item_ClusterGrenade.SM_Item_ClusterGrenade",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Mesh/SM_TrapBomb.SM_TrapBomb",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Submunition/BP_Material_BombTrap.BP_Material_BombTrap",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Submunition/BP_Material_BombTrap.BP_Material_BombTrap_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Submunition/BP_Material_BombTrap.Default__BP_Material_BombTrap_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Submunition/BP_Material_MiniBomb.BP_Material_MiniBomb",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Submunition/BP_Material_MiniBomb.BP_Material_MiniBomb_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Submunition/BP_Material_MiniBomb.Default__BP_Material_MiniBomb_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_ClusterGrenade.BP_Item_ClusterGrenade",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_ClusterGrenade.BP_Item_ClusterGrenade_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_ClusterGrenade.Default__BP_Item_ClusterGrenade_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_SniperRifle.BP_Item_SniperRifle",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_SniperRifle.BP_Item_SniperRifle_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_SniperRifle.Default__BP_Item_SniperRifle_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestBlue.BP_Item_TestBlue",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestBlue.BP_Item_TestBlue_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestBlue.Default__BP_Item_TestBlue_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestGrenade.BP_Item_TestGrenade",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestGrenade.BP_Item_TestGrenade_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestGrenade.Default__BP_Item_TestGrenade_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestRed.BP_Item_TestRed",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestRed.BP_Item_TestRed_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestRed.Default__BP_Item_TestRed_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_Trap.BP_Item_Trap",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_Trap.BP_Item_Trap_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Item/Item_Tool/BP_Item_Trap.Default__BP_Item_Trap_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man",
+        "class": "Blueprint"
+      },
+      {
+        "path": "/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/Blueprints/Player/BP_Player_Woman.BP_Player_Woman",
+        "class": "Blueprint"
+      },
+      {
+        "path": "/Game/Blueprints/Player/BP_Player_Woman.BP_Player_Woman_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/Chae_Asset/YiSunSinContent/Animations/ABP_YiSunSin.ABP_YiSunSin",
+        "class": "AnimBlueprint"
+      },
+      {
+        "path": "/Game/Chae_Asset/YiSunSinContent/Animations/ABP_YiSunSin.ABP_YiSunSin_C",
+        "class": "AnimBlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/Chae_Asset/YiSunSinContent/Animations/BS_YiSunSin_Locomotion.BS_YiSunSin_Locomotion",
+        "class": "BlendSpace1D"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Crouch_Idle_Loop.M_Neutral_Crouch_Idle_Loop",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Heavy_Lfoot.M_Relaxed_Jump_B_Land_Stand_Heavy_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Heavy_Rfoot.M_Relaxed_Jump_B_Land_Stand_Heavy_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Light_Lfoot.M_Relaxed_Jump_B_Land_Stand_Light_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Light_Rfoot.M_Relaxed_Jump_B_Land_Stand_Light_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Start_Lfoot.M_Relaxed_Jump_B_Start_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Start_Rfoot.M_Relaxed_Jump_B_Start_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Heavy_Lfoot.M_Relaxed_Jump_F_Land_Stand_Heavy_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Heavy_Rfoot.M_Relaxed_Jump_F_Land_Stand_Heavy_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Light_Lfoot.M_Relaxed_Jump_F_Land_Stand_Light_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Light_Rfoot.M_Relaxed_Jump_F_Land_Stand_Light_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Run_Lfoot.M_Relaxed_Jump_F_Start_Run_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Run_Rfoot.M_Relaxed_Jump_F_Start_Run_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Sprint_Lfoot.M_Relaxed_Jump_F_Start_Sprint_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Sprint_Rfoot.M_Relaxed_Jump_F_Start_Sprint_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Stand_Lfoot.M_Relaxed_Jump_F_Start_Stand_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Stand_Rfoot.M_Relaxed_Jump_F_Start_Stand_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Walk_Lfoot.M_Relaxed_Jump_F_Start_Walk_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Walk_Rfoot.M_Relaxed_Jump_F_Start_Walk_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Land_Run_Heavy.M_Relaxed_Jump_LR_Land_Run_Heavy",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Land_Walk_Heavy.M_Relaxed_Jump_LR_Land_Walk_Heavy",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Start_Lfoot.M_Relaxed_Jump_LR_Start_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Start_Rfoot.M_Relaxed_Jump_LR_Start_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Heavy_Lfoot.M_Relaxed_Jump_RL_Land_Stand_Heavy_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Heavy_Rfoot.M_Relaxed_Jump_RL_Land_Stand_Heavy_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Light_Lfoot.M_Relaxed_Jump_RL_Land_Stand_Light_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Light_Rfoot.M_Relaxed_Jump_RL_Land_Stand_Light_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Start_Lfoot.M_Relaxed_Jump_RL_Start_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Start_Rfoot.M_Relaxed_Jump_RL_Start_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LL_F_Lfoot.M_Neutral_Run_Box_LL_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LL_F_Rfoot.M_Neutral_Run_Box_LL_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LR_F_Lfoot.M_Neutral_Run_Box_LR_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LR_F_Rfoot.M_Neutral_Run_Box_LR_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RL_F_Lfoot.M_Neutral_Run_Box_RL_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RL_F_Rfoot.M_Neutral_Run_Box_RL_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RR_F_Lfoot.M_Neutral_Run_Box_RR_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RR_F_Rfoot.M_Neutral_Run_Box_RR_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Pivot_B_F_Lfoot.M_Neutral_Run_Pivot_B_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Pivot_B_F_Rfoot.M_Neutral_Run_Pivot_B_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_LL_F_Lfoot.M_Relaxed_Run_Box_LL_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_LL_F_Rfoot.M_Relaxed_Run_Box_LL_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_F_Lfoot.M_Relaxed_Run_Box_RL_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_F_Rfoot.M_Relaxed_Run_Box_RL_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Pivot_B_F_Lfoot.M_Relaxed_Run_Pivot_B_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Pivot_B_F_Rfoot.M_Relaxed_Run_Pivot_B_F_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_L_Lfoot.M_Relaxed_Run_Spin_B_F_L_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_L_Rfoot.M_Relaxed_Run_Spin_B_F_L_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_R_Lfoot.M_Relaxed_Run_Spin_B_F_R_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_R_Rfoot.M_Relaxed_Run_Spin_B_F_R_Rfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_LL_F_Lfoot.M_Relaxed_Run_Spin_LL_F_Lfoot",
+        "class": "AnimSequence"
+      },
+      {
+        "path": "/Game/DemoTemplate/_Core/MI_Intro_Colorway.MI_Intro_Colorway",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Developers/PlayerRagdoll/L_PlayerRagdollTest.L_PlayerRagdollTest",
+        "class": "World"
+      },
+      {
+        "path": "/Game/EngineSky/BP_Sky_Sphere.BP_Sky_Sphere",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/EngineSky/BP_Sky_Sphere.BP_Sky_Sphere_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/EngineSky/BP_Sky_Sphere.Default__BP_Sky_Sphere_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/EngineSky/M_Sky_Panning_Clouds2.M_Sky_Panning_Clouds2",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/GameplayAbilitySystem/Enemy/Balancing/T1/T1_BP_EnemyShip.T1_BP_EnemyShip",
+        "class": "Blueprint"
+      },
+      {
+        "path": "/Game/GameplayAbilitySystem/Enemy/Balancing/T1/T1_BP_EnemyShip.T1_BP_EnemyShip_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/GameplayAbilitySystem/Enemy/Balancing/T2/T2_BP_EnemyShip.T2_BP_EnemyShip",
+        "class": "Blueprint"
+      },
+      {
+        "path": "/Game/GameplayAbilitySystem/Enemy/Balancing/T2/T2_BP_EnemyShip.T2_BP_EnemyShip_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/GameplayAbilitySystem/Enemy/Balancing/T3/T3_BP_EnemyShip.T3_BP_EnemyShip",
+        "class": "Blueprint"
+      },
+      {
+        "path": "/Game/GameplayAbilitySystem/Enemy/Balancing/T3/T3_BP_EnemyShip.T3_BP_EnemyShip_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/JoseonTongsinsaseon/Textures/Landscape/T_MacroVariation_BC.T_MacroVariation_BC",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/Level/Lvl_SJY.Lvl_SJY_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/Level/Lvl_SJY.Lvl_SJY",
+        "class": "World"
+      },
+      {
+        "path": "/Game/LevelPrototyping/Interactable/Door/Assets/Meshes/SM_DoorFrame_Edge.SM_DoorFrame_Edge",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/MT/Pack_Bonus/Maps/Pack_Bonus.Pack_Bonus",
+        "class": "World"
+      },
+      {
+        "path": "/Game/MT/Stone_Matrial_Pack/Map/Stone_Material_Pack.Stone_Material_Pack",
+        "class": "World"
+      },
+      {
+        "path": "/Game/New/Cannon/BP_Cannon.BP_Cannon",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Cannon/BP_Cannon.BP_Cannon_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Cannon/BP_Cannon.Default__BP_Cannon_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Enemy_Ship/BP_EnemyShip.BP_EnemyShip",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Enemy_Ship/BP_EnemyShip.BP_EnemyShip_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Enemy_Ship/BP_EnemyShip.Default__BP_EnemyShip_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Ship/BP_TestShip_SingleMesh.BP_TestShip_SingleMesh",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Ship/BP_TestShip_SingleMesh.BP_TestShip_SingleMesh_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Ship/BP_TestShip_SingleMesh.Default__BP_TestShip_SingleMesh_C",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Ship/Mesh/SM_TestShip.SM_TestShip",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/New/Ship/Mesh/Test/SM_TestShip.SM_TestShip",
+        "class": "StaticMesh"
+      },
+      {
+        "path": "/Game/New/Water/Water_Material_Ocean_Custom.Water_Material_Ocean_Custom",
+        "class": "ObjectRedirector"
+      },
+      {
+        "path": "/Game/SciFiWorld/Maps/SciFiCreaturesResearchRoomB.SciFiCreaturesResearchRoomB",
+        "class": "World"
+      },
+      {
+        "path": "/Game/StylizedWeather/Map/Overview.Overview_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/StylizedWeather/Map/Overview.Overview",
+        "class": "World"
+      },
+      {
+        "path": "/Game/SwordTrailVFX/Maps/Demo.Demo_C",
+        "class": "BlueprintGeneratedClass"
+      },
+      {
+        "path": "/Game/SwordTrailVFX/Maps/Demo.Demo",
+        "class": "World"
+      },
+      {
+        "path": "/Game/Tools/StyleHex_Studio/Free_Packs/FREE_Stylized_Grass_Flowers_Foliage/Levels/Preview_Scene.Preview_Scene",
+        "class": "World"
+      },
+      {
+        "path": "/Game/Level/Lvl_SJY.Lvl_SJY:PersistentLevel.WorldDataLayers",
+        "class": "WorldDataLayers"
+      },
+      {
+        "path": "/Game/jiwon/Test_BP_EnemyShip.Test_BP_EnemyShip",
+        "class": "Blueprint"
+      },
+      {
+        "path": "/Game/jiwon/Test_BP_EnemyShip.Test_BP_EnemyShip_C",
+        "class": "BlueprintGeneratedClass"
+      }
+    ],
+    "load_failures": [],
+    "errors": [],
+    "passed": true
+  },
+  "blueprint_compile": {
+    "total": 627,
+    "project": 463,
+    "errors": 0,
+    "warnings": 8,
+    "failed_loads": 0
+  },
+  "automation": {
+    "succeeded": 49,
+    "succeededWithWarnings": 13,
+    "failed": 0,
+    "notRun": 0,
+    "reportCreatedOn": "2026.10.31-16.19.28"
+  },
+  "automation_tests": [
+    {
+      "path": "ArtisticSW.Animation.FootPlacement.PlayerGraphContract",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.FootPlacement.ShipContext",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.JumpAir.AuthoredBlendStackContract",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.JumpAir.AuthoredChooserContinuity",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.JumpAir.DirectionStability",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.JumpAir.EngineWarpingBoundary",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.JumpAir.PlaybackContinuity",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.JumpAir.RapidDirectionPolicy",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.JumpAir.WarpingRuntimePolicy",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Animation.Stop.CapturedGait",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Cannon.Operator.UncookedGameGraphLoads",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Development.TestInput.Assets",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Development.TestInput.ContextIsolation",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Development.TestInput.KeyChords",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.DeathRagdoll.CombatEffectContextDirection",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.DeathRagdoll.DirectionAwayFromSource",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.DeathRagdoll.NormalEnemyDefaults",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.DeathRagdoll.ReplicationContract",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.DeathRagdoll.ShipDeckCollision",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.CannonAimModel",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.CannonBallisticEllipse",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.ChargeAndTorpedoIntegration",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.ChargeApproachDamageMath",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.ChargeEndpointAndTelegraph",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.ObstacleActorContract",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.ObstacleCannonSweepByTeam",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.ObstacleTrajectoryAndTarget",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.TimeStopActorContract",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.TorpedoHorizontalWaterDrag",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Ability.TorpedoStraightLineTarget",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Anchor.CrewIndependent",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Anchor.Integration",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Authoring.ChestSpawnPointSettings",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Authoring.EnemyFleetAssets",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Authoring.ThreeStageAssets",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Controller.TargetRouting",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Data.ArchetypeAssembly",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.DebugTeleport.RequesterAndValidation",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Navigation.CounterClockwiseOrbit",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Navigation.DeterministicAvoidance",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Navigation.OverridePriorityAndScale",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Navigation.PlayerRamStop",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Navigation.SquadOrbitDistance",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Navigation.StateModel",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.Pool.TotalBundleBudget",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.SkillRuntime.OneShot",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.CannonRegistryAndControlPolicy",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Enemy.Ship.CrewDefeatedIncomingDamage",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.GameMode.PlayerCorpseLifecycle",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Player.Death.CameraFallback",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Player.Death.LifeOwnership",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Player.Death.RagdollPresentation",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.PlayerBow.AimInterruptionLifecycle",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.PlayerBow.IndependentFlight",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.PlayerBow.ShipPointVelocity",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Ship.Authoring.AnchorIntegration",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Ship.Authoring.Components",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Ship.Authoring.HelmBoardingAndCannonIntegration",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Ship.Authoring.PlayerShipTierStats",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Ship.NetworkPhysicsAnchorInputValidation",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Ship.NetworkPhysicsBuoyancyInput",
+      "state": "Success"
+    },
+    {
+      "path": "ArtisticSW.Ship.NetworkPhysicsDeepWaterBuoyancy",
+      "state": "Success"
+    }
+  ],
+  "motion_matching": {
+    "cases": [
+      {
+        "name": "Man",
+        "requested_fps": 60,
+        "frames": 1558,
+        "sampled_seconds": 26.115653298795223,
+        "min_dt": 0.016666699200868607,
+        "max_dt": 0.07594040036201477,
+        "phase_stats": {
+          "idle": {
+            "frames": 88,
+            "active_mm_frames": 88,
+            "invalid_active_mm_frames": 1,
+            "max_speed": 0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.052526442370101734
+          },
+          "walk": {
+            "frames": 180,
+            "active_mm_frames": 35,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 175.00000000000085,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.19663054561160465
+          },
+          "run": {
+            "frames": 180,
+            "active_mm_frames": 180,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0000000000068,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.19668131800663247
+          },
+          "stop": {
+            "frames": 90,
+            "active_mm_frames": 1,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.19666758517648475
+          },
+          "strafe_right": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0000000000017,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.196867636556199
+          },
+          "backward": {
+            "frames": 120,
+            "active_mm_frames": 119,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0000000000067,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.18989813905464104
+          },
+          "turn_in_place": {
+            "frames": 120,
+            "active_mm_frames": 1,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.19292288599017837
+          },
+          "sprint": {
+            "frames": 180,
+            "active_mm_frames": 40,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 700.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.19676150864929554
+          },
+          "jump_forward": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 858.1098136313009,
+            "air_frames": 61,
+            "max_limb_length_error_cm": 0.19634766228483613
+          },
+          "land_stop": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.19666408841652583
+          },
+          "jump_side": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 704.5225096669194,
+            "air_frames": 61,
+            "max_limb_length_error_cm": 0.19635291981420266
+          },
+          "final_idle": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.18902656788284133
+          }
+        },
+        "nonfinite": 0,
+        "max_radius_cm": 179.27924864963038,
+        "max_scale_error": 1.9788742065429688e-05,
+        "max_limb_length_error_cm": 0.196867636556199,
+        "max_local_rotation_step_deg": 47.01106319226254,
+        "max_deform_rotation_step_deg": 42.55003797589853,
+        "max_component_rotation_step_deg": 65.18030344399563,
+        "max_ik_component_rotation_step_deg": 36.45193411968367,
+        "max_rotation_speed_deg_s": 2552.997294970139,
+        "outliers": [],
+        "databases": {
+          "None": 1,
+          "/Game/Anim_Logic/PSD/PSD_Idle.PSD_Idle": 88,
+          "/Game/Anim_Logic/PSD/PSD_Run_Locomotion.PSD_Run_Locomotion": 301,
+          "/Game/Anim_Logic/PSD/PSD_Run_Tnasition.PSD_Run_Tnasition": 34,
+          "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion.PSD_Sprint_Locomotion": 40
+        },
+        "animations": {
+          "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop": 88,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F.M_Neutral_Run_Loop_F": 215,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_BR.M_Neutral_Run_Loop_BR": 1,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Diamond_BR_BL_Rfoot.M_Neutral_Run_Diamond_BR_BL_Rfoot": 6,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_B_RL_Lfoot.M_Neutral_Run_Box_B_RL_Lfoot": 5,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Diamond_B_FL_Lfoot.M_Neutral_Run_Diamond_B_FL_Lfoot": 9,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Diamond_FR_B_Rfoot.M_Neutral_Run_Diamond_FR_B_Rfoot": 14,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_B.M_Neutral_Run_Loop_B": 85,
+          "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Neutral_Sprint_Loop_F.M_Neutral_Sprint_Loop_F": 40
+        },
+        "helper_errors": {
+          "ik_hand_l": 1.4665436822660847e-13,
+          "ik_hand_r": 8.046720021259634e-14,
+          "ik_foot_l": 8.070214144311583e-14,
+          "ik_foot_r": 1.0054870144020999e-13
+        },
+        "helper_rotation_errors": {
+          "ik_hand_l": 2.9575586669421963e-06,
+          "ik_hand_r": 2.4148365394514667e-06,
+          "ik_foot_l": 2.4148365394514667e-06,
+          "ik_foot_r": 2.4148365394514667e-06
+        },
+        "max_deform_scale_error": 1.9788742065429688e-05,
+        "max_scale_detail": {
+          "bone": "cc_base_l_ribstwist",
+          "phase": "idle",
+          "scale": [
+            1.0000197887420654,
+            0.9999997615814209,
+            0.9999999403953552
+          ]
+        },
+        "max_component_rotation_detail": {
+          "bone": "pinky_03_r",
+          "phase": "idle",
+          "angle": 65.18030344399563,
+          "dt": 0.04182549938559532
+        },
+        "max_rotation_step_detail": {
+          "bone": "ik_hand_l",
+          "phase": "idle",
+          "phase_elapsed": 0.4418255053460598,
+          "angle": 47.01106319226254,
+          "dt": 0.04182549938559532
+        }
+      },
+      {
+        "name": "Woman",
+        "requested_fps": 60,
+        "frames": 1561,
+        "sampled_seconds": 26.108522199094296,
+        "min_dt": 0.016666699200868607,
+        "max_dt": 0.11791890114545822,
+        "phase_stats": {
+          "idle": {
+            "frames": 91,
+            "active_mm_frames": 91,
+            "invalid_active_mm_frames": 2,
+            "max_speed": 0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.041986510899111096
+          },
+          "walk": {
+            "frames": 180,
+            "active_mm_frames": 11,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 175.00000000000085,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.29369287105169306
+          },
+          "run": {
+            "frames": 180,
+            "active_mm_frames": 180,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0000000000068,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.27811257680694723
+          },
+          "stop": {
+            "frames": 90,
+            "active_mm_frames": 1,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.17272894678633577
+          },
+          "strafe_right": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.17379027721212736
+          },
+          "backward": {
+            "frames": 120,
+            "active_mm_frames": 119,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.00000000000665,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.17386876395362094
+          },
+          "turn_in_place": {
+            "frames": 120,
+            "active_mm_frames": 1,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.1533752854460495
+          },
+          "sprint": {
+            "frames": 180,
+            "active_mm_frames": 40,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 700.0000000000136,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.17318103939009077
+          },
+          "jump_forward": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 983.9425258920363,
+            "air_frames": 85,
+            "max_limb_length_error_cm": 0.1731502522118582
+          },
+          "land_stop": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.17327547919353137
+          },
+          "jump_side": {
+            "frames": 120,
+            "active_mm_frames": 0,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 850.7727596165131,
+            "air_frames": 85,
+            "max_limb_length_error_cm": 0.17318233620950352
+          },
+          "final_idle": {
+            "frames": 120,
+            "active_mm_frames": 19,
+            "invalid_active_mm_frames": 0,
+            "max_speed": 500.0,
+            "air_frames": 0,
+            "max_limb_length_error_cm": 0.16749554068776362
+          }
+        },
+        "nonfinite": 0,
+        "max_radius_cm": 145.14658519197818,
+        "max_scale_error": 0.06818178837949584,
+        "max_limb_length_error_cm": 0.29369287105169306,
+        "max_local_rotation_step_deg": 45.000001252239066,
+        "max_deform_rotation_step_deg": 45.000001252239066,
+        "max_component_rotation_step_deg": 94.07342776895072,
+        "max_ik_component_rotation_step_deg": 90.0000025044782,
+        "max_rotation_speed_deg_s": 2699.994804603771,
+        "outliers": [],
+        "databases": {
+          "None": 2,
+          "/Game/Anim_Logic/PSD/PSD_Idle_Relaxed.PSD_Idle_Relaxed": 109,
+          "/Game/Anim_Logic/PSD/PSD_Run_Locomotion_Relaxed.PSD_Run_Locomotion_Relaxed": 277,
+          "/Game/Anim_Logic/PSD/PSD_Run_Tnasition_Relaxed.PSD_Run_Tnasition_Relaxed": 34,
+          "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion_Realxed.PSD_Sprint_Locomotion_Realxed": 40
+        },
+        "animations": {
+          "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Loop.M_Relaxed_Stand_Idle_Loop": 109,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_F.M_Relaxed_Run_Loop_F": 191,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_BR.M_Relaxed_Run_Loop_BR": 1,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_B_Rfoot.M_Relaxed_Run_Box_RL_B_Rfoot": 34,
+          "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_B.M_Relaxed_Run_Loop_B": 85,
+          "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Relaxed_Sprint_Loop_F.M_Relaxed_Sprint_Loop_F": 40
+        },
+        "helper_errors": {
+          "ik_hand_l": 8.760159180054893e-14,
+          "ik_hand_r": 4.8330292160915147e-14,
+          "ik_foot_l": 6.444038954788686e-14,
+          "ik_foot_r": 1.0106908459913388e-13
+        },
+        "helper_rotation_errors": {
+          "ik_hand_l": 2.9575586669421963e-06,
+          "ik_hand_r": 2.9575586669421963e-06,
+          "ik_foot_l": 2.4148365394514667e-06,
+          "ik_foot_r": 2.4148365394514667e-06
+        },
+        "max_deform_scale_error": 2.300739288330078e-05,
+        "max_scale_detail": {
+          "bone": "ik_foot_l",
+          "phase": "idle",
+          "scale": [
+            0.9318182116205042,
+            0.9318182414228265,
+            0.9318182116205042
+          ]
+        },
+        "max_component_rotation_detail": {
+          "bone": "pinky_03_l",
+          "phase": "idle",
+          "angle": 94.07342776895072,
+          "dt": 0.016666799783706665
+        },
+        "max_rotation_step_detail": {
+          "bone": "root",
+          "phase": "jump_side",
+          "phase_elapsed": 0.05000019818544388,
+          "angle": 45.000001252239066,
+          "dt": 0.016666699200868607
+        }
+      }
+    ],
+    "errors": [],
+    "source": "real PIE, native BP/ABP, actual selected motion-matching result",
+    "saved_connection_mode": true,
+    "floor_top_z": 1000,
+    "controller_class": "/Game/Blueprints/Player/BP_BasePlayerController.BP_BasePlayerController_C",
+    "world": "World=/Temp/UEDPIE_0_Untitled_1.Untitled NetMode=0 AudioDevice=4294967295"
+  },
+  "motion_snapshot_evidence": "Saved/AssetRepair/motion_matching.json (full bone snapshots kept locally)",
+  "fixture_write_verification": {
+    "before_sha256": "C29805122B22648C4E0887FA6819108CF52B216D7210EF87BA0BB059DAFD0599",
+    "passed": true,
+    "trigger": "Saved male/female twelve-phase PIE motion matching comparison",
+    "fix": "Remove explicit save; idempotent configuration and SkipSave compile",
+    "after_sha256": "C29805122B22648C4E0887FA6819108CF52B216D7210EF87BA0BB059DAFD0599"
+  },
+  "repairs": {
+    "npc_repair": {
+      "passed": true,
+      "skeleton": "<Object '/Game/Chae_Asset/YiSunSinContent/Characters/SK_YiSunSin_Latest_Skeleton.SK_YiSunSin_Latest_Skeleton' (0x000002100528B400) Class 'Skeleton'>",
+      "graph_node_count": 7,
+      "preserved_node_guids": true,
+      "samples_before": [
+        "(Animation=\"/Script/Engine.AnimSequence'/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Idle.AS_YiSunSin_Idle'\",SampleValue=(X=0.000000,Y=0.000000,Z=0.000000),RateScale=1.000000,bUseSingleFrameForBlending=False,FrameIndexToSample=0,bIncludeInAnalyseAll=True)",
+        "(Animation=\"/Script/Engine.AnimSequence'/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Walk.AS_YiSunSin_Walk'\",SampleValue=(X=150.000000,Y=0.000000,Z=0.000000),RateScale=1.000000,bUseSingleFrameForBlending=False,FrameIndexToSample=0,bIncludeInAnalyseAll=True)",
+        "(Animation=\"/Script/Engine.AnimSequence'/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Run.AS_YiSunSin_Run'\",SampleValue=(X=500.000000,Y=0.000000,Z=0.000000),RateScale=1.000000,bUseSingleFrameForBlending=False,FrameIndexToSample=0,bIncludeInAnalyseAll=True)"
+      ],
+      "samples_after": [
+        "(Animation=\"/Script/Engine.AnimSequence'/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Idle.AS_YiSunSin_Idle'\",SampleValue=(X=0.000000,Y=0.000000,Z=0.000000),RateScale=1.000000,bUseSingleFrameForBlending=False,FrameIndexToSample=0,bIncludeInAnalyseAll=True)",
+        "(Animation=\"/Script/Engine.AnimSequence'/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Walk.AS_YiSunSin_Walk'\",SampleValue=(X=150.000000,Y=0.000000,Z=0.000000),RateScale=1.000000,bUseSingleFrameForBlending=False,FrameIndexToSample=0,bIncludeInAnalyseAll=True)",
+        "(Animation=\"/Script/Engine.AnimSequence'/Game/Chae_Asset/YiSunSinContent/Animations/Latest/AS_YiSunSin_Run.AS_YiSunSin_Run'\",SampleValue=(X=500.000000,Y=0.000000,Z=0.000000),RateScale=1.000000,bUseSingleFrameForBlending=False,FrameIndexToSample=0,bIncludeInAnalyseAll=True)"
+      ],
+      "axes_before": [
+        "(DisplayName=\"None\",Min=0.000000,Max=100.000000,GridNum=4,bSnapToGrid=False,bWrapInput=False)",
+        "(DisplayName=\"None\",Min=0.000000,Max=100.000000,GridNum=4,bSnapToGrid=False,bWrapInput=False)",
+        "(DisplayName=\"None\",Min=0.000000,Max=100.000000,GridNum=4,bSnapToGrid=False,bWrapInput=False)"
+      ],
+      "axes_after": [
+        "(DisplayName=\"None\",Min=0.000000,Max=500.000000,GridNum=20,bSnapToGrid=False,bWrapInput=False)",
+        "(DisplayName=\"None\",Min=0.000000,Max=100.000000,GridNum=4,bSnapToGrid=False,bWrapInput=False)",
+        "(DisplayName=\"None\",Min=0.000000,Max=100.000000,GridNum=4,bSnapToGrid=False,bWrapInput=False)"
+      ]
+    },
+    "redirect_repair": {
+      "aliases": [
+        {
+          "from": "/Game/Blueprints/Item/Item_Mesh/SM_Item_ClusterGrenade",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Mesh/SM_Item_ClusterGrenade",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Mesh/SM_Item_ClusterGrenade.SM_Item_ClusterGrenade"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_ClusterGrenade",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_ClusterGrenade",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_ClusterGrenade.BP_Item_ClusterGrenade"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Mesh/SM_TrapBomb",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Mesh/SM_TrapBomb",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Mesh/SM_TrapBomb.SM_TrapBomb"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Submunition/BP_Material_BombTrap",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Submunition/BP_Material_BombTrap",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Submunition/BP_Material_BombTrap.BP_Material_BombTrap"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Submunition/BP_Material_MiniBomb",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Submunition/BP_Material_MiniBomb",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Submunition/BP_Material_MiniBomb.BP_Material_MiniBomb"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_SniperRifle",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_SniperRifle",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_SniperRifle.BP_Item_SniperRifle"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestBlue",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestBlue",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestBlue.BP_Item_TestBlue"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestRed",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestRed",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestRed.BP_Item_TestRed"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_TestGrenade",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestGrenade",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_TestGrenade.BP_Item_TestGrenade"
+        },
+        {
+          "from": "/Game/Blueprints/Item/Item_Tool/BP_Item_Trap",
+          "to": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_Trap",
+          "evidence": "7f3b3676 folder migration; preserved current Legacy authoring",
+          "resolved": "/Game/Blueprints/Item/Legacy/Item_Tool/BP_Item_Trap.BP_Item_Trap"
+        },
+        {
+          "from": "/Game/New/Cannon/BP_Cannon",
+          "to": "/Game/Blueprints/Ship/Cannon/BP_Cannon",
+          "evidence": "455ca9f1 folder reorganization",
+          "resolved": "/Game/Blueprints/Ship/Cannon/BP_Cannon.BP_Cannon"
+        },
+        {
+          "from": "/Game/New/Enemy_Ship/BP_EnemyShip",
+          "to": "/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip",
+          "evidence": "455ca9f1 folder reorganization and historical intermediate redirect",
+          "resolved": "/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip"
+        },
+        {
+          "from": "/Game/New/Ship/BP_TestShip_SingleMesh",
+          "to": "/Game/Blueprints/Ship/Legacy/BP_TestShip_SingleMesh",
+          "evidence": "455ca9f1 folder reorganization",
+          "resolved": "/Game/Blueprints/Ship/Legacy/BP_TestShip_SingleMesh.BP_TestShip_SingleMesh"
+        },
+        {
+          "from": "/Game/New/Water/Water_Material_Ocean_Custom",
+          "to": "/Game/Blueprints/Water/Legacy/Water_Material_Ocean_Custom",
+          "evidence": "455ca9f1 folder reorganization",
+          "resolved": "/Game/Blueprints/Water/Legacy/Water_Material_Ocean_Custom.Water_Material_Ocean_Custom"
+        },
+        {
+          "from": "/Game/LevelPrototyping/Interactable/Door/Assets/Meshes/SM_DoorFrame_Edge",
+          "to": "/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge",
+          "evidence": "canonical existing same-name mesh in moved Meshes folder",
+          "resolved": "/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge.SM_DoorFrame_Edge"
+        },
+        {
+          "from": "/Game/EngineSky/BP_Sky_Sphere",
+          "to": "/Engine/EngineSky/BP_Sky_Sphere",
+          "evidence": "original stock engine sky asset, same object and class",
+          "resolved": "/Engine/EngineSky/BP_Sky_Sphere.BP_Sky_Sphere"
+        },
+        {
+          "from": "/Game/EngineSky/M_Sky_Panning_Clouds2",
+          "to": "/Engine/EngineSky/M_Sky_Panning_Clouds2",
+          "evidence": "original stock engine sky material, same object and class",
+          "resolved": "/Engine/EngineSky/M_Sky_Panning_Clouds2.M_Sky_Panning_Clouds2"
+        }
+      ],
+      "errors": [],
+      "passed": true
+    },
+    "optional_demo_repair": {
+      "passed": true,
+      "canonical_defaults": [
+        {
+          "from": "/Game/JoseonTongsinsaseon/Textures/Landscape/T_MacroVariation_BC",
+          "to": "/Engine/EngineMaterials/T_Default_MacroVariation",
+          "reason": "original macro variation image absent from all Git history and local sources; explicit stock macro-noise default"
+        },
+        {
+          "from": "/Game/DemoTemplate/_Core/MI_Intro_Colorway",
+          "to": "/Game/LevelPrototyping/Materials/MI_DefaultColorway",
+          "reason": "retired imported demo colorway absent; canonical current template colorway material"
+        }
+      ],
+      "maps_resaved_without_missing_generated_lighting_data": [
+        "/Game/MT/Pack_Bonus/Maps/Pack_Bonus",
+        "/Game/MT/Stone_Matrial_Pack/Map/Stone_Material_Pack",
+        "/Game/SciFiWorld/Maps/SciFiCreaturesResearchRoomB",
+        "/Game/StylizedWeather/Map/Overview",
+        "/Game/SwordTrailVFX/Maps/Demo",
+        "/Game/Tools/StyleHex_Studio/Free_Packs/FREE_Stylized_Grass_Flowers_Foliage/Levels/Preview_Scene"
+      ],
+      "limitation": "original demo art/baked lighting not recoverable; defaults are disclosed, not claimed as exact originals"
+    },
+    "reference_normalization": {
+      "passed": true,
+      "packages": [
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Crouch_Idle_Loop",
+          "notify_events": 1,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop",
+          "notify_events": 1,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Heavy_Lfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Heavy_Rfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Light_Lfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Land_Stand_Light_Rfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Start_Lfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_B_Start_Rfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Heavy_Lfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Heavy_Rfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Light_Lfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Land_Stand_Light_Rfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Run_Lfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Run_Rfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Sprint_Lfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Sprint_Rfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Stand_Lfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Stand_Rfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Walk_Lfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_F_Start_Walk_Rfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Land_Run_Heavy",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Land_Walk_Heavy",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Start_Lfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_LR_Start_Rfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Heavy_Lfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Heavy_Rfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Light_Lfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Land_Stand_Light_Rfoot",
+          "notify_events": 2,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Start_Lfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Jump/M_Relaxed_Jump_RL_Start_Rfoot",
+          "notify_events": 3,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LL_F_Lfoot",
+          "notify_events": 16,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LL_F_Rfoot",
+          "notify_events": 14,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LR_F_Lfoot",
+          "notify_events": 14,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_LR_F_Rfoot",
+          "notify_events": 15,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RL_F_Lfoot",
+          "notify_events": 13,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RL_F_Rfoot",
+          "notify_events": 15,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RR_F_Lfoot",
+          "notify_events": 13,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RR_F_Rfoot",
+          "notify_events": 15,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Pivot_B_F_Lfoot",
+          "notify_events": 19,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Pivot_B_F_Rfoot",
+          "notify_events": 19,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_LL_F_Lfoot",
+          "notify_events": 13,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_LL_F_Rfoot",
+          "notify_events": 14,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_F_Lfoot",
+          "notify_events": 13,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_F_Rfoot",
+          "notify_events": 13,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Pivot_B_F_Lfoot",
+          "notify_events": 14,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Pivot_B_F_Rfoot",
+          "notify_events": 14,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_L_Lfoot",
+          "notify_events": 15,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_L_Rfoot",
+          "notify_events": 16,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_R_Lfoot",
+          "notify_events": 15,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_B_F_R_Rfoot",
+          "notify_events": 15,
+          "loaded_notify_metadata_unchanged": true
+        },
+        {
+          "package": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Spin_LL_F_Lfoot",
+          "notify_events": 14,
+          "loaded_notify_metadata_unchanged": true
+        }
+      ],
+      "method": "canonical serialization of already-null unresolved optional imports; no notify removal, pose/curve edits or graph changes"
+    },
+    "legacy_ship_blueprint_repair": {
+      "passed": true,
+      "assets": [
+        {
+          "asset": "/Game/jiwon/Test_BP_EnemyShip",
+          "class": "/Game/jiwon/Test_BP_EnemyShip.Test_BP_EnemyShip_C",
+          "preserved_graph_and_editable_defaults": true
+        },
+        {
+          "asset": "/Game/GameplayAbilitySystem/Enemy/Balancing/T1/T1_BP_EnemyShip",
+          "class": "/Game/GameplayAbilitySystem/Enemy/Balancing/T1/T1_BP_EnemyShip.T1_BP_EnemyShip_C",
+          "preserved_graph_and_editable_defaults": true
+        },
+        {
+          "asset": "/Game/GameplayAbilitySystem/Enemy/Balancing/T2/T2_BP_EnemyShip",
+          "class": "/Game/GameplayAbilitySystem/Enemy/Balancing/T2/T2_BP_EnemyShip.T2_BP_EnemyShip_C",
+          "preserved_graph_and_editable_defaults": true
+        },
+        {
+          "asset": "/Game/GameplayAbilitySystem/Enemy/Balancing/T3/T3_BP_EnemyShip",
+          "class": "/Game/GameplayAbilitySystem/Enemy/Balancing/T3/T3_BP_EnemyShip.T3_BP_EnemyShip_C",
+          "preserved_graph_and_editable_defaults": true
+        }
+      ],
+      "method": "normal compilation/serialization; no graph authoring or component substitutions"
+    },
+    "original_sample_restoration": {
+      "passed": true,
+      "rows": [
+        {
+          "source": "C:\\Users\\I\\Documents\\Unreal Projects\\GameAnimationSample\\Content\\Blueprints\\AnimNotifies\\E_FoleyEventSide.uasset",
+          "target": "Content\\Blueprints\\AnimNotifies\\E_FoleyEventSide.uasset",
+          "sha256": "26617b49c514f22241568835815aa2272ade0fcc03ef200189967f550853506e",
+          "bytes": 2743,
+          "saved_branches": [
+            "++UE5+Release-5.4",
+            "++UE5+Release-5.4"
+          ]
+        }
+      ]
+    },
+    "optional_state_machine_sources": {
+      "preserved": [
+        {
+          "source": "Content\\Characters\\UEFN_Mannequin\\Animations\\ExperimentalStateMachineData\\PSD_SM_CMC_Idles.uasset",
+          "preserved": "SourceArt\\AssetRecovery\\UnusedStateMachine\\PSD_SM_CMC_Idles.uasset",
+          "bytes": 6605,
+          "sha256": "0ee3d9ed2731c0cb471b62f43ccf6587125d290ef49fef80f9dc475999b6b50f"
+        },
+        {
+          "source": "Content\\Characters\\UEFN_Mannequin\\Animations\\ExperimentalStateMachineData\\PSS_SM_CMC_Idles.uasset",
+          "preserved": "SourceArt\\AssetRecovery\\UnusedStateMachine\\PSS_SM_CMC_Idles.uasset",
+          "bytes": 3623,
+          "sha256": "9961350117c154517ee07cfc8350cff675e39f611b27b8cfc1c863a434a9ed5e"
+        }
+      ],
+      "reason": "production MM uses project-owned databases; unresolved prototype hints must retain their existing null semantics, not introduce new search databases"
+    }
+  },
+  "world_smoke": {
+    "passed": true,
+    "world": "/Game/Level/Lvl_CY.Lvl_CY",
+    "loaded_actors": 787,
+    "scope": "editor load/render only; no PIE or asset saves"
+  },
+  "playground": {
+    "events": [
+      {
+        "event": "respawn",
+        "character": "Man",
+        "seconds": 10.00008450075984,
+        "snapshot": {
+          "actor": "BP_Player_Man_C_1",
+          "visible": true,
+          "simulating": false,
+          "health_dead": false,
+          "asc_avatar": "BP_Player_Man_C_1"
+        }
+      },
+      {
+        "event": "gender_switch",
+        "mesh": "/Game/jiwon/Characters/ChWomanUE5/SKM_ChWoman_UE5.SKM_ChWoman_UE5"
+      },
+      {
+        "event": "respawn",
+        "character": "Woman",
+        "seconds": 10.00013279914856,
+        "snapshot": {
+          "actor": "BP_Player_Woman_C_1",
+          "visible": true,
+          "simulating": false,
+          "health_dead": false,
+          "asc_avatar": "BP_Player_Woman_C_1"
+        }
+      }
+    ],
+    "errors": [],
+    "passed": true
+  },
+  "input_audit": {
+    "contexts": 14,
+    "conflicts": [],
+    "keys": [
+      "Ctrl+Alt+Shift+F10",
+      "Ctrl+Alt+Shift+F11"
+    ]
+  },
+  "history_and_archive": {
+    "initial_missing_targets": 52,
+    "historical_originals_found": 31,
+    "history": "SourceArt/AssetRecovery/MissingAssetHistory.json",
+    "restoration": "SourceArt/AssetRecovery/HistoricalRestoration.json",
+    "archive_manifest": "SourceArt/Legacy/OrphanWorlds/ArchiveManifest.json",
+    "archive_packages": 215,
+    "archive_kind": "structural preservation; original owning maps not recovered"
+  },
+  "respawn": {
+    "production_seconds": 10,
+    "introduced_commit": "97f323805",
+    "production_code_changed": false,
+    "editor_fixture": "separate timer using existing production constant"
+  },
+  "scope": "No production player, respawn, ship navigation, GAS or Config edits in this recovery; editor tooling, assets and invalid test fixtures repaired.",
+  "limitations": [
+    "Two missing demo art references use explicitly recorded current/engine defaults, not recovered original art.",
+    "Orphan world packages preserved outside mounted Content; missing original maps remain unavailable.",
+    "Demo baked lighting needs rebuilding; original BuiltData was never tracked.",
+    "Eight unused vendor example Blueprint warnings remain.",
+    "Engine Korean-locale FStructuredLogFormatTest has four startup checks failing; same map with culture=en passes. Engine/config unchanged.",
+    "Cook/packaging, long network delay, mass corpse performance and every LOD/morph/material combination untested."
+  ]
+}

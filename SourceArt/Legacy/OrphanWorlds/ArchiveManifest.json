@@ -1,0 +1,1301 @@
+{
+  "kind": "structural containment, not recovery of missing original maps",
+  "roots": [
+    "/Game/__ExternalActors__/Level/Level_JWJ",
+    "/Game/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased",
+    "/Game/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased"
+  ],
+  "packages": [
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/0/KI/M8GA5QR71Z1KZ1XG466HSV.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/0/KI/M8GA5QR71Z1KZ1XG466HSV.uasset",
+      "bytes": 12653,
+      "sha256": "301088aacae1d9cabae18b2d4b72dfcd200b441765699b8ea71cdc743025ea16"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/0/SS/DJQW2DC0B7HPE0DM1LPJFD.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/0/SS/DJQW2DC0B7HPE0DM1LPJFD.uasset",
+      "bytes": 2470,
+      "sha256": "05576e0f0295a3bfe0b4096feea8d9d56aeffcd9b4a8113a6df40e06e0e1fdf4"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/0/UM/GPIKV6LNUSVNN2L37V7Y11.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/0/UM/GPIKV6LNUSVNN2L37V7Y11.uasset",
+      "bytes": 4615,
+      "sha256": "ee2d530a5fc868162e19a8a091de2374d729de861bbd9ef6e7c3bbba6941679b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/0/WD/HAZ1P9ZPIG3Q71GVWCYK5Z.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/0/WD/HAZ1P9ZPIG3Q71GVWCYK5Z.uasset",
+      "bytes": 4301,
+      "sha256": "8270f718f7d11967909e8415bceb332f2a71f1e4f55ce9cc56dd610a9daeecaa"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/0/X7/6A1MM1NRBOV0GW7BTOL95Y.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/0/X7/6A1MM1NRBOV0GW7BTOL95Y.uasset",
+      "bytes": 4583,
+      "sha256": "182508c5255e2bfd982ca9f244baae8553993f5db7f1428d46a4efdbb4ad8bd8"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/1/09/A4B8RXIM3ZWHSYK9N8WPXP.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/1/09/A4B8RXIM3ZWHSYK9N8WPXP.uasset",
+      "bytes": 4522,
+      "sha256": "3ce9dbc4bf0cebf353206eea0eea0b9a79fc909357bdd0372aa5ac4b820fec8f"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/1/3R/VQM17F5YZW3U4O8EO0N9AK.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/1/3R/VQM17F5YZW3U4O8EO0N9AK.uasset",
+      "bytes": 3910,
+      "sha256": "aec9517455821453d91558e1982235e8319ec67bb99e5395bd82da38c2a76e54"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/1/HF/92ESRRI1A4QFG3MCMJSN3I.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/1/HF/92ESRRI1A4QFG3MCMJSN3I.uasset",
+      "bytes": 4579,
+      "sha256": "2faf7d4957837953f1b92c02ec4d1b331bd106bbba2b80d827cf0ea6c4794db2"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/1/LD/M2KA2VN85C6T6C09JSUZK1.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/1/LD/M2KA2VN85C6T6C09JSUZK1.uasset",
+      "bytes": 4299,
+      "sha256": "6b2f939f0ecbc91614e83eada47c454c399eb95cf30caeeae72d8dde515c17b4"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/1/QT/API9DS0SCCOF5NIHBW7IUT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/1/QT/API9DS0SCCOF5NIHBW7IUT.uasset",
+      "bytes": 4615,
+      "sha256": "255d79edf686e18b1785ba0f4fb21bb3a8c05cefb925e23f00a33aab86e8c056"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/1/X4/MCXEMHEEX7KULK1MLAO205.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/1/X4/MCXEMHEEX7KULK1MLAO205.uasset",
+      "bytes": 36571,
+      "sha256": "4ae086833beedad790889cbccaeaccbb039eceee8ad2eb566034e08cbe6f7678"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/1R/9GNUUE05BKX7MGF4OYJNJT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/1R/9GNUUE05BKX7MGF4OYJNJT.uasset",
+      "bytes": 4581,
+      "sha256": "e7b83c5a82528536a64b161be9f7289becbbba99c2f6c430c0eac461cef4603f"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/4Z/DL0VH79DZMNHPGYRZ5JM51.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/4Z/DL0VH79DZMNHPGYRZ5JM51.uasset",
+      "bytes": 4501,
+      "sha256": "d051b33d6f7b13a3ebc0d7ec0a4e73ec8f06beb1a1bdccfbe758137903655fb5"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/5K/YUVLUHINYK7PBTKW5RE1AT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/5K/YUVLUHINYK7PBTKW5RE1AT.uasset",
+      "bytes": 4301,
+      "sha256": "0952a1a6ea490ee756bbe7e7f837d48961bd14defa7168bc4e8c1365a5a4aece"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/7O/BJD3G4BKX47965B0OO1O36.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/7O/BJD3G4BKX47965B0OO1O36.uasset",
+      "bytes": 3732,
+      "sha256": "979cdeb835f0c3dbfce5e28119861860baea528e80e6f73d3c5ce97808fd3dbc"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/8A/8S5NA11X2F8TWL9PSI5VHM.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/8A/8S5NA11X2F8TWL9PSI5VHM.uasset",
+      "bytes": 4301,
+      "sha256": "a90b6ab7420346ce5aa41b23e88e35f4f2bdfd0ccc2887e54752f422375e09e5"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/BN/4ANHGYLC901906CY7PR1FR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/BN/4ANHGYLC901906CY7PR1FR.uasset",
+      "bytes": 4185,
+      "sha256": "5078db8e7be21ddce9a91b45d83eb31d905ba7fa0cad612e1bae6e00f75bbc4f"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/IX/Y7DVMOPJ0J1ZFTJMIFHA1T.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/IX/Y7DVMOPJ0J1ZFTJMIFHA1T.uasset",
+      "bytes": 4635,
+      "sha256": "88abfaf603d330b460d455f8c1bfd7f8d16df484fe4304904afe55e61de225e3"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/PT/J5QHA5T9SEOGLAEMWLFXEE.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/PT/J5QHA5T9SEOGLAEMWLFXEE.uasset",
+      "bytes": 4359,
+      "sha256": "0e05ba4869600328dbcaf0f9c86408c4cb6456774fa2d7cdae5d518570a264e7"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/2/XM/01WOEZTILKTV7HHCTXT99T.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/2/XM/01WOEZTILKTV7HHCTXT99T.uasset",
+      "bytes": 5011,
+      "sha256": "c21633274e7b466f95e947cb6b222e2023034867d22b5beae41c12416a362a3c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/3/9L/IE357I697WVSZX2VFEI9VR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/3/9L/IE357I697WVSZX2VFEI9VR.uasset",
+      "bytes": 4581,
+      "sha256": "482bdb44d35662bff3fb5e8d20a0e59af01a5cdc6276578e9dbf8b4bb39342a7"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/3/B7/YXRZ0I35M1YGSXYI55FPKF.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/3/B7/YXRZ0I35M1YGSXYI55FPKF.uasset",
+      "bytes": 4187,
+      "sha256": "1e8c03b6ad6cf27cafb85a29341a71ea0869b110db76415a2337ae039e8b6bd8"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/3/NA/E31IGUCDQUZIRFK58KABAO.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/3/NA/E31IGUCDQUZIRFK58KABAO.uasset",
+      "bytes": 4581,
+      "sha256": "740cf1aae211e820b3a321619da64f1d72df869af6e3cd9e906873823a0cd044"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/4/BK/WFXES1LF8WN4T05ZIZ57FR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/4/BK/WFXES1LF8WN4T05ZIZ57FR.uasset",
+      "bytes": 4641,
+      "sha256": "57875af1ade04407eca30a50f25ba15308d1ec964a74fe90f436c1fe97c35e2b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/4/PC/U5RXJEZOBYYLNHAJ8DSNYG.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/4/PC/U5RXJEZOBYYLNHAJ8DSNYG.uasset",
+      "bytes": 5191,
+      "sha256": "0899f3dd3d6c5c4a6ccd1ec6849c911c001b0c43d17bcb78c112645fa9f17ce4"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/5/8G/H172VZ4I3O34K86LSAN8LQ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/5/8G/H172VZ4I3O34K86LSAN8LQ.uasset",
+      "bytes": 4581,
+      "sha256": "be4a2dda8885dcb08983b1f93f211146d903d628b97d3963e7c94cfe078a2f3a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/5/92/B1X4I3A8JV2IJWQT54T493.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/5/92/B1X4I3A8JV2IJWQT54T493.uasset",
+      "bytes": 4299,
+      "sha256": "d73d933f51492d2934e9bb1c997e70f84eccde5a5953569d374220b4861cbd00"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/5/M8/YEPGFT3ZAJL7CGYPXPYIWG.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/5/M8/YEPGFT3ZAJL7CGYPXPYIWG.uasset",
+      "bytes": 4301,
+      "sha256": "93fafcfb6072d66723d9d0c46a8b16d58832a5729329c2e777518d889322f491"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/5/RG/U75R56SC6S3X6RYZMKKWB3.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/5/RG/U75R56SC6S3X6RYZMKKWB3.uasset",
+      "bytes": 4465,
+      "sha256": "cb86deae84b10e3f1bfe18485a98e2f34e0d54f68865d15ec1b41e3ef6e4fb6e"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/5/TZ/AGB4GDC4G7US51QZ2P7J1S.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/5/TZ/AGB4GDC4G7US51QZ2P7J1S.uasset",
+      "bytes": 4185,
+      "sha256": "c9a2b4f5cd0c2e5dbc58e56bb7c195ed012a3f4cb2776b1df7326408af1ef05a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/5/YC/1K9MTGWLRU8BACK43FV4KY.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/5/YC/1K9MTGWLRU8BACK43FV4KY.uasset",
+      "bytes": 4581,
+      "sha256": "c5498e89dbe8d77c35c660126d6fd9b87569996c0a3053ab0aa4c5c61600c624"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/6/5R/OU16QDQ4U2MGEVVV58MWKU.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/6/5R/OU16QDQ4U2MGEVVV58MWKU.uasset",
+      "bytes": 4359,
+      "sha256": "b1c868e68d9c8560fdbc774e22ef1ed379447ada2d29ea2db5ef3c0ae2a32974"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/6/8I/XE9V9A7HQSONF0N3ZI7QM3.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/6/8I/XE9V9A7HQSONF0N3ZI7QM3.uasset",
+      "bytes": 4301,
+      "sha256": "980a03b969b88baf3df69c00c3d38802ed47615a5d95af77ccdaf6bbd96bc028"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/6/GH/EZV3LCTLNE9GL8VW8VUX3C.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/6/GH/EZV3LCTLNE9GL8VW8VUX3C.uasset",
+      "bytes": 4581,
+      "sha256": "c74c7d7a996ea6bde04f77838a5eecbddb9a6054e866a67942c4f99765992900"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/25/LS3103J644KQ7RQFJ4E6PB.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/25/LS3103J644KQ7RQFJ4E6PB.uasset",
+      "bytes": 4615,
+      "sha256": "8c828f9f6861a2abca18b0f273932826e7d16501c270d8c090c503bbf06c2a12"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/2S/ZG00FQIVE0GPC80N64KCW8.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/2S/ZG00FQIVE0GPC80N64KCW8.uasset",
+      "bytes": 4583,
+      "sha256": "4b739c21b8836fe9bdebf0a8e47bece7069257e5c7dbaeb65f2b8cc4f77cf431"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/40/FME106PEXIXORQJK0VDWJ7.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/40/FME106PEXIXORQJK0VDWJ7.uasset",
+      "bytes": 4615,
+      "sha256": "2035e46e3770f8788d1772b28d14e38cbec1a2c2d6b8bf145751b9a3e796432a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/90/0A73C4BWFVNRPHNRWWCSAR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/90/0A73C4BWFVNRPHNRWWCSAR.uasset",
+      "bytes": 4359,
+      "sha256": "2732056dc488eace2d038e3af99ec73f3f76720d8a7a6a753ecb8027236cfd22"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/9C/DB2RQ2RB88S9V619ZBKKX1.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/9C/DB2RQ2RB88S9V619ZBKKX1.uasset",
+      "bytes": 4615,
+      "sha256": "dd3cfbb78a5113744733e9b641c129ca60421e03e9a6b04a2cd26e2d2dfb194f"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/CO/6SP3P8M9IGZYET5D95ARK7.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/CO/6SP3P8M9IGZYET5D95ARK7.uasset",
+      "bytes": 4299,
+      "sha256": "d7ece06d6986b8973482f915883b7911ea6db55f69c7255ec8ace24ed8a8b50c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/KM/SOYQVHMGJNO0F4QR6O6ZD2.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/KM/SOYQVHMGJNO0F4QR6O6ZD2.uasset",
+      "bytes": 4643,
+      "sha256": "6e9043bf7ac81651232e7ed507b2c8d526b9c45a20459cbde740051e13e8b63a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/7/TU/09WI0YCI57WOIX70IR2P0A.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/7/TU/09WI0YCI57WOIX70IR2P0A.uasset",
+      "bytes": 4187,
+      "sha256": "0ff441117d8966300a334bab09b3144fd804e0a61d9461971748b79142895ed4"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/8/6D/XUFBH1W3VTM6CK0DRFUTPX.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/8/6D/XUFBH1W3VTM6CK0DRFUTPX.uasset",
+      "bytes": 4301,
+      "sha256": "2f5851edd56395851d2b1afc1741d2888723c515e77927c286572d8dcdb4a879"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/8/EJ/SDN01SQSRBGZWBPSOTIGAW.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/8/EJ/SDN01SQSRBGZWBPSOTIGAW.uasset",
+      "bytes": 4643,
+      "sha256": "42c41a1a1c5682260df8d6ef2a3ecfe958b2e81853c97ef8def6e65bd4ca572b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/8/II/8BGDCMK1JPOPCNX4EXFKFO.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/8/II/8BGDCMK1JPOPCNX4EXFKFO.uasset",
+      "bytes": 4641,
+      "sha256": "ebb99b92bbfb14d5179f4b97acd6daf9c6cca87883127f7a72822a08992bf1e2"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/8/JY/9BEXOI5A9D2GF0VISL0ISR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/8/JY/9BEXOI5A9D2GF0VISL0ISR.uasset",
+      "bytes": 4641,
+      "sha256": "80247973e12d47ba1331af7cbebd86ecb6679ee95d1b49b1800c7e234a12242d"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/9/GK/E3PSOD5IGOMJ7NHGIBMWW0.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/9/GK/E3PSOD5IGOMJ7NHGIBMWW0.uasset",
+      "bytes": 3830,
+      "sha256": "fbc6cb4cd0b00925b028b56423297f3faa5f2015764ebe56da24503b54729c4b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/9/RL/A34D1J57SEIJ6ECKI1ALS4.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/9/RL/A34D1J57SEIJ6ECKI1ALS4.uasset",
+      "bytes": 4359,
+      "sha256": "20ad99ab8273e7e50419e307f514ad74a32be54b95eac8abd616080f4bdab1de"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/9/SH/DMLR96J17ZCBJVAMY5L7UN.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/9/SH/DMLR96J17ZCBJVAMY5L7UN.uasset",
+      "bytes": 3851,
+      "sha256": "2ec97b4deed44191b7526d48cee3ed59058de22c76416f6098dc8df19173a7c5"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/A/4V/CKZR3541WOV7460W99T3QR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/A/4V/CKZR3541WOV7460W99T3QR.uasset",
+      "bytes": 3071,
+      "sha256": "d0a985c131382fa0cb0a76210deea4e5fdd312a5d739c7637ec0d713a2511109"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/A/AG/3JTAIIGENNH9CKR7Y8PGYO.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/A/AG/3JTAIIGENNH9CKR7Y8PGYO.uasset",
+      "bytes": 4581,
+      "sha256": "d6f018dfe01b97eed766a9cf7116c3ccf312ef413abdf60f8f7a67d09c0ccdff"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/A/FM/SJ565JNFAXLKO9PC1LE2OU.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/A/FM/SJ565JNFAXLKO9PC1LE2OU.uasset",
+      "bytes": 4467,
+      "sha256": "010bbdbdc681eb09b865bacb0f99c73c21aec3456490925b2b993727c099e5c9"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/A/JV/LSWMXI3F6WHSFFAXD8PLH7.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/A/JV/LSWMXI3F6WHSFFAXD8PLH7.uasset",
+      "bytes": 4581,
+      "sha256": "ce678ce3afd6c941707610239a0bfebf75eca27bdc52885ffa5a37eb970979d5"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/A/KL/C09OLMHWQVQ1NMLF6IEZSX.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/A/KL/C09OLMHWQVQ1NMLF6IEZSX.uasset",
+      "bytes": 4615,
+      "sha256": "30c36c60af83830811c2b21daf32736427ef3ed13a6fc2f84d4e6dda066bab79"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/A/N2/BQMMYFNTKBPZ5PXCTCDD52.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/A/N2/BQMMYFNTKBPZ5PXCTCDD52.uasset",
+      "bytes": 3634,
+      "sha256": "2f5b8cb44372fe722e47656a22399b0debd3a260ade46deb2173d42083be65a3"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/B/KJ/VUENZJ0E6040NII65EWR2N.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/B/KJ/VUENZJ0E6040NII65EWR2N.uasset",
+      "bytes": 4583,
+      "sha256": "d527e0731770e1606d46678b74bc0613e05915dcd08b79da2ce365fcbdadc842"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/C/69/SWWF7LD4A5BE8XNI4NKGSJ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/C/69/SWWF7LD4A5BE8XNI4NKGSJ.uasset",
+      "bytes": 4615,
+      "sha256": "0c5f2d06bfefbf98fbd2ed4bf7d05dcf24219eadd8b4f6dc713b0f7c51b90f7c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/C/SY/W109WM38W66A8N3X23D3ZX.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/C/SY/W109WM38W66A8N3X23D3ZX.uasset",
+      "bytes": 4740,
+      "sha256": "a7920f970aaed83c5c354133751332f82a56517fe7122e6088a0ca9da4e440e6"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/C/XF/H25QF3XRYLX155ZO3ZJUZU.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/C/XF/H25QF3XRYLX155ZO3ZJUZU.uasset",
+      "bytes": 4581,
+      "sha256": "6046583a0f024d81438ed2b6830ce0a966153ffd13d73223023f1a006b7152a1"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/D/EY/FRKYP12ODZSD4XBCFIKPGV.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/D/EY/FRKYP12ODZSD4XBCFIKPGV.uasset",
+      "bytes": 4485,
+      "sha256": "8692dc468bdd2a0e403cae5c87481a0bef6a6a672304d83b3bf9e27d9cb566d4"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/D/IK/2HQSTMAC85KANSYX5075ZA.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/D/IK/2HQSTMAC85KANSYX5075ZA.uasset",
+      "bytes": 4301,
+      "sha256": "aca524095ed59d688399beacc780782738453a18aa586c667c9e0625d73b671a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/E/PM/WDZT2O2Q0LMNUVW4611S84.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/E/PM/WDZT2O2Q0LMNUVW4611S84.uasset",
+      "bytes": 10331,
+      "sha256": "a5bc49c5c29faf3efdff2cf9cb0e41e29db502e1b1d0e57f7b9bedcb86d4d9fb"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/E/S5/NDW8X64003VRDOTZ0RL5VT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/E/S5/NDW8X64003VRDOTZ0RL5VT.uasset",
+      "bytes": 4641,
+      "sha256": "6a6d357df1183a2a00a94c8248141c1007fb0876f9ecafeac949f47c115cae5c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/E/SR/3T02K4LQNPMRHILB2Y2Q9U.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/E/SR/3T02K4LQNPMRHILB2Y2Q9U.uasset",
+      "bytes": 4301,
+      "sha256": "807b660c472c89bf8dcc55c20aa0f60fbec3bc68788b3f5221cfe50030a5743b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/E/YM/U383U4G8WDDR3YL5V13331.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/E/YM/U383U4G8WDDR3YL5V13331.uasset",
+      "bytes": 4643,
+      "sha256": "3dda06dbd6caf38ee6fd737b30cc9611d72f8c55879576a5d6d4aa36506187b3"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/F/11/WH32XEB0BWDVXOIPB5YT55.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/F/11/WH32XEB0BWDVXOIPB5YT55.uasset",
+      "bytes": 4581,
+      "sha256": "a9505ace27833983ede4cc32a0502dd24ed485ca649067e064c29318097215f1"
+    },
+    {
+      "source": "Content/__ExternalActors__/Level/Level_JWJ/F/1B/MLFHJWFWKCV94LO9PAP2NK.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Level/Level_JWJ/F/1B/MLFHJWFWKCV94LO9PAP2NK.uasset",
+      "bytes": 4187,
+      "sha256": "9eb98f0d635178f5e73bb107542f3d6d1cc1f5d8d867de565c19a61560402023"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/C4/FQZ2ID6WT4ECJ17T1S9UQF.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/C4/FQZ2ID6WT4ECJ17T1S9UQF.uasset",
+      "bytes": 443647,
+      "sha256": "f9c84413d354bc9bf5c3303b84df9b7b662183dcac67319ad8b8ee8b90dca256"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/DE/FOQM14O10B41UTKRA5E4QJ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/DE/FOQM14O10B41UTKRA5E4QJ.uasset",
+      "bytes": 6985,
+      "sha256": "cf42c62ceee1e46317f31ea76c9ba1164e92dd4fb0fecb7236dc08b198d232ba"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/IG/PZ7NMNY4SABW4W03QL0NGK.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/IG/PZ7NMNY4SABW4W03QL0NGK.uasset",
+      "bytes": 6987,
+      "sha256": "883ab5a457be5b22a3a7da6283db3c9c15536a66bdf5dd1cb97258d097a7cc35"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/J3/5Q1D169SUCVD9V2ESQ1Y71.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/J3/5Q1D169SUCVD9V2ESQ1Y71.uasset",
+      "bytes": 6987,
+      "sha256": "90f92abd77e3a14cf737bdcd672ba9bce0aad295ae30882c68e46d1e42918cb2"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/NS/I52H42Z62PWYJ9DUCBG2IY.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/NS/I52H42Z62PWYJ9DUCBG2IY.uasset",
+      "bytes": 441084,
+      "sha256": "87152ab3c4d2918a257bf551edc65bb2a8d9ee06231b29989b65a48f1fe14b23"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/WC/P6VCS5OZ3R3IQEYTQ3Z6GW.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/WC/P6VCS5OZ3R3IQEYTQ3Z6GW.uasset",
+      "bytes": 440106,
+      "sha256": "a69dcf8413d5d06146f7ca594d4e4c0c1ac75559a6e4798477531edd37d1563d"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/WJ/4SA4VA20NRBI4XRUSZF5Q2.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/WJ/4SA4VA20NRBI4XRUSZF5Q2.uasset",
+      "bytes": 443005,
+      "sha256": "c90eb450436afe65466bf549111b4d447d7fc3ccbd495122d7e073330a09a661"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/XY/GDFO76PON00QH0FJH3Q5MB.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/XY/GDFO76PON00QH0FJH3Q5MB.uasset",
+      "bytes": 6987,
+      "sha256": "a99d7ea2c04a54cbeb4a04efdb44c2f7c8b9d1f97bfb6cacfa25d3df54ad213a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/Z5/GAMONY6JWBPYJ5UFZMU24H.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/0/Z5/GAMONY6JWBPYJ5UFZMU24H.uasset",
+      "bytes": 436915,
+      "sha256": "4eb2cc05acb4c99bd2723e7026794cd18e85f7fb5e095346f327a559db7a1ef3"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/1I/5XRPKCYHR1YQK8XE1UVCTF.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/1I/5XRPKCYHR1YQK8XE1UVCTF.uasset",
+      "bytes": 429961,
+      "sha256": "11a416f33b9affc0b357c822181c165ebd75ddb1c5a9d4fbb31000bf2106a39f"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/6G/LCVO91KUBCZKV4UDSRBMQV.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/6G/LCVO91KUBCZKV4UDSRBMQV.uasset",
+      "bytes": 432215,
+      "sha256": "22e352cbb7ddfd5f77e294f52f2615fe5c68ca99698e6bd1e446d6d66643d37c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/9S/GSZQD8C2LM6WB7YAY5J0P6.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/9S/GSZQD8C2LM6WB7YAY5J0P6.uasset",
+      "bytes": 5583,
+      "sha256": "707e268ba18eae24c18664d9dba4904cadeb6f36ebb248b2b66cdc64a6254f26"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/CL/SVMCGLI1HXW7PNVJJD87HI.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/CL/SVMCGLI1HXW7PNVJJD87HI.uasset",
+      "bytes": 440255,
+      "sha256": "197d07c0f9a90d42d948e2a5b20908a7cf30edb784e8a3d498687d4874e1966f"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/CN/X60AT24EFWUR88MGXPDESM.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/CN/X60AT24EFWUR88MGXPDESM.uasset",
+      "bytes": 6985,
+      "sha256": "36e6fe5549dc7792d2fd5e1b0f21d613a9514844cbbe6a411bb89805e3de5601"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/FE/1572AOOTU7JH1T8IIIRAIS.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/FE/1572AOOTU7JH1T8IIIRAIS.uasset",
+      "bytes": 356168,
+      "sha256": "c49e2bb43b74f561f546d0e2e86ba518770055a91352b3bde953ca060841601a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/I4/LLM8Z5UYSKYRRAUTCIYR3D.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/I4/LLM8Z5UYSKYRRAUTCIYR3D.uasset",
+      "bytes": 6985,
+      "sha256": "366c1136b9cb193d3bdc9a6140721c4a5f53f066c88d32a9489a5c64b99437bb"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/X0/19O6YTWXJP1OOEL3R690RS.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/1/X0/19O6YTWXJP1OOEL3R690RS.uasset",
+      "bytes": 6987,
+      "sha256": "ae0b36e48836a72186c3aaa5f0223affc26a76fb3497d2b04d5f8777e6278092"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/17/EORZ3S4ZGJ0XGUUICSJX3Y.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/17/EORZ3S4ZGJ0XGUUICSJX3Y.uasset",
+      "bytes": 756736,
+      "sha256": "759e5bcbf7dbf8ef87241a5eb78633291f3b9d4e953729fa0fc7a9d9dc2d5bff"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/59/0GNYHGIDT9XKIWDI7YOAIF.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/59/0GNYHGIDT9XKIWDI7YOAIF.uasset",
+      "bytes": 6987,
+      "sha256": "90bc3541dc73165bcd66c352bb921cfa66044eb99dd99e5096a6860baf8a1960"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/B3/XZ2UCYIGSSMS3XE2XCTOYZ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/B3/XZ2UCYIGSSMS3XE2XCTOYZ.uasset",
+      "bytes": 6993,
+      "sha256": "1977617dbadc301f9e30755617e415c9cba244da04851c09a6d6d548cbd0d441"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/BB/1ND0UOKJPRAG0YA6Z9KJ6L.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/BB/1ND0UOKJPRAG0YA6Z9KJ6L.uasset",
+      "bytes": 429344,
+      "sha256": "d4fe1a558fd66b14c3e92c1ea409e7ce555b7c608d083589520f2bd75b909a77"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/MO/JWIZWLOQIG1H8406VT7TWI.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/MO/JWIZWLOQIG1H8406VT7TWI.uasset",
+      "bytes": 5884,
+      "sha256": "9ba62beb45a914a0727dede3f14bb9dd6321485c1b5a472fd6afd318586be418"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/NG/0YFFAWFB31MICINT5D46KN.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/NG/0YFFAWFB31MICINT5D46KN.uasset",
+      "bytes": 405942,
+      "sha256": "64691b4a53570b67bf1f830bd829ca6e59c361ff5fa34c9bff84dc8bc24831e2"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/QM/IJFUAYYK8S8USD2ZHPZO5R.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/QM/IJFUAYYK8S8USD2ZHPZO5R.uasset",
+      "bytes": 6987,
+      "sha256": "338d6da5ace44a188ae21f02628d43e0b49faf9b9f5b2432df122295d6e7e789"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/UV/MND30754IMFT3129SJ7B0B.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/UV/MND30754IMFT3129SJ7B0B.uasset",
+      "bytes": 437066,
+      "sha256": "c35b13637c9eb33e53ce9e5c5496c7b0d686e82da5010a747258c873467d9813"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/XP/K1LEUEZBIYF7W1VBS9TAHR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/XP/K1LEUEZBIYF7W1VBS9TAHR.uasset",
+      "bytes": 6985,
+      "sha256": "fa87a3e6a95b5ec6375f5976d5f552b52813bfeffd8e6db318d126f13a5372b2"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/XY/YB7PJVDAKI25W6PTZYWMRV.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/2/XY/YB7PJVDAKI25W6PTZYWMRV.uasset",
+      "bytes": 253488,
+      "sha256": "46d953b7eef456dc217e19aa1e5915193b83c1cde49eda5031d103ad37175fe1"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/0B/VBUSC8E4ZZWX9PFZ5EO306.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/0B/VBUSC8E4ZZWX9PFZ5EO306.uasset",
+      "bytes": 6987,
+      "sha256": "099df6cd140103d59fe227358d1bc92c6148b37bc486eff9ddd3f37ded264dab"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/10/FB898TM6V71PRQBFZ02V6A.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/10/FB898TM6V71PRQBFZ02V6A.uasset",
+      "bytes": 441120,
+      "sha256": "2dd8d1cb99be3d3adb99388ee5010e04485505c2900bf2a00eeee958bd778b48"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/34/UQ71KWPGHEXO7L38H1QYU4.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/34/UQ71KWPGHEXO7L38H1QYU4.uasset",
+      "bytes": 436199,
+      "sha256": "6b92d2429026ee79c8722b6f23b152b9f828a57df78e507ef27abb39e4e0c552"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/8W/SJZ374X0TR9Q87MSA0NMY3.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/8W/SJZ374X0TR9Q87MSA0NMY3.uasset",
+      "bytes": 3965,
+      "sha256": "1e07b4ee5ea1148720f1f0f507cb5e5733016f9bd73c471940d6d9473918910a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/90/1A5DFPLIPE9SQYM02RXWXQ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/90/1A5DFPLIPE9SQYM02RXWXQ.uasset",
+      "bytes": 6987,
+      "sha256": "5655f043133431554f14b78020e67ebd3ebfe720d3d7389fef7cefd8185c7f14"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/M3/OEYGPMDP4GA0FVVN5M2US8.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/M3/OEYGPMDP4GA0FVVN5M2US8.uasset",
+      "bytes": 6987,
+      "sha256": "6ffbe6cd61ff5268f815e76d5fd99b64b942f89b1ec30b390f42b46b8e23f221"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/PH/DZLEXLAFUJEERMURK5KD4K.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/PH/DZLEXLAFUJEERMURK5KD4K.uasset",
+      "bytes": 423585,
+      "sha256": "5ebc1a958c0c7c62429cfb4deea50e7aee285aa59498f75d96dfa725a1c75549"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/Y9/UGMCCQXVXNQ6L6Q9M4NOFM.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/3/Y9/UGMCCQXVXNQ6L6Q9M4NOFM.uasset",
+      "bytes": 433471,
+      "sha256": "92e0b1161c02422eb25edb90c76439db2f7fa585f33228fbee3563704f9a1514"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/1L/2MEM38BHCZ5389XWK42UWS.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/1L/2MEM38BHCZ5389XWK42UWS.uasset",
+      "bytes": 6993,
+      "sha256": "37013a2dc3f232d59925fd35f18ff8120696458be032fdf38fce65a0653e58cc"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/2N/VGRU38OFAHQXVL0XO7LA0Z.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/2N/VGRU38OFAHQXVL0XO7LA0Z.uasset",
+      "bytes": 6993,
+      "sha256": "ec8895f0f3c89c04d1379d3bb83503aba8ca4cd077e8f8f85311de5591e730a7"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/8C/7CTTCTLDU0CI2EYLDR6BQT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/8C/7CTTCTLDU0CI2EYLDR6BQT.uasset",
+      "bytes": 400187,
+      "sha256": "c9da20d9b83eaf4b491d18493bf8c01cad7018bcf0c7b8da015519d120aece06"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/BS/BB133QBNBKAUWJKAXVE5RA.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/BS/BB133QBNBKAUWJKAXVE5RA.uasset",
+      "bytes": 6985,
+      "sha256": "4937717cfabe30f85abc470ec49a6fb6f69717c0e90177ba1fcaf2d0a361ddfd"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/DO/ZR7LL23ZR87CRH8G3SA4C6.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/DO/ZR7LL23ZR87CRH8G3SA4C6.uasset",
+      "bytes": 450159,
+      "sha256": "b269d4d07a54ffedc75d37f0f88323d871c3c7a6594e5a48f0454fd8e9f6205e"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/HA/I1RLFAGDLJ7EI2V6UPO4KW.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/HA/I1RLFAGDLJ7EI2V6UPO4KW.uasset",
+      "bytes": 6987,
+      "sha256": "767ce2937b35beaed6de64c490e746e45494cf14a29fb95d3f93fb71ad430565"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/MN/B4ZXFDI4XTXJ8G9IZ830F3.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/MN/B4ZXFDI4XTXJ8G9IZ830F3.uasset",
+      "bytes": 440865,
+      "sha256": "1d44cff89e49aa8adac1ca4c94353e605b37a2350129d83320bf3b0f763ac19b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/PI/VJWS0EIOJLZXIA0DVGT9MT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/PI/VJWS0EIOJLZXIA0DVGT9MT.uasset",
+      "bytes": 6985,
+      "sha256": "ad7bcabcfdb88f1307b78353309fa78d7546af9f5504f1aa62d393e6ac04e689"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/T0/0GU7IR1YD8IYVR02DINNQ2.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/T0/0GU7IR1YD8IYVR02DINNQ2.uasset",
+      "bytes": 432481,
+      "sha256": "9290022738dc472ce4373edd89f720550ef775f29d5e69c1397c211213c9459e"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/TV/5LR32CM3XLYESME7CV3SF9.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/TV/5LR32CM3XLYESME7CV3SF9.uasset",
+      "bytes": 6987,
+      "sha256": "90032c50d220c27ed59be1eb310d1c0914d53b72c540aa47445a984bec29b279"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/UC/MG33HACOAKPQQHRA0AJXU2.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/UC/MG33HACOAKPQQHRA0AJXU2.uasset",
+      "bytes": 366439,
+      "sha256": "15cb494b94ca95392dbb2789e69176f708b06d7da43e1d9636cfe2726d862e43"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/XA/A7L8W0JERV7B3FQ5P648G1.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/XA/A7L8W0JERV7B3FQ5P648G1.uasset",
+      "bytes": 379645,
+      "sha256": "d07ea8b31b77539751a2c2872bb235648ec0926abb7317fb33068c43efbe2266"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/XL/KY3E8LHY7QT1WN3C2JV6W6.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/XL/KY3E8LHY7QT1WN3C2JV6W6.uasset",
+      "bytes": 444864,
+      "sha256": "76b81c50fb8a66ebac6271d62431b7e7f50ff05eb812dc01086a3f6f27af5326"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/ZE/QD2IMZVFK1LOBFXMEB9B6V.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/ZE/QD2IMZVFK1LOBFXMEB9B6V.uasset",
+      "bytes": 6987,
+      "sha256": "ee21015950f363b8cbade86766a517eaf1bea5c700a48e5ecfcdf49e5989adfe"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/05/5HAMP6QXRPRV73YHFO64JT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/05/5HAMP6QXRPRV73YHFO64JT.uasset",
+      "bytes": 413933,
+      "sha256": "71b79d1b71c0fe05fd424b032b2456268ebf3c8db9fe462944087664731f4c4a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/1I/8A3CEQ10H1PMCE00HH2YW3.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/1I/8A3CEQ10H1PMCE00HH2YW3.uasset",
+      "bytes": 438387,
+      "sha256": "c1d7e7aae3fb501b2859b785d57f8f67d2241fda709915db22c79f6e8cf609d9"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/8L/VCD089STP2ZIEQ5I38C3CM.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/8L/VCD089STP2ZIEQ5I38C3CM.uasset",
+      "bytes": 392746,
+      "sha256": "5429071418b59c9f04cc7742e30b873653f5186efc354e182928a0a821aab722"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/9M/QXCQO00U8XJQDKI5AYW7GW.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/9M/QXCQO00U8XJQDKI5AYW7GW.uasset",
+      "bytes": 6993,
+      "sha256": "6529b7e65a5daa208c49935fefbc37ad165c37c2da4931ccb641f65a27762550"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/EC/9IEW3YJ2VMBBDC5GEZPVM8.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/EC/9IEW3YJ2VMBBDC5GEZPVM8.uasset",
+      "bytes": 421804,
+      "sha256": "f5d7259df55905d7e425423da3be0034a9d23486b47af0f8201c82187752d140"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/EO/G82YA93H0V0ANHCJSFCYUN.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/EO/G82YA93H0V0ANHCJSFCYUN.uasset",
+      "bytes": 437561,
+      "sha256": "bc1a9eb05359fca51195b6127ba315362a92fc87e26edb22c30496c13b15af04"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/EZ/VEJB3D6KLEWPO7GM2CH1EO.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/EZ/VEJB3D6KLEWPO7GM2CH1EO.uasset",
+      "bytes": 445171,
+      "sha256": "d21703ff52e226f91f69227e28238e147c0fa41302029efcb7681421d7e88480"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/LA/ZZ3MFG5AFVRG3L1TVRDAWV.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/LA/ZZ3MFG5AFVRG3L1TVRDAWV.uasset",
+      "bytes": 431201,
+      "sha256": "6c90613f9a5591e69968e2291ece1e2038bfbe269457a60a0dee0138cb6f2699"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/LO/TPTRSAL2CTZ4CBEBU9QDJ4.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/LO/TPTRSAL2CTZ4CBEBU9QDJ4.uasset",
+      "bytes": 6993,
+      "sha256": "b518ee70ebc9980cb59970cd41af9221ad646550f69aa9e84bb7371b33e8a526"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/N3/XA54563JQVVXFL9HUJ5LEY.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/N3/XA54563JQVVXFL9HUJ5LEY.uasset",
+      "bytes": 370536,
+      "sha256": "88dff4f07b7b5f5634c8e463d667856ade1f007633df8482fa1a2a268d8ad891"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/UM/6VCOSR03YCO00TEA0KMHEZ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/UM/6VCOSR03YCO00TEA0KMHEZ.uasset",
+      "bytes": 6993,
+      "sha256": "c9d4c60d283984636517a2c5d593032bfb7934f798334df6fbb7b1c5ef6f8822"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/UO/ZJIZIW2O0QTAV9E6Q5A3K5.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/5/UO/ZJIZIW2O0QTAV9E6Q5A3K5.uasset",
+      "bytes": 6987,
+      "sha256": "511eeb752e0c12449dd2848b0b6590ac04fb7bbe2a55b67875ce3e40d87d6f3a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/2T/J22C3MAR3UYQA1PQX7Q260.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/2T/J22C3MAR3UYQA1PQX7Q260.uasset",
+      "bytes": 6985,
+      "sha256": "5dc34ccef2d071f12ae1e11a17b1227fd55075245a0dcee88bc906acdda59350"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/AF/3I68DKDRBDQVGAJJ1QN3TM.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/AF/3I68DKDRBDQVGAJJ1QN3TM.uasset",
+      "bytes": 6993,
+      "sha256": "67ed7aa904d5ace39277b758bcc827880537a92892d4c647c89f8a236dd48451"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/BC/M6LFLNTYDX55ZYZ3HA5T62.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/BC/M6LFLNTYDX55ZYZ3HA5T62.uasset",
+      "bytes": 418778,
+      "sha256": "0a59a8ed3ce95178111ff64466f671d98a81341ec93da5b260d447bc248522ab"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/DD/FCCQB6JCO418BGN2I81Z0G.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/DD/FCCQB6JCO418BGN2I81Z0G.uasset",
+      "bytes": 6987,
+      "sha256": "242c877bcbca8bf9582c57891cee4d3b2f0e5311a4d21a0d16da913423ba63f3"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/EQ/OSBCR13V9KGVENKQH1NIAQ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/EQ/OSBCR13V9KGVENKQH1NIAQ.uasset",
+      "bytes": 444219,
+      "sha256": "f88395109c4d45e3f2b58f4ca7dbb6fc19f99daeeca3cb0d512023dcbb3c0515"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/KS/Y7I8ZUDKU91562U1KGAFXH.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/KS/Y7I8ZUDKU91562U1KGAFXH.uasset",
+      "bytes": 6987,
+      "sha256": "1d2675763e955d10b68e1d5f5e157ec573aa9132a59af292ed0d6b9aad8712fc"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/M3/NSXUJ7QXG1OTT3H4JQ8XAP.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/M3/NSXUJ7QXG1OTT3H4JQ8XAP.uasset",
+      "bytes": 6993,
+      "sha256": "7f17dc8600664a9cf190ccc9fbbd400965c13376e8bba310ade91d8eacb78e84"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/NA/9VZ1FD8WXBH4MW18ST2ZOV.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/NA/9VZ1FD8WXBH4MW18ST2ZOV.uasset",
+      "bytes": 6993,
+      "sha256": "3b3d17b1b8b7897d1220d2af5209cb3bcec5717cc9cd1229f32d7549a779b57b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/NH/2AX61CM1AVZPGA3EG5PN3F.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/NH/2AX61CM1AVZPGA3EG5PN3F.uasset",
+      "bytes": 6987,
+      "sha256": "81fe1ee5011c3138887df95110f39f5ee4fa7ab65556752fa7a9e01d5e43223c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/PM/ATJAAJLSM6PL821K64HP4A.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/PM/ATJAAJLSM6PL821K64HP4A.uasset",
+      "bytes": 2792,
+      "sha256": "de6b1320d7fff698e573960be1a72597d268e39f9e4deab11d8e7d0ea8a081bd"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/WV/YGCMIEE9C63PPBRQXZ675R.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/WV/YGCMIEE9C63PPBRQXZ675R.uasset",
+      "bytes": 6987,
+      "sha256": "fe45f53584cfcc739c1c6e44f7d4eb88002e598f15b229112035a33e1408d653"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/5A/EI99YYCAW1RU16VGX921FE.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/5A/EI99YYCAW1RU16VGX921FE.uasset",
+      "bytes": 244437,
+      "sha256": "626fec048e66cfd2613bc5cf2d6ed13ee2c3d55f229fe483a6b7d24b2f863b0d"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/95/E9P8E2X2WUO53QA3EI67MZ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/95/E9P8E2X2WUO53QA3EI67MZ.uasset",
+      "bytes": 6987,
+      "sha256": "1756e901c5d10114f629bda16dccab4483b9e4f84f290c530f06d18671b12482"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/BG/MT9O0X4N9OD5G4ZG1F21K4.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/BG/MT9O0X4N9OD5G4ZG1F21K4.uasset",
+      "bytes": 6987,
+      "sha256": "4ccc649b0674d3771f7ee8133e6ad45654e31f9ee05f7f6901f81c1279e5c081"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/RY/R8SYHWU49O8LN6ZVTK74UE.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/RY/R8SYHWU49O8LN6ZVTK74UE.uasset",
+      "bytes": 6987,
+      "sha256": "1cd61bb79c0404106e73886af25d2cbe954acb0d35d288837b58280cd28b2dc4"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/UK/09YH43PB66EKGK7D8XRXIU.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/UK/09YH43PB66EKGK7D8XRXIU.uasset",
+      "bytes": 255094,
+      "sha256": "491e81b2aa1c3980ca71b59c4a514494eb8bc461a90b1b0ac5bcb9bffdfc62e2"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/7V/TIXT1MZ0S2Z6BJLSO59WC8.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/7V/TIXT1MZ0S2Z6BJLSO59WC8.uasset",
+      "bytes": 6987,
+      "sha256": "6d9a479c97dabcb5e9f451215947924327133504ed2cbb6aa04f14d7befaa52a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/8S/UM9HJO8C2JQ4TQ6MGL7Z76.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/8S/UM9HJO8C2JQ4TQ6MGL7Z76.uasset",
+      "bytes": 4852,
+      "sha256": "80bde821d6d97acf414ca1d3a35707237b81673a1392ebae910d0acc5ac40f99"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/E6/4S22PS590RYFSSF1TR5Q1Y.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/E6/4S22PS590RYFSSF1TR5Q1Y.uasset",
+      "bytes": 454898,
+      "sha256": "0b60f714be8431a26612f2bca9f2b7d736dff8faea7d2a3f9d56630625d43e1c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/EX/I5L6EXME81XZXCLNDUIZEI.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/EX/I5L6EXME81XZXCLNDUIZEI.uasset",
+      "bytes": 5884,
+      "sha256": "7337d61c4d2ddd2f08b35556eff19014794267545bf4c7b70d32f8d7962dc376"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/F0/XLNWHMHMOYBUCEBU78HN7T.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/F0/XLNWHMHMOYBUCEBU78HN7T.uasset",
+      "bytes": 444616,
+      "sha256": "c75deefbe5838482f217035251043536ff3db69f18e288af38452763709162d3"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/NC/KLSHQ74STCXNFH2ARFO619.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/NC/KLSHQ74STCXNFH2ARFO619.uasset",
+      "bytes": 436701,
+      "sha256": "15213c3c140a0d1cf7b1f200933ad35ce5305b89dcc96a84f5a1621e3e8c133e"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/S0/58FITQ20ARNVFHB9SP3N66.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/S0/58FITQ20ARNVFHB9SP3N66.uasset",
+      "bytes": 6985,
+      "sha256": "5274ce85c306038bfebb866668189776370291b67dc2375e050124fc3ce5eaae"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/S5/6S31NX16LLORCPI8ASCYDY.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/S5/6S31NX16LLORCPI8ASCYDY.uasset",
+      "bytes": 6993,
+      "sha256": "50e06ed05e9bc801d26262718aa324e0e50438d98617f1fd977b32dfe9489bb1"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/T6/SJ7GRUTL6AEJZQD5FZ271C.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/8/T6/SJ7GRUTL6AEJZQD5FZ271C.uasset",
+      "bytes": 363959,
+      "sha256": "ab7b39cbc9792b0468afdd5bf32638b240b69f364b2e535385fa7ca990afec41"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/3G/AT462HROQPNBHIL721BERP.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/3G/AT462HROQPNBHIL721BERP.uasset",
+      "bytes": 6987,
+      "sha256": "1b3c4509e64d649583753abf660623d19db6d99b129a5da75c8060a02b00fbf8"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/4H/XVLW68PY9KUPVLZ7AC9R1A.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/4H/XVLW68PY9KUPVLZ7AC9R1A.uasset",
+      "bytes": 6985,
+      "sha256": "83e4eabccad9be18388df618c7e2e9520c3c2d6848f0aca60bc9087d80772cf8"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/73/7CH55ZV8M881W0NGB2ONVZ.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/73/7CH55ZV8M881W0NGB2ONVZ.uasset",
+      "bytes": 280027,
+      "sha256": "2234ecb57f4592e63779877daaff29dc694a35c0c0d67200f1d91ad1014a1968"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/PJ/X2DYWN3E0PZGS2MA9OUL4R.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/PJ/X2DYWN3E0PZGS2MA9OUL4R.uasset",
+      "bytes": 422491,
+      "sha256": "e14643a3b2fba96b8aef15f238661bde0cae971e24ab713827ebc918b7507462"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/Q3/XFT1RJPUAFKPLVB9FEUI4B.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/Q3/XFT1RJPUAFKPLVB9FEUI4B.uasset",
+      "bytes": 440369,
+      "sha256": "8fe6a97e73f0bbca0ba47f3c66782587ac521969756e9c8c5576321ce332f4a7"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/US/OIPS0114A0I1M463B6YUDD.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/US/OIPS0114A0I1M463B6YUDD.uasset",
+      "bytes": 4077,
+      "sha256": "d62229033254103a3aa494e7aa754d36c890e27b86e5a7d922d16e3cd4802dcc"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/34/R8U88K6BDSPBI1LZD3GOLW.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/34/R8U88K6BDSPBI1LZD3GOLW.uasset",
+      "bytes": 417478,
+      "sha256": "dc4b9be99f60087eb6016df95405a248272374777a7e496ee2e8ee78314164dd"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/3E/Z541A5M50SQD83JPOZLNS3.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/3E/Z541A5M50SQD83JPOZLNS3.uasset",
+      "bytes": 418083,
+      "sha256": "17187b3364c62d221de6fe73a19c48fa8c613416df77fd80093d716ea6acd2c5"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/68/BXHQW7D7FH768DHDUKKCWR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/68/BXHQW7D7FH768DHDUKKCWR.uasset",
+      "bytes": 354960,
+      "sha256": "96a58efc3456b1a0f1f0c451403d6b06ad6c5707db3c891a46551e72b0dff4bf"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/CM/YY5BQZWA4GZMV0CI5LT414.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/CM/YY5BQZWA4GZMV0CI5LT414.uasset",
+      "bytes": 6987,
+      "sha256": "a02b52328e7c0c40947767bb9107ff25e0a14300ba40370039e8357d234dc1d2"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/SC/53TABV6JE7JQQWNFWPDNMX.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/SC/53TABV6JE7JQQWNFWPDNMX.uasset",
+      "bytes": 6985,
+      "sha256": "b3c0b27c4e33687aaa4e52da8b33fe18fe9bced3e339c0d3dfc900e02d180a66"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/TI/AE1CBSSUG9HBCWWM1LTE1N.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/TI/AE1CBSSUG9HBCWWM1LTE1N.uasset",
+      "bytes": 449288,
+      "sha256": "e6a833072d99c7e1a12f4b09632b17bdc5641ccfae2415340db4d1168cd6f5e5"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/0L/29KS7H1ILEQ2XNI0GCS1TK.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/0L/29KS7H1ILEQ2XNI0GCS1TK.uasset",
+      "bytes": 6985,
+      "sha256": "0e6b49a43b10e78a2f1e93e79b22d77edec14096ab2837dbd9c2bb09b958f4cb"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/30/0DUC0IP3LGHJKZ3GAVI4Z6.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/30/0DUC0IP3LGHJKZ3GAVI4Z6.uasset",
+      "bytes": 374885,
+      "sha256": "4904d75975c194546168348f63cfbe5721b25a076cd2b738d497b3d65f4270d9"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/7B/W6P2JCCG9RW9Z2J84W82M5.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/7B/W6P2JCCG9RW9Z2J84W82M5.uasset",
+      "bytes": 436024,
+      "sha256": "1c1c87444256a2a3563433411c358c4730db800372c50dac76a7f6436f9720b3"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/8K/T3LKEA9IKIZ6UB9ZH7MX8H.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/8K/T3LKEA9IKIZ6UB9ZH7MX8H.uasset",
+      "bytes": 421892,
+      "sha256": "0ae01eba2c1e95cac93f1f2f5b8a8f67ce5d576f4939245125132c8242d06a4a"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/AO/OWSKY0TV22QLOMJONE5Z9X.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/AO/OWSKY0TV22QLOMJONE5Z9X.uasset",
+      "bytes": 6987,
+      "sha256": "e0b176dae7257c8af08ecb8f68f2c7c420b32040161eb5e0c2cee91bab75d2ce"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/L0/UWSY0NVC6ZL8K9CUI8CFZ2.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/L0/UWSY0NVC6ZL8K9CUI8CFZ2.uasset",
+      "bytes": 6985,
+      "sha256": "4d48094c738ca90881b2795c2fdd9d956e8cadaf87eabf9891f3fe6a3032e0be"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/NM/57648G3C0FHHDKRSTTPKUF.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/NM/57648G3C0FHHDKRSTTPKUF.uasset",
+      "bytes": 424156,
+      "sha256": "3096bd8b59c9f60cf34861fc57f4119d74a4a277b0aff38c478b9606bc4f7ebe"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/PM/8Z0KLK8RIT2CSG41PSW7MH.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/PM/8Z0KLK8RIT2CSG41PSW7MH.uasset",
+      "bytes": 5884,
+      "sha256": "6403a57c696d72680d0b45ca0c9749ee1abc08a81db7833114b924e184abc336"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/TI/TAUJHMYE53D78Q7ZJ9ZA2Q.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/TI/TAUJHMYE53D78Q7ZJ9ZA2Q.uasset",
+      "bytes": 6987,
+      "sha256": "aa102273c05807ac0357454af076b459fe3119e1d02410de0d109bfce8438ce9"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/TP/PKG428CR00THM9WRTX7FZ5.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/TP/PKG428CR00THM9WRTX7FZ5.uasset",
+      "bytes": 6987,
+      "sha256": "fcb3a60c46f47627ee66129ab2b01fcb41c9871fae08640f82387f56e6174edf"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/XI/HRRH4XBY7JHNQ79M46XD9B.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/B/XI/HRRH4XBY7JHNQ79M46XD9B.uasset",
+      "bytes": 6987,
+      "sha256": "8ae9ce935ad9ea8e6d82097e505ec1a9eaca3a02a81665c899ed5c561cd369e6"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/37/3OW41WETHCD2BXFJLYTSKF.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/37/3OW41WETHCD2BXFJLYTSKF.uasset",
+      "bytes": 464861,
+      "sha256": "be96258f139d35d88ac99d87ddaf0af415844cd4c6fc567c60d982944d94038d"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/66/HXGSLP7UEDTJQFWUPIN5WC.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/66/HXGSLP7UEDTJQFWUPIN5WC.uasset",
+      "bytes": 6993,
+      "sha256": "57293eca655be198c10fd67459c4b8222eae3b290f5b7a90e5a297ff3c51538d"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/BO/5JGBOM7LWCTUJ4HGQPZLDB.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/BO/5JGBOM7LWCTUJ4HGQPZLDB.uasset",
+      "bytes": 6993,
+      "sha256": "34083a8541c71b0108581624542361993f021fd1653cf3ad264bb3b50755762e"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/BX/BA3K27TK60AWZRQOIAGZH7.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/BX/BA3K27TK60AWZRQOIAGZH7.uasset",
+      "bytes": 6993,
+      "sha256": "077687570d669046194d4901d4541b70ce26e69fd069994aba4075ebe7161a02"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/EP/KIRBD8TCEZEGFA8ZUBMQXL.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/EP/KIRBD8TCEZEGFA8ZUBMQXL.uasset",
+      "bytes": 6987,
+      "sha256": "16db263b46644f38ace0f7a34338336552055123e81ca8c90e8cf65fc9b2ad6c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/G1/QI2U410R6CZ9FEZ813AILM.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/G1/QI2U410R6CZ9FEZ813AILM.uasset",
+      "bytes": 6993,
+      "sha256": "e29b02f44c958fb6ef647323f8b812d4179da1331bebd9d8a73f0f4f54c6ed50"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/IH/ZYP4GRTR8WIJ3XI6LJ911Y.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/IH/ZYP4GRTR8WIJ3XI6LJ911Y.uasset",
+      "bytes": 460643,
+      "sha256": "e2723b5697018865050c8adff906b581102c615fa31354ee06a5cc32b81e4858"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/KZ/3P7UZOTY4D02ZZCI40S1ED.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/KZ/3P7UZOTY4D02ZZCI40S1ED.uasset",
+      "bytes": 426713,
+      "sha256": "1a27ee856ffe9c6624d95c11ea4a1975ecbd51e0f2c8290d0fac018aa830ee0e"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/L0/TSN3DSBS8MB14PYBL76GLG.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/L0/TSN3DSBS8MB14PYBL76GLG.uasset",
+      "bytes": 6993,
+      "sha256": "22e99abb2abf9c87fbda80e3f8c6bcf0aed8b9284fb82eba15cfc0f0e58da612"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/NG/6D0KWW1E7AYBMWCAFX5CG0.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/NG/6D0KWW1E7AYBMWCAFX5CG0.uasset",
+      "bytes": 434882,
+      "sha256": "35f7f7b1db5589bcd43786bf90c87640dfdbbfea7445b053a1b61c93515d50e9"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/NY/731U2FJQIGYQ1BZI6CKRE9.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/NY/731U2FJQIGYQ1BZI6CKRE9.uasset",
+      "bytes": 353866,
+      "sha256": "fb32661ab560fa86962ac20ed7cf8b3f54f19e70d7708b7bfce7c620f4f319cc"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/PV/7QMVVGALHP0U492CAKKXH7.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/PV/7QMVVGALHP0U492CAKKXH7.uasset",
+      "bytes": 6985,
+      "sha256": "4629c186bac2b138b230d4f1e99ca8b9658f068e9e4f986ac095bc971fec212b"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/Y5/07S9N87BBHHCT51GO6B5KB.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/C/Y5/07S9N87BBHHCT51GO6B5KB.uasset",
+      "bytes": 415636,
+      "sha256": "1b1f484a114edbf7da98b595c99fd201833c89ce84eab8ec3ee6118f1fdd24bf"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/5H/F2EEI9RAPU5JPHH67PEY5G.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/5H/F2EEI9RAPU5JPHH67PEY5G.uasset",
+      "bytes": 6987,
+      "sha256": "65f11e094d3d899445025074d3545c5bc2c06a808aaa5fe155fc857530b588e5"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/8P/IUBGKKQY0R2QGBMYEH2DGM.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/8P/IUBGKKQY0R2QGBMYEH2DGM.uasset",
+      "bytes": 6993,
+      "sha256": "cc9f384d223f824915cb8574da8676bc0acf1ac5b4b63defb6716d67f4215c78"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/EC/2F5C00A15GHKOQE9HNPQU5.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/EC/2F5C00A15GHKOQE9HNPQU5.uasset",
+      "bytes": 445716,
+      "sha256": "0505f73c42bb8b2b55975cf87235b5aa64b96c63381d7dcaf9dae1ac02c22523"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/MV/Y7WT9YWAUVHBWRGA8403RF.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/MV/Y7WT9YWAUVHBWRGA8403RF.uasset",
+      "bytes": 6987,
+      "sha256": "368cf6c13a26112ca743e0d6942402244ac857b9e76ddb15347b579ef882af52"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/OP/9RNYDQZCKKD9PUJBAOBPHT.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/OP/9RNYDQZCKKD9PUJBAOBPHT.uasset",
+      "bytes": 442103,
+      "sha256": "e876e43e48578914a5bb9b79b433d8bc668ba979f1232d121bfebafac7b733de"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/OZ/E4SQJRUKBF3T2NBQN9635I.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/D/OZ/E4SQJRUKBF3T2NBQN9635I.uasset",
+      "bytes": 6985,
+      "sha256": "a60d5de915f2ad3ad5da3852f24e232d1b98fe20009b2c13e803b7c2872f9d9d"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/42/46CR4MA8HIVPWCSSYNRLQ1.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/42/46CR4MA8HIVPWCSSYNRLQ1.uasset",
+      "bytes": 6987,
+      "sha256": "e170205386d54df3bdd6f6bfa41c4a959fcc0bdcdb7fbf5171e73b37035b5a1e"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/4C/SX73GB3KCNRFEFH6AD1610.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/4C/SX73GB3KCNRFEFH6AD1610.uasset",
+      "bytes": 6985,
+      "sha256": "bb41301c0b7a146af7cd5ed023af1b59a77110681728165954a21aaa57997018"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/6B/9JV6THD0NHE14U0WFF5A4O.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/6B/9JV6THD0NHE14U0WFF5A4O.uasset",
+      "bytes": 10912,
+      "sha256": "e14c45c0c83226ad34851828a2b3d8255c75792c691f60f01ff9ef3c3b831b54"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/7B/P7QP1UW4XJMYS4V62EO8J8.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/7B/P7QP1UW4XJMYS4V62EO8J8.uasset",
+      "bytes": 446777,
+      "sha256": "e2b0c4d675391a341649b2fe58b3ef95c1b6daf08b9a4c8b130f69a5e4f2b94f"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/7W/WZ5G9OHBT9EESN3OXV1700.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/7W/WZ5G9OHBT9EESN3OXV1700.uasset",
+      "bytes": 451231,
+      "sha256": "88af6c712016bdd28bfb9a81eb6f1cc5632b15845412120330877412a8831dce"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/GO/BIPV3A1EP8CJT05AR0SPU8.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/GO/BIPV3A1EP8CJT05AR0SPU8.uasset",
+      "bytes": 6987,
+      "sha256": "2be6d35210b4f0b451913cd5a915e8c47dc6e2ed61a406e94bc39d30b9e04165"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/N8/KI7V29N20BKLK9INGV43KL.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/N8/KI7V29N20BKLK9INGV43KL.uasset",
+      "bytes": 4181,
+      "sha256": "deadf94895dce80e90ad759b9e640fda2623cfb9509a5c6b86311e136088d6bc"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/TN/I28N2Q97FIM5FYDYGEIX0B.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/TN/I28N2Q97FIM5FYDYGEIX0B.uasset",
+      "bytes": 431008,
+      "sha256": "84a59a31d1528a9d3064c629885b683c6fd1e4bd226dca4a955c027915d898e4"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/UI/BNH5O0KN9QBT9HSMY1F51Z.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/UI/BNH5O0KN9QBT9HSMY1F51Z.uasset",
+      "bytes": 434334,
+      "sha256": "45aaddf588fd6103f6c2fe4ecd370fb474effe27c1dd162fb23e684d0b21dbe6"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/V6/2OLG5SBQ44UE6X27Q5N7XR.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/E/V6/2OLG5SBQ44UE6X27Q5N7XR.uasset",
+      "bytes": 4062,
+      "sha256": "39ffad663d6c7b82348edeaa1a0b8d57b60f48ff1829c998409d8f6f80b22620"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/F/0P/2FJXK516DYUQ86GAOAU59W.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/F/0P/2FJXK516DYUQ86GAOAU59W.uasset",
+      "bytes": 6985,
+      "sha256": "c374b68fef19659a039dc437e409d713d9ca94deaf908de87b4e784119b72c9c"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/F/4H/HA9MYVLYGR1S9PNV1Z1ZCW.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/F/4H/HA9MYVLYGR1S9PNV1Z1ZCW.uasset",
+      "bytes": 6987,
+      "sha256": "93504921fbc0b03e5820f34b0f72076a3051c143349f3d4f328a5e1303c979ca"
+    },
+    {
+      "source": "Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/F/4L/0PGKF5BBLKDIC0PLNL3YR3.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/F/4L/0PGKF5BBLKDIC0PLNL3YR3.uasset",
+      "bytes": 425732,
+      "sha256": "3a180d6e8995af9c38f1a6ff715d4f914759049845ad4499b194fcfbf9e018ee"
+    },
+    {
+      "source": "Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/CM/4ZTCBDQN0ZVJTDM01TN0V5.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/CM/4ZTCBDQN0ZVJTDM01TN0V5.uasset",
+      "bytes": 2522,
+      "sha256": "6528ba97c8ac7d0fe2234d6508b7365ef5f0460b5492f20ec322ce2b41fea67e"
+    },
+    {
+      "source": "Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/VR/M98S60KZGCTM901ICHNN9U.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/4/VR/M98S60KZGCTM901ICHNN9U.uasset",
+      "bytes": 2671,
+      "sha256": "22bf5635be18eb26645abe9e6955da5b14f300216d1311511325b6922e058949"
+    },
+    {
+      "source": "Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/PU/IU8LVT3VKE9EDNGT7J83A2.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/6/PU/IU8LVT3VKE9EDNGT7J83A2.uasset",
+      "bytes": 2685,
+      "sha256": "f326ffd99ecced3e29cd18d7e9370fd5ac7de5e7b8de2d3686091a63138db2da"
+    },
+    {
+      "source": "Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/NZ/Q7RPKJYZM494DOSPPBJLCO.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/7/NZ/Q7RPKJYZM494DOSPPBJLCO.uasset",
+      "bytes": 2707,
+      "sha256": "974c680a686f51549c766fdc568aad132da5a524f67f53b610fb168573ad7cfe"
+    },
+    {
+      "source": "Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/5E/22PAZDMCPJW6KU0D9MA2H0.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/5E/22PAZDMCPJW6KU0D9MA2H0.uasset",
+      "bytes": 2579,
+      "sha256": "5a73d16e8602f00cde0150b445a160d0c510d29fba3fea972f00136a934a047f"
+    },
+    {
+      "source": "Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/CT/Q952J514KL4ABD40O403MH.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/9/CT/Q952J514KL4ABD40O403MH.uasset",
+      "bytes": 2631,
+      "sha256": "0ed789c21e01e1c8eeba044bb2dc92f111a9fdebb99490013ff249e8ad99d55a"
+    },
+    {
+      "source": "Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/ZL/30EV34AJGHK6OXB2EJG4O7.uasset",
+      "archive": "SourceArt/Legacy/OrphanWorlds/Content/__ExternalObjects__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased/A/ZL/30EV34AJGHK6OXB2EJG4O7.uasset",
+      "bytes": 2593,
+      "sha256": "039e9f822f0b8fdf32dec5bcd631e3efb0cfb9c8459a6dc1acead4e72c57c55f"
+    }
+  ],
+  "passed": true
+}

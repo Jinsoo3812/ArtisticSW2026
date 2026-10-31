@@ -90,11 +90,29 @@ Content/JoseonTongsinsaseon/Blueprints
 Content/JoseonTongsinsaseon/Maps
 Content/JoseonTongsinsaseon/Materials/Landscape
 Content/JoseonTongsinsaseon/Meshes
-Content/JoseonTongsinsaseon/Textures/Landscape
-Content/AdvStylizedFramework/Mesh
+Content/JoseonTongsinsaseon/Textures/Landscape/*
+!Content/JoseonTongsinsaseon/Textures/Landscape/T_MacroVariation_BC.uasset
+Content/AdvStylizedFramework/Mesh/*
+!Content/AdvStylizedFramework/Mesh/Demo/
+Content/AdvStylizedFramework/Mesh/Demo/*
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_01.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Bishop.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Board.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_King.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Knight.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Pawn.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Queen.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ChessSet_Tower.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_Circle.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_A.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_B.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_CoffeeCup_MultipleID.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_01.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_Fruit_Apple_02.uasset
+!Content/AdvStylizedFramework/Mesh/Demo/SM_ToyCar.uasset
 
-/Content/__ExternalActors__
-/Content/__ExternalObjects__
+# World Partition external actors/objects are authored map data, not generated cache.
+# Track them with their maps; proven orphan sources are preserved under SourceArt/Legacy.
 
 # Third-party source assets (runtime copies live under the torpedo feature folder)
 Content/Pack_Simple_Particle_Burst/
@@ -107,9 +125,6 @@ Content/Wood_Box/
 Content/British_Cannon/
 
 /Content/Ladder
-
-/Content/__ExternalActors__
-/Content/__ExternalObjects__
 
 AGENTS.md
 /SourceArt/Characters/Physics/Pending_AngularLimits_20261031/

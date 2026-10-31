@@ -36,11 +36,9 @@ class Runner:
         self.performance=unreal.get_default_object(unreal.load_class(None,'/Script/UnrealEd.EditorPerformanceSettings'))
         self.original_throttle=self.performance.get_editor_property('bThrottleCPUWhenNotForeground')
         self.performance.set_editor_property('bThrottleCPUWhenNotForeground',False)
-        factory=unreal.BlueprintFactory();factory.set_editor_property('parent_class',unreal.GameModeBase)
         fixture_path='/Game/Developers/ChManRigValidation/BP_RigValidationGameMode'
-        fixture=unreal.load_asset(fixture_path) if unreal.EditorAssetLibrary.does_asset_exist(fixture_path) else unreal.AssetToolsHelpers.get_asset_tools().create_asset('BP_RigValidationGameMode','/Game/Developers/ChManRigValidation',unreal.Blueprint,factory)
+        fixture=unreal.load_asset(fixture_path);assert fixture,'Author the fixture explicitly before running a read-only comparison'
         assert LIB.configure_test_game_mode(fixture)
-        assert unreal.EditorAssetLibrary.save_loaded_asset(fixture,False)
         self.fixture_class=fixture.generated_class()
         self.mode=unreal.get_default_object(self.fixture_class)
         self.original_controller=self.mode.get_editor_property('player_controller_class');self.original_pawn=self.mode.get_editor_property('default_pawn_class')

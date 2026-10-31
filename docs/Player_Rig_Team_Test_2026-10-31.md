@@ -1,5 +1,7 @@
 # 남녀 리그·시체 시스템 팀 테스트
 
+> 누락 에셋 복구와 최종 회귀 결과는 [2026-11-01 복구 안내](Asset_Recovery_2026-11-01.md)를 확인한다. 운영의 10초 부활은 기존 정책이며, 테스트 맵은 같은 상수를 사용하는 별도 타이머다.
+
 > ShipAI 병합 후에는 [최신 통합 안내](ShipAI_Corpse_Integration_2026-10-31.md)를 먼저 확인한다. 성별 전환 키는 Ctrl+Alt+Shift+F11이다.
 
 > 현재 시체 뒤틀림·여성 재질 수정은 실제 프로젝트에 통합돼 있다. [프로젝트 보정 및 10초 부활 테스트 안내](Player_Ragdoll_PoseFix_2026-10-31.md)를 먼저 확인한다. 테스트 맵은 `/Game/Developers/PlayerRagdoll/L_PlayerRagdollTest`다.

@@ -22,7 +22,7 @@ for folder in ("/Game/EditorBlueprintResources", "/Game/EngineSky"):
         log("  " + package + " class=" + str(data.asset_class_path.asset_name) + " refs=" + str(refs(package)))
 
 particle_path = "/Game/Pack_Simple_Particle_Burst/02_Blueprints/BP_Particle_Burst_Lvl_1"
-particle_bp = unreal.EditorAssetLibrary.load_asset(particle_path)
+particle_bp = unreal.EditorAssetLibrary.load_asset(particle_path) if unreal.EditorAssetLibrary.does_asset_exist(particle_path) else None
 log("PARTICLE_BP=" + str(particle_bp))
 if particle_bp:
     log("PARTICLE_REFS=" + str(refs(particle_path)))
@@ -56,8 +56,11 @@ if mesh:
     log("SM_BOMBA_SOCKET_NAMES=" + str([str(x) for x in probe.static_mesh_component.get_all_socket_names()]))
     unreal.EditorLevelLibrary.destroy_actor(probe)
 
-showcase = unreal.EditorLoadingAndSavingUtils.load_map("/Game/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased")
-if particle_bp:
+showcase_path = "/Game/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased"
+showcase = unreal.EditorLoadingAndSavingUtils.load_map(showcase_path) if unreal.EditorAssetLibrary.does_asset_exist(showcase_path) else None
+if not showcase:
+    log("OPTIONAL_SOURCE_SHOWCASE_NOT_IMPORTED; inspecting the runtime torpedo assets below")
+if particle_bp and showcase:
     for actor in unreal.EditorLevelLibrary.get_all_level_actors():
         if actor.get_class() == particle_bp.generated_class():
             log("PARTICLE_INSTANCE=" + actor.get_name())

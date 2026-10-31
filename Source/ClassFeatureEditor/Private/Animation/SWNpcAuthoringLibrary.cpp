@@ -12,6 +12,30 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "K2Node_VariableGet.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequence.h"
+
+bool USWNpcAuthoringLibrary::RepairNpcAnimationBindings(UAnimBlueprint* Blueprint, USkeletalMesh* Mesh, UBlendSpace* BlendSpace)
+{
+    if (!Blueprint || !Mesh || !BlendSpace || !Mesh->GetSkeleton()) return false;
+    // The legacy assets lost their binding; never retarget an unrelated existing skeleton.
+    USkeleton* Skeleton = Mesh->GetSkeleton();
+    if ((Blueprint->TargetSkeleton && Blueprint->TargetSkeleton != Skeleton)
+        || (BlendSpace->GetSkeleton() && BlendSpace->GetSkeleton() != Skeleton)) return false;
+    for (const FBlendSample& Sample : BlendSpace->GetBlendSamples())
+        if (!Sample.Animation || Sample.Animation->GetSkeleton() != Skeleton) return false;
+    Blueprint->Modify(); BlendSpace->Modify();
+    BlendSpace->SetSkeleton(Skeleton);
+    // Expand axes to retain authored speed values, rather than clamping/removing samples.
+    const TArray<FBlendSample> Samples = BlendSpace->GetBlendSamples();
+    for (const FBlendSample& Sample : Samples) BlendSpace->ExpandRangeForSample(Sample.SampleValue);
+    BlendSpace->ValidateSampleData(); BlendSpace->ResampleData();
+    Blueprint->TargetSkeleton = Skeleton;
+    Blueprint->SetPreviewMesh(Mesh);
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipSave);
+    return Blueprint->Status != BS_Error && Samples.Num() == BlendSpace->GetBlendSamples().Num();
+}
 
 bool USWNpcAuthoringLibrary::ConfigureNpcLocomotionGraph(
     UAnimBlueprint* Blueprint, USkeleton* Skeleton, UBlendSpace* BlendSpace)

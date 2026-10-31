@@ -4,6 +4,8 @@
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Engine/StaticMesh.h"
+#include "ShipAI/EnemyShipLocalSafety.h"
 #include "Components/BoxComponent.h"
 #include "CollisionChannels.h"
 #include "AbilitySystemComponent.h"
@@ -28,6 +30,14 @@
 
 namespace EnemyShipInfrastructureTests
 {
+    bool ConfigureSafetyHull(AEnemyShip* Ship)
+    {
+        UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+        if (!Ship || !Cube || !Ship->BuoyancyRoot->SetStaticMesh(Cube)) return false;
+        Ship->BuoyancyRoot->SetWorldScale3D(FVector(12, 5, 2));
+        Ship->BuoyancyRoot->SetSimulatePhysics(false);
+        return true;
+    }
 	struct FTestWorld
 	{
 		UWorld* World = nullptr;
@@ -359,6 +369,8 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 	First->DispatchBeginPlay();
 	Second->DispatchBeginPlay();
 	Target->DispatchBeginPlay();
+    if (!TestTrue(TEXT("First physical prediction hull"), EnemyShipInfrastructureTests::ConfigureSafetyHull(First))
+        || !TestTrue(TEXT("Second physical prediction hull"), EnemyShipInfrastructureTests::ConfigureSafetyHull(Second))) return false;
 	First->BuoyancyRoot->SetSimulatePhysics(false);
 	Second->BuoyancyRoot->SetSimulatePhysics(false);
 	Target->BuoyancyRoot->SetSimulatePhysics(false);
@@ -437,9 +449,19 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 		Obstacle->SetActorLocation(FVector(1000000.0f, 1000000.0f, 0.0f));
 	}
 
+    // Right-of-way prediction and the physical safety controller are separate.
+    // Supply an actual worsening collision path instead of requiring every legacy
+    // yield decision to force an unconditionally unsafe reverse maneuver.
+    PriorityShip->SetActorLocation(YieldingShip->GetActorLocation() + YieldingShip->GetActorForwardVector() * 1000.f);
+    PriorityShip->SetAIControlInput(0, 0);
+    FEnemyShipNavigationOverrideRequest UnsafeForward;
+    UnsafeForward.MoveInput = 1;
+    TestFalse(TEXT("Fixture predicts a real forward collision"), EnemyShipLocalSafety::FQuery(*YieldingShip, {}).Check(UnsafeForward, false).bSafe);
 	YieldingShip->GetNavigationComponent()->TickComponent(0.2f, LEVELTICK_All, nullptr);
 	TestTrue(TEXT("Avoidance maneuver latches"), YieldingShip->GetNavigationComponent()->IsAvoidanceManeuverActive());
-	TestTrue(TEXT("Yielding ship applies reverse thrust"), YieldingShip->GetCurrentMoveInput() < 0.0f);
+    TestTrue(TEXT("Safety prediction has valid authored geometry"), EnemyShipLocalSafety::FQuery(*YieldingShip, {}).IsValid());
+    TestEqual(TEXT("Unsafe prediction first brakes instead of reversing blindly"), YieldingShip->GetAISafetyControl().Mode, EShipAISafetyMode::Hold);
+    TestEqual(TEXT("Waiting ship has zero thrust"), YieldingShip->GetCurrentMoveInput(), 0.0f);
 
 	FEnemyShipNavigationProfile ReturnProfile = First->GetNavigationComponent()->GetNavigationProfile();
 	ReturnProfile.ReturnArrivalDistance = 100.0f;
@@ -483,9 +505,10 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("Return prediction excludes all avoidance traffic"),
 		Swarm->EvaluateAvoidance(First).bShouldYield);
-	TestFalse(
-		TEXT("Returning ship disables avoidance maneuvers"),
+	TestTrue(
+		TEXT("Returning ship still protects against the overlapping stopped hull"),
 		First->GetNavigationComponent()->IsAvoidanceManeuverActive());
+    TestEqual(TEXT("Returning ship cannot drive through an overlapping hull"), First->GetCurrentMoveInput(), 0.0f);
 
 	return true;
 }
@@ -504,6 +527,7 @@ bool FEnemyShipAnchorIntegrationTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+    if (!TestTrue(TEXT("Anchor fixture supplies valid safety hull"), EnemyShipInfrastructureTests::ConfigureSafetyHull(Ship))) return false;
 	Ship->BuoyancyRoot->SetSimulatePhysics(false);
 	Ship->SetActorLocation(FVector(1500.0f, 2500.0f, 0.0f));
 

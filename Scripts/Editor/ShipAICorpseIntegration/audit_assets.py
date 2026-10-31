@@ -2,7 +2,7 @@
 import json,subprocess,traceback
 from pathlib import Path
 import unreal
-ROOT=Path(unreal.Paths.project_dir()).resolve();OUT=ROOT/'Saved/ShipAICorpseIntegration'
+ROOT=Path(unreal.Paths.project_dir()).resolve();OUT=Path(globals().get('ASSET_AUDIT_OUTPUT_DIR',ROOT/'Saved/ShipAICorpseIntegration'));OUT.mkdir(parents=True,exist_ok=True)
 REG=unreal.AssetRegistryHelpers.get_asset_registry();REG.search_all_assets(True)
 report={'registry_packages':0,'missing_hard_references':[],'loaded_changed':[],'load_failures':[],'errors':[]}
 options=unreal.AssetRegistryDependencyOptions(include_hard_package_references=True,include_soft_package_references=False,include_searchable_names=False,include_soft_management_references=False,include_hard_management_references=False)
@@ -15,7 +15,7 @@ try:
             dep=str(dependency)
             if dep.startswith('/Game/') and dep not in packages and dep not in file_packages:
                 report['missing_hard_references'].append({'from':package,'to':dep})
-    changed=subprocess.check_output(['git','diff','--name-only','1c41c6e0','--','Content'],cwd=ROOT).decode('utf8').splitlines()
+    changed=subprocess.check_output(['git','diff','--name-only',globals().get('ASSET_AUDIT_BASE_REV','1c41c6e0'),'--','Content'],cwd=ROOT).decode('utf8').splitlines()
     critical=['Content/Developers/PlayerRagdoll/L_PlayerRagdollTest.umap','Content/Blueprints/Player/BP_Player_Man.uasset','Content/Blueprints/Player/BP_Player_Woman.uasset','Content/Anim_Logic/ABP_Player_Man.uasset','Content/Anim_Logic/ABP_Player_Woman.uasset']
     for index,path in enumerate(sorted(set(changed+critical))):
         if not path.endswith(('.uasset','.umap')) or not (ROOT/path).is_file():continue

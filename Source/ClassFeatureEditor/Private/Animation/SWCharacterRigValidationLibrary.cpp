@@ -278,8 +278,9 @@ bool USWCharacterRigValidationLibrary::ConfigureTestGameMode(UBlueprint* BP)
     auto* Mode=Cast<AGameModeBase>(BP->GeneratedClass->GetDefaultObject());if(!Mode)return false;
     auto* Controller=LoadClass<APlayerController>(nullptr,TEXT("/Game/Blueprints/Player/BP_BasePlayerController.BP_BasePlayerController_C"));
     if(!Controller||!Controller->IsChildOf(ABasePlayerController::StaticClass()))return false;
+    if(Mode->PlayerControllerClass==Controller&&!Mode->DefaultPawnClass)return true;
     BP->Modify();Mode->Modify();Mode->PlayerControllerClass=Controller;Mode->DefaultPawnClass=nullptr;
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);FKismetEditorUtilities::CompileBlueprint(BP);
+    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);FKismetEditorUtilities::CompileBlueprint(BP,EBlueprintCompileOptions::SkipSave);
     return BP->Status!=BS_Error;
 }
 

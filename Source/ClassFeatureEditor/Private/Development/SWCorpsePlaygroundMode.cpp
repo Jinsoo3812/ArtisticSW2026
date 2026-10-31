@@ -1,4 +1,5 @@
 #include "Development/SWCorpsePlaygroundMode.h"
+#include "MultiGameMode.h"
 #include "Components/SWCorpsePoseComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -67,7 +68,7 @@ void ASWCorpsePlaygroundMode::BeginCountdown()
 {
     APlayerController* PC=GetWorld()->GetFirstPlayerController();ACharacter* C=PC?Cast<ACharacter>(PC->GetPawn()):nullptr;if(!C)return;
     bPending=true;LastError.Reset();
-    C->SetLifeSpan(12.f);
+    C->SetLifeSpan(AMultiGameMode::IndividualRespawnDelay + 2.f);
     if(PC->PlayerCameraManager)
     {
         const FMinimalViewInfo& POV=PC->PlayerCameraManager->GetCameraCacheView();
@@ -78,7 +79,7 @@ void ASWCorpsePlaygroundMode::BeginCountdown()
     bSavedAutoCamera=PC->bAutoManageActiveCameraTarget;PC->bAutoManageActiveCameraTarget=false;
     if(DeathCamera)PC->SetViewTargetWithBlend(DeathCamera,.15f);
     PC->SetIgnoreMoveInput(true);PC->SetIgnoreLookInput(true);bLockedInput=true;
-    GetWorldTimerManager().SetTimer(RespawnTimer,this,&ASWCorpsePlaygroundMode::Respawn,10.f,false);
+    GetWorldTimerManager().SetTimer(RespawnTimer,this,&ASWCorpsePlaygroundMode::Respawn,AMultiGameMode::IndividualRespawnDelay,false);
 }
 void ASWCorpsePlaygroundMode::SwitchGender(){bFemale=!bFemale;TriggerDeath();if(bPending)Respawn();}
 bool ASWCorpsePlaygroundMode::ExecuteTestChord(bool bGenderSwitch)
