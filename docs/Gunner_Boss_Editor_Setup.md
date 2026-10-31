@@ -1,5 +1,9 @@
 # GunnerBoss 에디터 설정 — 빨간 Ray + 기존 무기 연결
 
+최신: 원통은 각 발사 0.5초 전부터 발사 후 1초까지 현재 총구와 대상/함선의 로컬 끝점을 연결한다. 초기 조준은 숨기며 취소·사망 때는 즉시 제거한다. 후딜은 단발 0.35초/연사 0.5초다. Niagara 섬광은 발사 때만 생성한다. 자세한 설정은 [발사 효과와 갑판 Focus](Gunner_Shot_Cylinder_Niagara_and_Deck_Focus.md)를 우선 참조한다.
+
+2026-10-31: 현재 작업 대상은 `/Game/GameplayAbilitySystem/Enemy/Balancing/T1/BP_T1Boss_Enemy`이다. 전용 에셋 이름과 직접 연결할 항목은 [T1 총잡이 구현 및 수동 작업](T1Boss_Gunner_Implementation_and_Assets.md)을 우선 참조한다. 조준 고정선 색상과 서버 확정 발사의 음향/총구 Niagara 설정이 추가됐다.
+
 2026-10-13 변경: 준비 중에는 각 클라이언트가 빨간 선을 직접 표시하고, Prepare Time이 끝나면 서버가 RayCast로 피해를 판정한다. Warning Mesh / Warning Effect / AimLine BP는 필요 없다. 기본 공격·연사·거리 유지·후딜 구조는 유지한다.
 
 ## 1. 총 BP 만들기
