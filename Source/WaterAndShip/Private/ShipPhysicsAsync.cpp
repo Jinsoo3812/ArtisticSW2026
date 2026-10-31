@@ -274,14 +274,19 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 					bAuthoritativeBuoyancyWriter_Internal = true;
 				}
 
-				bAnchorDropped_Internal = AsyncInput->bIsAnchorDropped;
+				// Observers consume the server's historical anchor/brake input. Do not
+				// overwrite it with current replicated GT state before a physics step.
+				if (AsyncInput->bApplyAuthoritativeAISafety || AsyncInput->bHasLocalController)
+				{
+					bAnchorDropped_Internal = AsyncInput->bIsAnchorDropped;
+					CachedAnchorOriginXY = AsyncInput->AnchorOriginXY;
+				}
 				if (AsyncInput->bApplyAuthoritativeAISafety)
 				{
 					AISafety_Internal = AsyncInput->AISafety;
 					AISafety_Internal.Sanitize();
 					bAuthoritativeAISafetyWriter_Internal = true;
 				}
-				CachedAnchorOriginXY = AsyncInput->AnchorOriginXY;
 				CachedAnchorStiffness = AsyncInput->AnchorStiffness;
 				CachedAnchorDamping = AsyncInput->AnchorDamping;
 				CachedAnchorSlackRadius = AsyncInput->AnchorSlackRadius;

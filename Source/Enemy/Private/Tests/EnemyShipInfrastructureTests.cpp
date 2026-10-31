@@ -22,6 +22,8 @@
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "BaseEnemy.h"
+#include "TimerManager.h"
+#include "GameFramework/WorldSettings.h"
 #include "RangedEnemy/RangedEnemy.h"
 
 namespace EnemyShipInfrastructureTests
@@ -48,6 +50,63 @@ namespace EnemyShipInfrastructureTests
 			}
 		}
 	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipPlayerRamNavigationStopTest,
+	"ArtisticSW.Enemy.Ship.Navigation.PlayerRamStop",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipPlayerRamNavigationStopTest::RunTest(const FString& Parameters)
+{
+	EnemyShipInfrastructureTests::FTestWorld TestWorld;
+	// This minimal world has no GameMode to dispatch BeginPlay and bind the hit delegate.
+	TestWorld.World->GetWorldSettings()->NotifyBeginPlay();
+	AShip* Player = TestWorld.World->SpawnActor<AShip>();
+	AEnemyShip* Enemy = TestWorld.World->SpawnActor<AEnemyShip>();
+	if (!TestNotNull(TEXT("Player ship"), Player) || !TestNotNull(TEXT("Enemy ship"), Enemy)) return false;
+	Player->BuoyancyRoot->SetSimulatePhysics(false);
+	Enemy->BuoyancyRoot->SetSimulatePhysics(false);
+	Player->SetActorLocation(FVector(10000, 0, 0));
+	Enemy->SetActorLocation(FVector(12000, 0, 0));
+	Player->PlayerRamCollisionDamage = 1.0f;
+	Player->PlayerRamDamagePerAdditionalMeterPerSecond = 0.0f;
+	Player->PlayerRamDamageCooldown = 0.0f;
+	Player->GetAbilitySystemComponent()->InitAbilityActorInfo(Player, Player);
+	Enemy->GetAbilitySystemComponent()->InitAbilityActorInfo(Enemy, Enemy);
+	TGuardValue<uint64> FrameGuard(GFrameCounter, GFrameCounter);
+	TestWorld.World->GetTimerManager().Tick(0.0f);
+	TestEqual(TEXT("Default ram stop is two seconds"), Enemy->PlayerRamNavigationStopDuration, 2.0f);
+	const auto HitEnemy = [&]()
+	{
+		Player->BuoyancyRoot->OnComponentHit.Broadcast(Player->BuoyancyRoot, Enemy,
+			Enemy->BuoyancyRoot, FVector::ZeroVector, FHitResult());
+	};
+	Player->BuoyancyRoot->ComponentVelocity = FVector(100, 0, 0);
+	HitEnemy();
+	TestFalse(TEXT("Low-speed contact does not stop navigation"), Enemy->IsPlayerRamNavigationStopped());
+	Player->BuoyancyRoot->ComponentVelocity = FVector(1000, 0, 0);
+	HitEnemy();
+	TestTrue(TEXT("Accepted player ram stops navigation"), Enemy->IsPlayerRamNavigationStopped());
+	TestFalse(TEXT("Temporary stop does not lower the actual anchor"), Enemy->IsAnchorDropped());
+	TestFalse(TEXT("Attacking player is not stopped"), Player->IsPlayerRamNavigationStopped());
+	Enemy->SetAIControlInput(1, 1, 3, 3);
+	TestEqual(TEXT("Ram stop blocks boosted AI control"), Enemy->GetCurrentAIPropulsionScale(), 1.0f);
+	++GFrameCounter;
+	TestWorld.World->GetTimerManager().Tick(1.1f);
+	HitEnemy();
+	++GFrameCounter;
+	TestWorld.World->GetTimerManager().Tick(1.1f);
+	TestTrue(TEXT("Re-hit refreshes full interval"), Enemy->IsPlayerRamNavigationStopped());
+	++GFrameCounter;
+	TestWorld.World->GetTimerManager().Tick(1.0f);
+	TestFalse(TEXT("Stop expires after refreshed interval"), Enemy->IsPlayerRamNavigationStopped());
+	Enemy->SetAIControlInput(1, 1, 3, 3);
+	TestEqual(TEXT("AI propulsion resumes after expiration"), Enemy->GetCurrentAIPropulsionScale(), 3.0f);
+	HitEnemy();
+	Enemy->ResetFreshEncounterControlState();
+	TestFalse(TEXT("Pool reset clears temporary brake"), Enemy->IsPlayerRamNavigationStopped());
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
