@@ -126,7 +126,7 @@ void UGA_BossGunAttack::UpdateAim()
 	if (!IsActive()) return;
 	if (!Combat || !Combat->OwnsAttack(AttackId) || !Combat->IsRuntimeValid(AttackTarget)) { Finish(true); return; }
 	if (Phase != EBossGunAimPhase::Tracking && Phase != EBossGunAimPhase::Locked) return;
-	if (!Combat->UpdateAim(AttackId, AttackTarget, Phase, PhaseStart, PhaseEnd)) Finish(true);
+	if (!Combat->UpdateAim(AttackId, AttackTarget, Phase, PhaseStart, PhaseEnd, PreparationEnd)) Finish(true);
 }
 
 void UGA_BossGunAttack::FireShot()
@@ -146,7 +146,7 @@ void UGA_BossGunAttack::FireShot()
 			Resolver->ResolveHit(UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Hit.GetActor()), Hit, true, false, false);
 	}
 	if (!IsActive() || !Combat->OwnsAttack(AttackId)) return;
-	Combat->ShowShot(AttackId, Start, End);
+	Combat->ShowShot(AttackId, Start, End, Hit);
 	++ShotsFired;
 	if (Pattern.Montage && !Pattern.FireSection.IsNone())
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
@@ -187,7 +187,7 @@ void UGA_BossGunAttack::EndAbility(const FGameplayAbilitySpecHandle Handle, cons
 		GetWorld()->GetTimerManager().ClearTimer(PhaseTimer);
 		GetWorld()->GetTimerManager().ClearTimer(AimTimer);
 	}
-	if (Combat) Combat->FinishAttack(AttackId, bCommitted ? Pattern.PostAttackGap : 0.f, !bWasCancelled);
+	if (Combat) Combat->FinishAttack(AttackId, bCommitted ? Pattern.PostAttackGap : 0.f, bWasCancelled);
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo(); ASC && ASC->GetAnimatingAbility() == this)
 		ASC->CurrentMontageStop();
 	AttackId = 0;

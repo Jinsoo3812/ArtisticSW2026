@@ -24,12 +24,12 @@ public:
 	bool HasClearLineFrom(AActor* Target, const FVector& Start) const;
 	bool Trace(const FVector& Start, const FVector& Direction, FHitResult& OutHit, FVector& OutEnd) const;
 	uint32 BeginAttack(AActor* Target);
-	bool UpdateAim(uint32 AttackId, AActor* Target, EBossGunAimPhase Phase, float StartTime, float EndTime);
+	bool UpdateAim(uint32 AttackId, AActor* Target, EBossGunAimPhase Phase, float StartTime, float EndTime, float PlannedShotTime);
 	bool LockAim(uint32 AttackId, AActor* Target);
 	bool BuildShot(uint32 AttackId, FHitResult& OutHit, FVector& OutStart, FVector& OutEnd) const;
-	void ShowShot(uint32 AttackId, const FVector& Start, const FVector& End);
+	void ShowShot(uint32 AttackId, const FVector& Start, const FVector& End, const FHitResult& Hit);
 	void SetHiddenPhase(uint32 AttackId, EBossGunAimPhase Phase, float StartTime, float EndTime);
-	void FinishAttack(uint32 AttackId, float PostAttackGap, bool bKeepFinalShot = false);
+	void FinishAttack(uint32 AttackId, float PostAttackGap, bool bCancelled = true);
 	void ResetCombat();
 	bool IsAttackLocked() const { return bAttackLocked; }
 	bool OwnsAttack(uint32 AttackId) const { return AttackId != 0 && ActiveAttackId == AttackId; }
@@ -40,6 +40,8 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_AttackLocked) bool bAttackLocked = false;
 	UFUNCTION() void OnRep_AttackLocked();
 	UPROPERTY(Transient) TObjectPtr<ABossGunAimLine> AimLine;
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastShotFeedback(FVector_NetQuantize Start, FVector_NetQuantize End);
 private:
 	AGunnerBossEnemy* Boss() const;
 	const UGunnerBossCombatData* Data() const;

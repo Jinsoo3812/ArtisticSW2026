@@ -12,6 +12,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "Net/UnrealNetwork.h"
+#include "Kismet/GameplayStatics.h"
+#include "NiagaraFunctionLibrary.h"
 
 UBossGunCombatComponent::UBossGunCombatComponent()
 {
@@ -178,7 +180,7 @@ FVector UBossGunCombatComponent::LockedWorldDirection() const
 		: LocalLockedDirection.GetSafeNormal();
 }
 
-bool UBossGunCombatComponent::UpdateAim(uint32 AttackId, AActor* Target, EBossGunAimPhase Phase, float StartTime, float EndTime)
+bool UBossGunCombatComponent::UpdateAim(uint32 AttackId, AActor* Target, EBossGunAimPhase Phase, float StartTime, float EndTime, float PlannedShotTime)
 {
 	if (!OwnsAttack(AttackId) || !IsRuntimeValid(Target) || !AimLine) return false;
 	FVector Start;
@@ -197,7 +199,8 @@ bool UBossGunCombatComponent::UpdateAim(uint32 AttackId, AActor* Target, EBossGu
 	FHitResult Hit;
 	FVector End;
 	if (!Trace(Start, Direction, Hit, End)) return false;
-	AimLine->SetAim(Phase, End, StartTime, EndTime);
+	USceneComponent* Anchor = Hit.GetComponent() ? static_cast<USceneComponent*>(Hit.GetComponent()) : Boss()->GetHostShip()->GetDeckMeshComplex();
+	AimLine->SetAim(Phase, End, StartTime, EndTime, Anchor, Hit.bBlockingHit ? Hit.BoneName : NAME_None, PlannedShotTime);
 	return true;
 }
 
@@ -218,9 +221,22 @@ bool UBossGunCombatComponent::BuildShot(uint32 AttackId, FHitResult& OutHit, FVe
 	return OwnsAttack(AttackId) && bAimLocked && GetOrigin(OutStart) && Trace(OutStart, LockedWorldDirection(), OutHit, OutEnd);
 }
 
-void UBossGunCombatComponent::ShowShot(uint32 AttackId, const FVector& Start, const FVector& End)
+void UBossGunCombatComponent::ShowShot(uint32 AttackId, const FVector& Start, const FVector& End, const FHitResult& Hit)
 {
-	if (OwnsAttack(AttackId) && AimLine) AimLine->ShowShot(Start, End);
+	if (!GetOwner()->HasAuthority() || !OwnsAttack(AttackId)) return;
+	USceneComponent* Anchor = Hit.GetComponent() ? static_cast<USceneComponent*>(Hit.GetComponent()) : Boss()->GetHostShip()->GetDeckMeshComplex();
+	if (AimLine) AimLine->ShowShot(Start, End, Anchor, Hit.bBlockingHit ? Hit.BoneName : NAME_None);
+	MulticastShotFeedback(Start, End);
+}
+
+void UBossGunCombatComponent::MulticastShotFeedback_Implementation(FVector_NetQuantize Start, FVector_NetQuantize End)
+{
+	const UGunnerBossCombatData* Settings = Data();
+	if (!Settings || GetNetMode() == NM_DedicatedServer) return;
+	if (Settings->ShotSound) UGameplayStatics::PlaySoundAtLocation(this, Settings->ShotSound, Start);
+	if (Settings->MuzzleFlash)
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Settings->MuzzleFlash, Start,
+			(FVector(End) - FVector(Start)).Rotation(), FVector(Settings->MuzzleFlashScale));
 }
 
 void UBossGunCombatComponent::SetHiddenPhase(uint32 AttackId, EBossGunAimPhase Phase, float StartTime, float EndTime)
@@ -230,7 +246,7 @@ void UBossGunCombatComponent::SetHiddenPhase(uint32 AttackId, EBossGunAimPhase P
 	if (AimLine) AimLine->SetAim(Phase, FVector::ZeroVector, StartTime, EndTime);
 }
 
-void UBossGunCombatComponent::FinishAttack(uint32 AttackId, float PostAttackGap, bool bKeepFinalShot)
+void UBossGunCombatComponent::FinishAttack(uint32 AttackId, float PostAttackGap, bool bCancelled)
 {
 	if (!GetOwner()->HasAuthority() || !OwnsAttack(AttackId)) return;
 	NextAttackTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.f, PostAttackGap);
@@ -239,8 +255,7 @@ void UBossGunCombatComponent::FinishAttack(uint32 AttackId, float PostAttackGap,
 	LockedFrame.Reset();
 	if (AimLine)
 	{
-		if (bKeepFinalShot) AimLine->FinishPresentation();
-		else AimLine->Destroy();
+		AimLine->FinishPresentation(bCancelled);
 	}
 	AimLine = nullptr;
 	bAttackLocked = false;
