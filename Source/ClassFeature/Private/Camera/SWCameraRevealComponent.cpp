@@ -2,7 +2,6 @@
 
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
-#include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/CapsuleComponent.h"
 #include "CollisionQueryParams.h"
@@ -99,7 +98,7 @@ void USWCameraRevealComponent::UpdateView(float DeltaSeconds)
 	if (!Character || !Controller->IsLifeCharacterAlive() || !Controller->PlayerCameraManager
 		|| !LocalPlayer || !LocalPlayer->ViewportClient || !LocalPlayer->ViewportClient->Viewport
 		|| !GameInstance || GameInstance->GetLocalPlayers().Num() != 1
-		|| (Ship && Ship->HelmFirstPersonCamera && Ship->HelmFirstPersonCamera->IsActive()))
+		|| Ship || Character->IsOperatingCannon())
 	{
 		ClearView();
 		return;

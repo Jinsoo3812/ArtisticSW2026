@@ -9,7 +9,7 @@ class AEnemyShip;
 class AShip;
 
 enum class EEnemyShipLocalSafetyState : uint8 { Normal, Waiting, Escaping };
-enum class EEnemyShipEscapeAction : uint8 { Forward, ForwardRight, ForwardLeft, Reverse };
+enum class EEnemyShipEscapeAction : uint8 { Forward, ForwardRight, ForwardLeft, Reverse, ReverseRight, ReverseLeft };
 
 USTRUCT()
 struct FEnemyShipHomeAlignment
@@ -162,6 +162,11 @@ private:
 	float SafetyEvaluationAccumulator = 0.0f;
 	float EscapeReconsiderAccumulator = 0.0f;
 	float ProgressElapsed = 0.0f;
+	float ProgressStartYaw = 0.0f;
+	float TerrainProbeAccumulator = 0.0f;
+	bool bTerrainProbeInitialized = false;
+	bool bTerrainForwardClear = true;
+	bool bTerrainPriority = false;
 	float EscapeElapsed = 0.0f;
 	FVector ProgressStart = FVector::ZeroVector;
 	float EscapeLastYaw = 0.0f;
