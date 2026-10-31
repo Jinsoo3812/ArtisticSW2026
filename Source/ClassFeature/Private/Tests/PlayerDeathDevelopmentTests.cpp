@@ -27,7 +27,7 @@ bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 	Seed.Count = 7;
 	Life.Player->GetInventoryComponent()->RestoreProgressSnapshot({Seed});
 	Input->ServerExecuteTest(ESWDevTestAction::KillSelf, 0, 1, Life.Player, OriginalGeneration);
-	TestEqual(TEXT("Server rejects development death without an enabled room session"), Life.Player->GetHealthComponent()->GetHealth(), 100.0f);
+	TestEqual(TEXT("Server rejects development death without an enabled room session"), Life.Player->GetHealthComponent()->GetHealth(), 1000.0f);
 	TestTrue(TEXT("Current life request matches"), Input->MatchesCurrentLife(Life.Player, OriginalGeneration));
 	TestFalse(TEXT("Null life request rejected"), Input->MatchesCurrentLife(nullptr, OriginalGeneration));
 	ABasePlayer* Replacement = Fixture.SpawnPlayer();

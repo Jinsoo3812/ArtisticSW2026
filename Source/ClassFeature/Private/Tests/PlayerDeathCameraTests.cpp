@@ -36,7 +36,8 @@ bool FPlayerDeathCameraTest::RunTest(const FString& Parameters)
 	Life.Player->SetActorLocation(FVector(900, 0, -500));
 	Controller->LastOwnAlivePOV.Location = FVector(999, 999, 999);
 	Controller->OnRep_DeathFlowState();
-	TestTrue(TEXT("Repeated waiting state cannot recapture corpse movement"), Camera->GetActorLocation().Equals(AlivePOV.Location));
+	TestEqual(TEXT("Waiting camera remains attached to corpse"), Camera->GetAttachParentActor(), static_cast<AActor*>(Life.Player));
+	TestFalse(TEXT("Camera follows corpse movement without recapturing the alive POV"), Camera->GetActorLocation().Equals(AlivePOV.Location));
 	Life.Player->Destroy();
 	Controller->ApplyLocalDeathFlow();
 	TestEqual(TEXT("Corpse expiry does not invalidate spectator camera"), Controller->GetViewTarget(), static_cast<AActor*>(Camera));

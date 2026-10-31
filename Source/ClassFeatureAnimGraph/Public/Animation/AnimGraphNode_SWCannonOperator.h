@@ -5,7 +5,7 @@
 #include "AnimGraphNode_SWCannonOperator.generated.h"
 
 UCLASS()
-class CLASSFEATUREEDITOR_API UAnimGraphNode_SWCannonOperator : public UAnimGraphNode_SkeletalControlBase
+class CLASSFEATUREANIMGRAPH_API UAnimGraphNode_SWCannonOperator : public UAnimGraphNode_SkeletalControlBase
 {
 	GENERATED_BODY()
 public:

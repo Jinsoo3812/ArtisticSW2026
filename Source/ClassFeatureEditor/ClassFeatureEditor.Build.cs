@@ -36,6 +36,7 @@ public class ClassFeatureEditor : ModuleRules
 			"AnimGraphRuntime",
 			"ArtisticSWCore",
 			"ClassFeature",
+			"ClassFeatureAnimGraph",
 			"Enemy",
 			"NPCDialogue",
 			"Story",

@@ -1099,6 +1099,8 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->BlastApplicationPointLocal = CurrentBlastApplicationPointLocal;
 				AsyncInput->bApplyAuthoritativeBlast = HasAuthority();
 				AsyncInput->bApplyAuthoritativeBuoyancyState = HasAuthority();
+				AsyncInput->bApplyAuthoritativeAISafety = HasAuthority();
+				AsyncInput->AISafety = IsPlayerControlled() ? FShipAISafetyControl() : AISafetyControl;
 				AsyncInput->bBuoyancyEnabled = BuoyancyForceSettings.BuoyancyCoefficient > UE_SMALL_NUMBER;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
@@ -1211,6 +1213,7 @@ bool AShip::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDo
 void AShip::ResetFreshEncounterControlState()
 {
 	CurrentMoveInput = CurrentTurnInput = 0.0f;
+	AISafetyControl = FShipAISafetyControl();
 	bIsAnchorDropped = false;
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
@@ -1300,6 +1303,7 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AShip::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	AISafetyControl = FShipAISafetyControl();
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
 	CurrentAIPropulsionScale = 1.0f;
@@ -1334,6 +1338,7 @@ void AShip::PossessedBy(AController* NewController)
 
 void AShip::UnPossessed()
 {
+	AISafetyControl = FShipAISafetyControl();
 	ResetToFollowCamera();
 	RememberFollowCameraState(Cast<APlayerController>(GetController()));
 
@@ -1353,6 +1358,13 @@ void AShip::UnPossessed()
 	}
 
 	Super::UnPossessed();
+}
+
+void AShip::SetAISafetyControl(const FShipAISafetyControl& Control)
+{
+	if (!HasAuthority()) return;
+	AISafetyControl = IsEnemyShipForEffects() && !IsPlayerControlled() ? Control : FShipAISafetyControl();
+	AISafetyControl.Sanitize();
 }
 
 void AShip::SetAIControlInput(
@@ -3037,6 +3049,7 @@ void AShip::InitializeDefaultAttributes()
 	static const FString ContextString(TEXT("Ship Stat Table Context"));
 	if (const FShipStatRow* StatRow = ResolveShipStatRow(ContextString))
 	{
+		NormalMaximumHealth = StatRow->MaxHealth;
 		AttributeSet->InitHealth(StatRow->MaxHealth);
 		AttributeSet->InitMaxHealth(StatRow->MaxHealth);
 		AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
@@ -3059,8 +3072,8 @@ void AShip::InitializeDefaultAttributes()
 	}
 
 	// Fallback 기본값 설정
-	AttributeSet->InitHealth(100.f);
-	AttributeSet->InitMaxHealth(100.f);
+	AttributeSet->InitHealth(3000.f);
+	AttributeSet->InitMaxHealth(3000.f);
 	AttributeSet->InitMoveSpeed(1.f);
 	AttributeSet->InitForwardPropulsionMultiplier(1.f);
 	AttributeSet->InitTurnTorqueMultiplier(1.f);
@@ -3154,7 +3167,10 @@ void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHea
 	if (!HasAuthority() || !AttributeSet) return;
 	const float PreviousMaxHealth = AttributeSet->GetMaxHealth();
 	const float PreviousHealth = AttributeSet->GetHealth();
-	const float NewMaxHealth = FMath::Max(1.0f, Snapshot.MaxHealth);
+	NormalMaximumHealth = FMath::Max(1.0f, Snapshot.MaxHealth);
+	const bool bDevelopmentHealth = ActorHasTag(TEXT("Player")) && !ActorHasTag(TEXT("Enemy"))
+		&& SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session);
+	const float NewMaxHealth = bDevelopmentHealth ? 1000000.f : NormalMaximumHealth;
 	AttributeSet->InitMaxHealth(NewMaxHealth);
 	if (bRefillHealth)
 	{

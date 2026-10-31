@@ -38,6 +38,7 @@
 #include "HAL/IConsoleManager.h"
 #include "ItemData.h"
 #include "Interactable.h"
+#include "Interact.h"
 #include "CollisionChannels.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Repair/ShipRepairPointComponent.h"
@@ -683,13 +684,16 @@ void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
 	bInventoryProgressRestored = true;
 	PendingRoomEffects = Progress.ActiveEffects;
 	bHasPendingRoomEffects = Progress.bEffectsCaptured;
-	PendingRoomHealth = Progress.CurrentHealth;
+	const bool bLegacyPlayerHealth = FMath::IsNearlyEqual(Progress.MaximumHealth, 100.f);
+	const float RestoredMaximumHealth = bLegacyPlayerHealth ? 1000.f : Progress.MaximumHealth;
+	const float RestoredCurrentHealth = bLegacyPlayerHealth ? Progress.CurrentHealth * 10.f : Progress.CurrentHealth;
+	PendingRoomHealth = RestoredCurrentHealth;
 	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Progress.InventorySlots);
 	if (CachedAbilitySystemComponent.IsValid())
 	{
 		CachedAbilitySystemComponent->CancelAllAbilities();
 		if (Progress.MaximumHealth > 0.f)
-			CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), Progress.MaximumHealth);
+			CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), RestoredMaximumHealth);
 		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), Progress.BaseStrength);
 		if (Progress.BaseMoveSpeed > 0.f)
 			CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedAttribute(), Progress.BaseMoveSpeed);
@@ -718,7 +722,7 @@ void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
 	if (CachedAbilitySystemComponent.IsValid() && HealthComponent && Progress.MaximumHealth > 0.0f)
 		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(),
 			Progress.bRestoreFullHealth ? HealthComponent->GetMaxHealth()
-				: FMath::Clamp(Progress.CurrentHealth, 0.0f, HealthComponent->GetMaxHealth()));
+				: FMath::Clamp(RestoredCurrentHealth, 0.0f, HealthComponent->GetMaxHealth()));
 	if (Progress.bWasDead && HealthComponent) HealthComponent->StartDeath();
 	if (Progress.bHasResumeTransform && GetWorld())
 	{
@@ -2165,8 +2169,39 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
-	// A selected consumable owns F, including when an interactable is in reach.
-	if (bInteractionInput && HasSelectedQuickSlotConsumable())
+	// Follow the same nearest-component selection as UInteract.
+	bool bPriorityInteraction = false;
+	if (bInteractionInput)
+	{
+		TArray<FHitResult> Hits;
+		PerformInteractTrace(Hits);
+		float Closest = MAX_flt;
+		for (const FHitResult& Hit : Hits)
+		{
+			const IInteractable* Target = Cast<IInteractable>(Hit.GetComponent());
+			if (!Target || !Hit.GetActor()) continue;
+			const float Distance = FVector::DistSquared(GetActorLocation(),
+				Hit.bStartPenetrating ? Hit.GetActor()->GetActorLocation() : FVector(Hit.ImpactPoint));
+			if (Distance >= Closest) continue;
+			Closest = Distance;
+			const FGameplayTag Tag = Target->GetInteractionTag();
+			bPriorityInteraction = Tag == Interaction_ShipBoard || Tag == Interaction_Craft
+				|| Tag == FGameplayTag::RequestGameplayTag(TEXT("Interaction.Ship.Anchor"), false);
+		}
+	}
+	if (bPriorityInteraction)
+	{
+		FGameplayAbilitySpecHandle InteractionHandle;
+		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+			if (Spec.Ability && Spec.Ability->IsA<UInteract>())
+			{
+				InteractionHandle = Spec.Handle;
+				break;
+			}
+		if (InteractionHandle.IsValid()) CachedAbilitySystemComponent->TryActivateAbility(InteractionHandle);
+		return;
+	}
+	if (bInteractionInput && HasSelectedQuickSlotConsumable() && !bPriorityInteraction)
 	{
 		ActivateQuickSlot(SelectedConsumableQuickSlotIndex);
 		return;

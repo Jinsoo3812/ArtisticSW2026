@@ -1,6 +1,7 @@
 #include "Development/TestInput/SWDevTestInputComponent.h"
 #include "Development/SWDevelopmentOptions.h"
 #include "Crafting/CraftingComponent.h"
+#include "Inventory/InventoryComponent.h"
 #include "Skills/PlayerSkillComponent.h"
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
@@ -91,8 +92,7 @@ void USWDevTestInputComponent::RemoveLocal()
 }
 void USWDevTestInputComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
- if (UAbilitySystemComponent* ASC = DevelopmentInvulnerableASC.Get()) ASC->RemoveLooseGameplayTag(State_Invulnerable);
- DevelopmentInvulnerableASC.Reset();
+ RestoreDevelopmentHealth();
  RemoveLocal(); if (BoundInput.IsValid()) for (uint32 Handle:BindingHandles) BoundInput->RemoveBindingByHandle(Handle);
  BindingHandles.Reset(); BoundInput.Reset(); Super::EndPlay(Reason);
 }
@@ -307,22 +307,95 @@ void USWDevTestInputComponent::ServerExecuteTest_Implementation(ESWDevTestAction
  Reply(true,TEXT("정상 사망 테스트 실행"));
 }
 
+void USWDevTestInputComponent::ServerGrantRepairPlanks_Implementation()
+{
+ GrantRepairPlanks(true);
+}
+
+void USWDevTestInputComponent::GrantRepairPlanks(bool bTopUp)
+{
+ if (!SWDevTestInput::Allowed() || !SWDevTestInput::SafeWorld(GetWorld())) return;
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ const AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>();
+ if (!PC || !Mode || !Mode->IsRoomHostController(PC)
+  || !(SWDevelopmentOptions::GetMask(this) & SWDevelopmentOptions::Session))
+ {
+  if (PC) PC->ClientMessage(TEXT("RepairPlanks: 호스트가 SW.DevTest.Session 1을 먼저 켜세요"));
+  return;
+ }
+ ABasePlayer* Player = PC->GetLifeCharacter();
+ if (!Player || !PC->IsLifeCharacterAlive()) return;
+ UInventoryComponent* Inventory = Player->GetInventoryComponent();
+ if (!Inventory) return;
+ // Claim before broadcasting inventory changes: reentrant refreshes must not grant twice.
+ if (!bTopUp)
+ {
+  if (bSessionRepairPlanksGranted) return;
+  bSessionRepairPlanksGranted = true;
+ }
+ for (const FGameplayTag Tag : TArray<FGameplayTag>{
+  Item_Id_Material_ShipMaterials_WoodenPlank,
+  Item_Id_Material_ShipMaterials_GoodWoodenPlank,
+  Item_Id_Material_ShipMaterials_IronPlate,
+  Item_Id_Material_ShipMaterials_GoodIronPlate})
+ {
+  const int32 Missing = bTopUp ? FMath::Max(0, 50 - Inventory->GetItemCount(Tag)) : 50;
+  const int32 Added = Missing > 0 ? Inventory->AddItem(Tag, Missing) : 0;
+  PC->ClientMessage(FString::Printf(TEXT("RepairPlanks: %s 보유 %d (추가 %d)%s"),
+   *Tag.ToString(), Inventory->GetItemCount(Tag), Added,
+   Added < Missing ? TEXT(" — 인벤토리 공간/아이템 등록을 확인하세요") : TEXT("")));
+ }
+}
+
+void USWDevTestInputComponent::RestoreDevelopmentHealth()
+{
+ for (const auto& Pair : DevelopmentHealthOverrides)
+  if (UAbilitySystemComponent* ASC = Pair.Key.Get())
+  {
+   const float Health = ASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+   const AShip* Ship = Cast<AShip>(ASC->GetAvatarActor());
+   const float Maximum = Ship ? Ship->GetNormalMaximumHealth() : Pair.Value.OriginalMaximum;
+   ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), Maximum);
+   ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), FMath::Min(Health, Maximum));
+  }
+ DevelopmentHealthOverrides.Reset();
+}
+
 void USWDevTestInputComponent::RefreshDevelopmentOptions()
 {
  const int32 Mask = SWDevelopmentOptions::GetMask(this);
- // Own one tag count independently of roll/game-over protection. Rebind across respawns
- // even when the option mask is unchanged; mounted players use their life character.
+ // Session grants health once per life, without suppressing hits or refilling each tick.
  if (GetOwner()->HasAuthority())
  {
-  ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
-  ABasePlayer* Player = PC ? PC->GetLifeCharacter() : nullptr;
-  UAbilitySystemComponent* DesiredASC = (Mask & SWDevelopmentOptions::Session)
-   && (Mask & SWDevelopmentOptions::PlayerInvulnerable) && Player ? Player->GetAbilitySystemComponent() : nullptr;
-  if (DevelopmentInvulnerableASC.Get() != DesiredASC)
+  if (!(Mask & SWDevelopmentOptions::Session))
   {
-   if (UAbilitySystemComponent* Previous = DevelopmentInvulnerableASC.Get()) Previous->RemoveLooseGameplayTag(State_Invulnerable);
-   DevelopmentInvulnerableASC = DesiredASC;
-   if (DesiredASC) DesiredASC->AddLooseGameplayTag(State_Invulnerable);
+   bSessionRepairPlanksGranted = false;
+   RestoreDevelopmentHealth();
+  }
+  else
+  {
+   TArray<UAbilitySystemComponent*> Targets;
+   if (ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner()))
+    if (ABasePlayer* Player = PC->GetLifeCharacter()) Targets.Add(Player->GetAbilitySystemComponent());
+   ABasePlayerController* Host = Cast<ABasePlayerController>(GetOwner());
+   const AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>();
+   if (!bSessionRepairPlanksGranted && Host && Mode && Mode->IsRoomHostController(Host))
+    GrantRepairPlanks(false);
+   if (Host && Mode && Mode->IsRoomHostController(Host))
+    for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+     if (It->ActorHasTag(TEXT("Player")) && !It->ActorHasTag(TEXT("Enemy"))) Targets.Add(It->GetAbilitySystemComponent());
+   for (UAbilitySystemComponent* ASC : Targets)
+   {
+    if (!ASC || !ASC->GetSet<UBaseAttributeSet>() || ASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()) <= 0.f) continue;
+    FDevelopmentHealthOverride* Existing = DevelopmentHealthOverrides.Find(ASC);
+    if (Existing && Existing->Avatar == ASC->GetAvatarActor()) continue;
+    const bool bNew = !Existing;
+    FDevelopmentHealthOverride& Entry = DevelopmentHealthOverrides.FindOrAdd(ASC);
+    if (bNew) Entry.OriginalMaximum = ASC->GetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute());
+    Entry.Avatar = ASC->GetAvatarActor();
+    ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), 1000000.f);
+    ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 1000000.f);
+   }
   }
  }
  if (GetOwner()->HasAuthority())
@@ -427,6 +500,10 @@ FAutoConsoleCommandWithWorldAndArgs ShipSpeedMultiplier(TEXT("SW.DevTest.ShipSpe
   else if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetShipSpeedMultiplier(Multiplier);
   else UE_LOG(LogSWDevTestInput, Warning, TEXT("ShipSpeedMultiplier requires one local player controller."));
  }));
+FAutoConsoleCommandWithWorldAndArgs RepairPlanks(TEXT("SW.DevTest.RepairPlanks"), TEXT("Top up local host's ordinary/good wooden planks and iron plates to 50 each; requires Session 1"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  if (Args.IsEmpty()) if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerGrantRepairPlanks();
+ }));
 FAutoConsoleCommandWithWorldAndArgs FreeUpgrade(TEXT("SW.DevTest.ShipUpgradeFree"), TEXT("Ignore ship materials 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("ShipUpgradeFree")); }));
 FAutoConsoleCommandWithWorldAndArgs FreeCrafting(TEXT("SW.DevTest.CraftingFree"), TEXT("Ignore recipes and materials 0|1"),
@@ -435,7 +512,7 @@ FAutoConsoleCommandWithWorldAndArgs FreeSkills(TEXT("SW.DevTest.SkillFree"), TEX
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillFree")); }));
 FAutoConsoleCommandWithWorldAndArgs NoCooldown(TEXT("SW.DevTest.SkillNoCooldown"), TEXT("Ignore player skill cooldowns 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("SkillNoCooldown")); }));
-FAutoConsoleCommandWithWorldAndArgs PlayerInvulnerable(TEXT("SW.DevTest.PlayerInvulnerable"), TEXT("Player invulnerability 0|1 (default 1, requires Session)"),
+FAutoConsoleCommandWithWorldAndArgs PlayerInvulnerable(TEXT("SW.DevTest.PlayerInvulnerable"), TEXT("Legacy option; Session now grants high health instead of invulnerability"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("PlayerInvulnerable")); }));
 FAutoConsoleCommandWithWorldAndArgs SkipCampaign(TEXT("SW.DevTest.Campaign.Skip"), TEXT("After Yi dialogue: Recon|SupplyPatrol|Decipher|Suppress|Uldolmok|Ending"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) {

@@ -49,6 +49,31 @@ struct FSWRoomShipState
 class USWBuoyancyComponent;
 class UGameplayEffect;
 class UNiagaraSystem;
+
+UENUM()
+enum class EShipAISafetyMode : uint8
+{
+	Disabled,
+	Hold,
+	Escape
+};
+
+USTRUCT()
+struct WATERANDSHIP_API FShipAISafetyControl
+{
+	GENERATED_BODY()
+	UPROPERTY() EShipAISafetyMode Mode = EShipAISafetyMode::Disabled;
+	UPROPERTY() float MaximumSpeed = 300.0f;
+	UPROPERTY() float MaximumYawRate = 8.0f;
+
+	void Sanitize()
+	{
+		if (static_cast<uint8>(Mode) > static_cast<uint8>(EShipAISafetyMode::Escape)) Mode = EShipAISafetyMode::Hold;
+		MaximumSpeed = FMath::IsFinite(MaximumSpeed) ? FMath::Clamp(MaximumSpeed, 1.0f, 10000.0f) : 300.0f;
+		MaximumYawRate = FMath::IsFinite(MaximumYawRate) ? FMath::Clamp(MaximumYawRate, 0.1f, 180.0f) : 8.0f;
+	}
+};
+
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -77,6 +102,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		bHasAuthoritativeBuoyancyState = false;
 		bIsAnchorDropped = false;
 		AnchorOriginXY = FVector2D::ZeroVector;
+		AISafety = FShipAISafetyControl();
+		bHasAuthoritativeAISafety = false;
 	}
 
 	UPROPERTY()
@@ -110,6 +137,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 
 	UPROPERTY()
 	FVector2D AnchorOriginXY;
+	UPROPERTY() FShipAISafetyControl AISafety;
+	UPROPERTY() bool bHasAuthoritativeAISafety = false;
 
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
@@ -121,6 +150,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		// A blast is a discrete frame state. Interpolating it would smear the
 		// pulse into frames in which the authoritative simulation never applied it.
 		const FNetInputShip& NearestInput = LerpAlpha < 0.5f ? MinInput : MaxInput;
+		AISafety = NearestInput.AISafety;
+		bHasAuthoritativeAISafety = NearestInput.bHasAuthoritativeAISafety;
 		BlastAcceleration = NearestInput.BlastAcceleration;
 		BlastApplicationPointLocal = NearestInput.BlastApplicationPointLocal;
 		bBuoyancyEnabled = LerpAlpha < 0.5f
@@ -147,6 +178,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		bHasAuthoritativeBuoyancyState = FromInput.bHasAuthoritativeBuoyancyState;
 		bIsAnchorDropped = FromInput.bIsAnchorDropped;
 		AnchorOriginXY = FromInput.AnchorOriginXY;
+		AISafety = FromInput.AISafety;
+		bHasAuthoritativeAISafety = FromInput.bHasAuthoritativeAISafety;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -303,6 +336,21 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			bHasAuthoritativeBuoyancyState = SerializedHasAuthoritativeBuoyancyState != 0;
 		}
 
+		uint8 SafetyMode = static_cast<uint8>(AISafety.Mode);
+		uint8 SafetyAuthority = bHasAuthoritativeAISafety ? 1 : 0;
+		Ar.SerializeBits(&SafetyAuthority, 1);
+		Ar.SerializeBits(&SafetyMode, 2);
+		if (SafetyMode == static_cast<uint8>(EShipAISafetyMode::Escape))
+		{
+			Ar << AISafety.MaximumSpeed;
+			Ar << AISafety.MaximumYawRate;
+		}
+		if (Ar.IsLoading())
+		{
+			AISafety.Mode = static_cast<EShipAISafetyMode>(SafetyMode);
+			AISafety.Sanitize();
+			bHasAuthoritativeAISafety = SafetyAuthority != 0;
+		}
 		bOutSuccess = !Ar.IsError();
 		return bOutSuccess;
 	}
@@ -507,7 +555,7 @@ struct FShipStatRow : public FTableRowBase
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
-	float MaxHealth = 100.f;
+	float MaxHealth = 3000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float ForwardPropulsionMultiplier = 1.f;
@@ -590,6 +638,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
 	FShipStatSnapshot GetBaseStatSnapshot() const;
 
+	float GetNormalMaximumHealth() const { return NormalMaximumHealth; }
+
+private:
+	float NormalMaximumHealth = 3000.f;
+public:
+
 	/** Applies an already calculated authoritative snapshot to this ship. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
 	void ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHealth = true);
@@ -620,6 +674,8 @@ public:
 
 	float GetCurrentAIPropulsionScale() const { return CurrentAIPropulsionScale; }
 	float GetCurrentAITurnScale() const { return CurrentAITurnScale; }
+	void SetAISafetyControl(const FShipAISafetyControl& Control);
+	const FShipAISafetyControl& GetAISafetyControl() const { return AISafetyControl; }
 	float GetForwardForceMagnitude() const { return ForwardForce; }
 	float GetTurnTorqueMagnitude() const { return TurnTorque; }
 
@@ -1280,6 +1336,7 @@ private:
 	TWeakObjectPtr<APlayerController> BombardmentInputController;
 
 	friend class FShipPhysicsAsync;
+	FShipAISafetyControl AISafetyControl;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
 	bool bShipRuntimePhysicsEnabled = true;
 	bool bBuoyancyQueryDiagnostics = false;
