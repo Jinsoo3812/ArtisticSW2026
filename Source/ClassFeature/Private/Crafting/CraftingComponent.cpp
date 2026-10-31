@@ -75,7 +75,7 @@ ECraftingAvailability UCraftingComponent::EvaluateAvailability(const FCraftingRe
 	if (!BuildCosts(Recipe, CraftCount, Costs))
 		return ECraftingAvailability::Disabled;
 	for (const FCraftingItemStack& Cost : Costs)
-		if (GetOwnedItemCount(Cost.ItemTag) < Cost.Quantity)
+		if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && GetOwnedItemCount(Cost.ItemTag) < Cost.Quantity)
 			return ECraftingAvailability::MissingIngredients;
 	return ECraftingAvailability::Available;
 }

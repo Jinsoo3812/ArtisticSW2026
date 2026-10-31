@@ -10,6 +10,7 @@ class ABasePlayer;
 class AVortexAimLine;
 class ABombardmentPreview;
 class USkeletalMeshComponent;
+class UMaterialParameterCollection;
 
 /** Press the skill key to keep aiming, left mouse to throw, or right mouse to cancel. */
 UCLASS(Blueprintable)
@@ -149,5 +150,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ABombardmentPreview> RangePreviewActor;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialParameterCollection> WaterParameterCollection;
+
+	FVector LastWaterPreviewCenter = FVector::ZeroVector;
+	float LastWaterPreviewRadius = 0.0f;
+	bool bWaterPreviewEnabled = false;
+
+private:
 	FSWOwnedLooseGameplayTags OwnedStateTags;
 };

@@ -42,8 +42,6 @@ public:
 
 	virtual void PrepareDeathMovement() {}
 	virtual bool ShouldKeepCharacterMovementOnDeath() const { return false; }
-	/** Immediate physical presentation must not wait for an animation it no longer evaluates. */
-	virtual bool ShouldPlayDeathMontage() const { return true; }
 
 	/** Restores the presentation state required before a pooled character is reused. */
 	UFUNCTION(BlueprintCallable, Category = "Death|Pooling")

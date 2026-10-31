@@ -53,6 +53,7 @@ public class ClassFeatureEditor : ModuleRules
 			"GeometryCore",
 			"MeshConversion",
 			"MeshDescription",
+			"StaticMeshDescription",
 			"AssetRegistry",
 			"PropertyEditor",
 			"ImageCore",

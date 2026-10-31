@@ -441,12 +441,12 @@ bool ABasePlayer::IsMoveInputIgnored() const
 
 void ABasePlayer::HandleDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
-	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) ApplyLocalDeathRagdoll();
+	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) PrepareDeathMovement();
 }
 
-bool ABasePlayer::ShouldPlayDeathMontage() const
+bool ABasePlayer::ShouldKeepCharacterMovementOnDeath() const
 {
-	return !PlayerRagdollComponent || !PlayerRagdollComponent->IsRagdollActive();
+	return HealthComponent && HealthComponent->GetDeathState() == EBaseDeathState::DeathStarted;
 }
 
 void ABasePlayer::PrepareDeathMovement()
@@ -464,11 +464,12 @@ void ABasePlayer::PrepareDeathMovement()
 	{
 		Movement->StopMovementImmediately();
 		Movement->ClearAccumulatedForces();
-		Movement->DisableMovement();
+		if (!ShouldKeepCharacterMovementOnDeath()) Movement->DisableMovement();
 	}
-	// Death abilities can call this again after ragdoll has started. Disable only
-	// locomotion collision; the corpse component owns mesh/world collision.
-	if (GetCapsuleComponent()) GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Keep the montage on its moving floor; only the capsule retires at completion.
+	// Reentry must not disable collision owned by an active physical corpse.
+	if (!ShouldKeepCharacterMovementOnDeath() && GetCapsuleComponent())
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
@@ -514,6 +515,8 @@ void ABasePlayer::RetireLifeAbilityBindings()
 
 void ABasePlayer::ApplyLocalDeathRagdoll()
 {
+	// ShipAI owns the death montage and based movement until DeathFinished.
+	if (ShouldKeepCharacterMovementOnDeath()) { PrepareDeathMovement(); return; }
 	if (bLocalDeathRagdollApplied) return;
 	bLocalDeathRagdollApplied = PlayerRagdollComponent && PlayerRagdollComponent->StartRagdoll();
 	if (!bLocalDeathRagdollApplied)
@@ -4068,9 +4071,7 @@ void ABasePlayer::FinalizeStartingInventory(bool bFreshInventory)
  bStartingInventoryDecisionMade = true;
  UE_LOG(LogSWRoom, Display, TEXT("[SWInventoryDiag] Event=StartingItemsDecision Player=%s Restored=%d Fresh=%d"), *GetName(), bInventoryProgressRestored, bFreshInventory);
  if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsBefore"), true);
-#if WITH_EDITOR
  if (bFreshInventory) GiveStartingItemsForTest();
-#endif
  if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsAfter"), true);
 }
 

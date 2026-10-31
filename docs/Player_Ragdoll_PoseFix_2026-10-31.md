@@ -1,5 +1,7 @@
 # 프로젝트 시체 스킨 보정·여성 재질 복구·테스트 맵
 
+> ShipAI 병합 후의 최신 동작·기존 에셋 문제·변경된 F11 성별 전환 키는 [최신 통합 안내](ShipAI_Corpse_Integration_2026-10-31.md)를 따른다.
+
 이번 변경은 **실제 프로젝트에 통합**했다. 남녀 기존 운영 메시와 PA를 갱신하고, `SWPlayerRagdollComponent::StartRagdoll`에서 `SWCorpsePoseComponent`를 자동 설치한다. 별도 플러그인·검토 패키지·복사 프로젝트를 적용할 필요가 없다. 과거 독립 환경 실험 자료는 로컬에 보존하고 배포 대상에서 제외했다.
 
 ## 적용 내용

@@ -535,13 +535,13 @@ void UEnemyShipNavigationComponent::TickCombatSafetyDiagnostics(float DeltaTime)
 	{
 		CombatLastSnapshotWall = Now;
 		const FRuntimeOverride* Override = FindWinningOverride();
-		LogCombatSafety(TEXT("Snapshot"), TEXT("Periodic"), FString::Printf(TEXT("Target=%s Physics=%d PendingHome=%d EvalAccum=%.3f EscapeElapsed=%.3f ProgressElapsed=%.3f ProgressDistance=%.1f Turned=%.2f NetRole=%d LastCheck=%s LastResume=%s LastBlocker=%s Override=%s OverridePriority=%d"),
+		LogCombatSafety(TEXT("Snapshot"), TEXT("Periodic"), FString::Printf(TEXT("Target=%s Physics=%d PendingHome=%d EvalAccum=%.3f EscapeElapsed=%.3f ProgressElapsed=%.3f ProgressDistance=%.1f Turned=%.2f NetRole=%d LastCheck=%s LastResume=%s LastBlocker=%s Override=%s OverridePriority=%d TerrainProbeInitialized=%d TerrainForwardClear=%d TerrainPriority=%d TerrainProbeAge=%.3f TerrainDiagVersion=1"),
 			*GetNameSafe(TargetShip.Get()), OwnerShip->BuoyancyRoot && OwnerShip->BuoyancyRoot->IsSimulatingPhysics(),
 			bPendingHomeAlignmentSafety, SafetyEvaluationAccumulator, EscapeElapsed, ProgressElapsed,
 			FVector::Dist2D(ProgressStart, OwnerShip->GetActorLocation()), EscapeTurned,
 			static_cast<int32>(OwnerShip->GetLocalRole()), CombatLastCheckReason, CombatLastResumeReason,
 			*GetNameSafe(CombatLastBlocker.Get()), Override ? *GetNameSafe(Override->Requester.Get()) : TEXT("None"),
-			Override ? Override->Priority : 0), true);
+			Override ? Override->Priority : 0, bTerrainProbeInitialized, bTerrainForwardClear, bTerrainPriority, TerrainProbeAccumulator), true);
 	}
 }
 
@@ -569,6 +569,10 @@ void UEnemyShipNavigationComponent::ResetLocalSafety()
 	SafetyState = EEnemyShipLocalSafetyState::Normal;
 	RetryRemaining = SafeResumeElapsed = ForwardResumeElapsed = 0;
 	SafetyEvaluationAccumulator = EscapeReconsiderAccumulator = ProgressElapsed = EscapeElapsed = EscapeTurned = 0;
+	TerrainProbeAccumulator = 0;
+	bTerrainProbeInitialized = false;
+	bTerrainForwardClear = true;
+	bTerrainPriority = false;
 	bPendingHomeAlignmentSafety = false;
 	bPreferLeftEscape = false;
 	if (AEnemyShip* Ship = OwnerShip.Get()) Ship->SetAISafetyControl({});
@@ -582,7 +586,12 @@ void UEnemyShipNavigationComponent::EnterSafetyWait(const TCHAR* Reason)
 	const float Minimum = EnemyShipLocalSafety::Value(S->RetryMinimum, 0.3f, 0.05f, 10);
 	const float Maximum = EnemyShipLocalSafety::Value(S->RetryMaximum, 1, 0.05f, 10);
 	if (SafetyState == EEnemyShipLocalSafetyState::Escaping)
-		bPreferLeftEscape = EscapeAction == EEnemyShipEscapeAction::ForwardRight;
+	{
+		if (EscapeAction == EEnemyShipEscapeAction::ForwardRight || EscapeAction == EEnemyShipEscapeAction::ReverseRight)
+			bPreferLeftEscape = true;
+		else if (EscapeAction == EEnemyShipEscapeAction::ForwardLeft || EscapeAction == EEnemyShipEscapeAction::ReverseLeft)
+			bPreferLeftEscape = false;
+	}
 	SafetyState = EEnemyShipLocalSafetyState::Waiting;
 	RetryRemaining = SafetyRandom.FRandRange(FMath::Min(Minimum, Maximum), FMath::Max(Minimum, Maximum));
 	SafeResumeElapsed = ForwardResumeElapsed = 0;
@@ -592,6 +601,8 @@ void UEnemyShipNavigationComponent::EnterSafetyWait(const TCHAR* Reason)
 		Hold.Mode = EShipAISafetyMode::Hold;
 		Ship->SetAISafetyControl(Hold);
 		Ship->SetAIControlInput(0, 0);
+		if (const FRuntimeOverride* Override = FindWinningOverride())
+			if (auto* Charge = Cast<UGA_EnemyShipCharge>(Override->Requester.Get())) Charge->StopForNavigationSafety();
 		LogCombatSafety(TEXT("Wait"), Reason);
 		#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 		if (IsCombatSafetyLogEnabled() && CVarEnemyShipSafetyDebug.GetValueOnGameThread()) UE_LOG(LogTemp, Log, TEXT("[EnemyShipSafety] Waiting Ship=%s Retry=%.2f"), *Ship->GetName(), RetryRemaining);
@@ -610,10 +621,12 @@ UEnemyShipNavigationComponent::FRequestedControl UEnemyShipNavigationComponent::
 	const auto* S = GetDefault<UEnemyShipAvoidanceSettings>();
 	FRequestedControl Control;
 	Control.MoveInput = Action == EEnemyShipEscapeAction::Reverse
+		|| Action == EEnemyShipEscapeAction::ReverseRight || Action == EEnemyShipEscapeAction::ReverseLeft
 		? EnemyShipLocalSafety::Value(S->EscapeReverseInput, -0.35f, -1, -0.01f)
 		: EnemyShipLocalSafety::Value(S->EscapeMoveInput, 0.35f, 0.01f, 1);
 	const float Turn = EnemyShipLocalSafety::Value(S->EscapeTurnInput, 0.5f, 0.01f, 1);
-	Control.TurnInput = Action == EEnemyShipEscapeAction::ForwardRight ? Turn : Action == EEnemyShipEscapeAction::ForwardLeft ? -Turn : 0;
+	Control.TurnInput = Action == EEnemyShipEscapeAction::ForwardRight || Action == EEnemyShipEscapeAction::ReverseRight ? Turn
+		: Action == EEnemyShipEscapeAction::ForwardLeft || Action == EEnemyShipEscapeAction::ReverseLeft ? -Turn : 0;
 	return Control;
 }
 
@@ -625,16 +638,6 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 	const auto* S = GetDefault<UEnemyShipAvoidanceSettings>();
 	FRequestedControl Requested = ResolveRequestedControl(BaseOutput);
 	const FRuntimeOverride* Winner = FindWinningOverride();
-	const auto* Charge = Winner ? Cast<UGA_EnemyShipCharge>(Winner->Requester.Get()) : nullptr;
-	if (Charge && Charge->IsChargeStarted())
-	{
-		if (IsCombatSafetyLogEnabled() && CVarEnemyShipCombatLog.GetValueOnGameThread() >= 2
-			&& FPlatformTime::Seconds() - CombatLastSnapshotWall < 0.05)
-			LogCombatSafety(TEXT("ControlBypass"), TEXT("ActiveCharge"));
-		ResetLocalSafety();
-		Ship->SetAIControlInput(Requested.MoveInput, Requested.TurnInput, Requested.PropulsionMultiplier, Requested.TurnMultiplier);
-		return;
-	}
 	if (Ship->IsAnchorDropped() || Ship->IsPropulsionSuppressed())
 	{
 		if (IsCombatSafetyLogEnabled() && FPlatformTime::Seconds() - CombatLastSnapshotWall < 0.05)
@@ -644,17 +647,36 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 	}
 	const float Interval = Value(S->SafetyEvaluationInterval, 0.1f, 0.02f, 0.5f);
 	SafetyEvaluationAccumulator += DeltaTime;
+	TerrainProbeAccumulator += DeltaTime;
 	RetryRemaining = FMath::Max(0.0f, RetryRemaining - DeltaTime);
 	const bool bIdle = CurrentState == ENavalCombatState::Idle && !Winner && !bPendingHomeAlignmentSafety;
-	if (bIdle && SafetyState != EEnemyShipLocalSafetyState::Normal) ResetLocalSafety();
-	if (SafetyEvaluationAccumulator >= Interval
-		&& !(SafetyState == EEnemyShipLocalSafetyState::Waiting && RetryRemaining > 0))
+	if (bIdle && SafetyState != EEnemyShipLocalSafetyState::Normal && !bTerrainPriority) ResetLocalSafety();
+	if (SafetyEvaluationAccumulator >= Interval)
 	{
 		const float Elapsed = SafetyEvaluationAccumulator;
 		SafetyEvaluationAccumulator = 0;
 		const bool bDiagnostics = IsCombatSafetyLogEnabled();
 		const double QueryStart = bDiagnostics ? FPlatformTime::Seconds() : 0.0;
 		FQuery Query(*Ship, WaterBodies);
+		if (!bTerrainProbeInitialized || TerrainProbeAccumulator >= Value(S->TerrainForwardProbeInterval, 0.2f, Interval, 0.5f))
+		{
+			const FResult ForwardTerrain = Query.CheckTerrainHeading(0.0f, bDiagnostics);
+			bTerrainForwardClear = ForwardTerrain.bSafe;
+			bTerrainProbeInitialized = true;
+			TerrainProbeAccumulator = 0;
+			if (bDiagnostics)
+				LogCombatSafety(TEXT("TerrainSensor"), ForwardTerrain.Reason,
+					FString::Printf(TEXT("Safe=%d Threat=%d Blocker=%s Component=%s Idle=%d PriorityBefore=%d %s"),
+						ForwardTerrain.bSafe, static_cast<int32>(ForwardTerrain.Threat), *GetNameSafe(ForwardTerrain.Actor.Get()),
+						*ForwardTerrain.ComponentName.ToString(), bIdle, bTerrainPriority, *ForwardTerrain.TerrainDiagnostics));
+			if (!bIdle && ForwardTerrain.Threat == EThreat::Terrain)
+			{
+				bTerrainPriority = true;
+				CombatLastBlocker = ForwardTerrain.Actor;
+				LogCombatSafety(TEXT("TerrainProbe"), TEXT("ForwardCorridorBlocked"),
+					FString::Printf(TEXT("Distance=%.1f Component=%s"), ForwardTerrain.HitDistance, *ForwardTerrain.ComponentName.ToString()));
+			}
+		}
 		if (bDiagnostics)
 		{
 			CombatQueryBuildMs = (FPlatformTime::Seconds() - QueryStart) * 1000.0;
@@ -665,6 +687,7 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 		{
 			const double CheckStart = bDiagnostics ? FPlatformTime::Seconds() : 0.0;
 			const FResult Result = Query.Check(Control, bEscape, Margin);
+			if (!bIdle && Result.Threat == EThreat::Terrain) bTerrainPriority = true;
 			if (bDiagnostics)
 			{
 				const double CheckMs = (FPlatformTime::Seconds() - CheckStart) * 1000.0;
@@ -693,22 +716,26 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 			SafetyState = EEnemyShipLocalSafetyState::Escaping;
 			ProgressStart = Ship->GetActorLocation();
 			EscapeLastYaw = Ship->GetActorRotation().Yaw;
+			ProgressStartYaw = EscapeLastYaw;
 			ProgressElapsed = EscapeElapsed = EscapeTurned = SafeResumeElapsed = ForwardResumeElapsed = 0;
 			LogCombatSafety(TEXT("Escape"), TEXT("CandidateSelected"));
 			#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 			if (IsCombatSafetyLogEnabled() && CVarEnemyShipSafetyDebug.GetValueOnGameThread()) UE_LOG(LogTemp, Log, TEXT("[EnemyShipSafety] Escape Ship=%s Action=%d"), *Ship->GetName(), static_cast<int32>(Action));
 			#endif
 		};
-		if (Elapsed > Interval + Value(S->SafetyLatencyAllowance, 0.2f, 0.02f, 2)
+		const bool bForceTerrainReverse = bTerrainPriority;
+		if (!bForceTerrainReverse && Elapsed > Interval + Value(S->SafetyLatencyAllowance, 0.2f, 0.02f, 2)
 			&& SafetyState != EEnemyShipLocalSafetyState::Waiting && !bIdle)
 		{
 			if (bDiagnostics) LogCombatSafety(TEXT("EvaluationLate"), TEXT("SafetyDeadlineExceeded"), FString::Printf(TEXT("Elapsed=%.4f Interval=%.4f LatencyAllowance=%.4f"), Elapsed, Interval, Value(S->SafetyLatencyAllowance, 0.2f, 0.02f, 2)));
 			EnterSafetyWait(TEXT("EvaluationLate"));
 		}
-		else if (SafetyState == EEnemyShipLocalSafetyState::Normal)
+		else if (!bForceTerrainReverse && SafetyState == EEnemyShipLocalSafetyState::Normal)
 		{
-			const bool bSafe = !bPendingHomeAlignmentSafety && Check(Requested, false, 0, TEXT("AppliedPath")).bSafe;
-			if (!bSafe && !bIdle) EnterSafetyWait(bPendingHomeAlignmentSafety ? TEXT("HomeAlignmentPending") : TEXT("RequestedPathBlocked"));
+			const bool bSafe = !bPendingHomeAlignmentSafety && Check(Requested, false, 0, TEXT("AppliedPath")).bSafe
+				&& (bIdle || bTerrainForwardClear);
+			if (!bSafe && !bIdle) EnterSafetyWait(bPendingHomeAlignmentSafety ? TEXT("HomeAlignmentPending")
+				: !bTerrainForwardClear ? TEXT("TerrainCorridorBlocked") : TEXT("RequestedPathBlocked"));
 			else if (bIdle)
 			{
 				FShipAISafetyControl IdleControl;
@@ -716,28 +743,45 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 				Ship->SetAISafetyControl(IdleControl);
 			}
 		}
-		else if (SafetyState == EEnemyShipLocalSafetyState::Waiting && RetryRemaining <= 0)
+		else if (!bForceTerrainReverse && SafetyState == EEnemyShipLocalSafetyState::Waiting && RetryRemaining <= 0)
 		{
 			const bool bStopped = Ship->BuoyancyRoot && Ship->BuoyancyRoot->GetPhysicsLinearVelocity().Size2D() <= Value(S->StoppedSpeed, 10, 0.1f)
 				&& FMath::Abs(Ship->BuoyancyRoot->GetPhysicsAngularVelocityInDegrees().Z) <= Value(S->StoppedYawRate, 1, 0.1f);
 			bool bFound = false;
 			if (bStopped && Query.IsValid())
 			{
-				const EEnemyShipEscapeAction Actions[] = { EEnemyShipEscapeAction::Forward,
-					bPreferLeftEscape ? EEnemyShipEscapeAction::ForwardLeft : EEnemyShipEscapeAction::ForwardRight,
-					bPreferLeftEscape ? EEnemyShipEscapeAction::ForwardRight : EEnemyShipEscapeAction::ForwardLeft,
-					EEnemyShipEscapeAction::Reverse };
+				TArray<EEnemyShipEscapeAction, TInlineAllocator<6>> Actions;
+				bool bLeftFirst = bPreferLeftEscape;
+				if (bTerrainPriority)
+				{
+					const FResult Right = Query.CheckTerrainHeading(45.0f);
+					const FResult Left = Query.CheckTerrainHeading(-45.0f);
+					if (FMath::Abs(Left.HitDistance - Right.HitDistance) > Value(S->TerrainSideTieDistance, 200))
+						bLeftFirst = Left.HitDistance > Right.HitDistance;
+					Actions.Add(bLeftFirst ? EEnemyShipEscapeAction::ReverseLeft : EEnemyShipEscapeAction::ReverseRight);
+					Actions.Add(bLeftFirst ? EEnemyShipEscapeAction::ReverseRight : EEnemyShipEscapeAction::ReverseLeft);
+				}
+				else
+				{
+					Actions.Add(EEnemyShipEscapeAction::Forward);
+					Actions.Add(bLeftFirst ? EEnemyShipEscapeAction::ForwardLeft : EEnemyShipEscapeAction::ForwardRight);
+					Actions.Add(bLeftFirst ? EEnemyShipEscapeAction::ForwardRight : EEnemyShipEscapeAction::ForwardLeft);
+				}
+				Actions.Add(EEnemyShipEscapeAction::Reverse);
+				if (bTerrainPriority && bTerrainForwardClear) Actions.Add(EEnemyShipEscapeAction::Forward);
 				for (auto Action : Actions)
 				{
 					const TCHAR* Label = Action == EEnemyShipEscapeAction::Forward ? TEXT("CandidateForward")
 						: Action == EEnemyShipEscapeAction::ForwardRight ? TEXT("CandidateRight")
-						: Action == EEnemyShipEscapeAction::ForwardLeft ? TEXT("CandidateLeft") : TEXT("CandidateReverse");
+						: Action == EEnemyShipEscapeAction::ForwardLeft ? TEXT("CandidateLeft")
+						: Action == EEnemyShipEscapeAction::ReverseRight ? TEXT("CandidateReverseRight")
+						: Action == EEnemyShipEscapeAction::ReverseLeft ? TEXT("CandidateReverseLeft") : TEXT("CandidateReverse");
 					if (Check(EscapeControl(Action), true, 0, Label, true).bSafe) { StartEscape(Action); bFound = true; break; }
 				}
 			}
 			if (!bFound) EnterSafetyWait(!bStopped ? TEXT("WaitingForPhysicalStop") : !Query.IsValid() ? TEXT("QueryInvalid") : TEXT("AllCandidatesBlocked"));
 		}
-		else if (SafetyState == EEnemyShipLocalSafetyState::Escaping)
+		else if (!bForceTerrainReverse && SafetyState == EEnemyShipLocalSafetyState::Escaping)
 		{
 			ProgressElapsed += Elapsed;
 			EscapeElapsed += Elapsed;
@@ -746,14 +790,19 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 			EscapeTurned += FMath::Abs(FMath::FindDeltaAngleDegrees(EscapeLastYaw, Yaw));
 			EscapeLastYaw = Yaw;
 			bool bFailed = !Check(EscapeControl(EscapeAction), true, 0, TEXT("AppliedPath")).bSafe;
+			bFailed |= bTerrainPriority && !bTerrainForwardClear && EscapeAction != EEnemyShipEscapeAction::Reverse
+				&& EscapeAction != EEnemyShipEscapeAction::ReverseRight && EscapeAction != EEnemyShipEscapeAction::ReverseLeft;
 			bool bNoProgress = false;
 			if (EscapeElapsed > Value(S->ProgressGraceTime, 1, 0, 10)
 				&& ProgressElapsed >= Value(S->ProgressWindow, 3, 0.5f, 30))
 			{
 				bNoProgress = FVector::DistSquared2D(ProgressStart, Ship->GetActorLocation()) < FMath::Square(Value(S->ProgressMinimumDistance, 100, 1));
+				if (EscapeAction == EEnemyShipEscapeAction::ReverseRight || EscapeAction == EEnemyShipEscapeAction::ReverseLeft)
+					bNoProgress &= FMath::Abs(FMath::FindDeltaAngleDegrees(ProgressStartYaw, Yaw)) < 5.0f;
 				bFailed |= bNoProgress;
 				if (bDiagnostics) LogCombatSafety(TEXT("ProgressWindow"), bNoProgress ? TEXT("NoProgress") : TEXT("Progressing"), FString::Printf(TEXT("Moved=%.2f Minimum=%.2f Window=%.3f"), FVector::Dist2D(ProgressStart, Ship->GetActorLocation()), Value(S->ProgressMinimumDistance, 100, 1), ProgressElapsed));
 				ProgressStart = Ship->GetActorLocation();
+				ProgressStartYaw = Yaw;
 				ProgressElapsed = 0;
 			}
 			if (bFailed) EnterSafetyWait(bNoProgress ? TEXT("NoProgress") : TEXT("EscapePathBlocked"));
@@ -763,7 +812,7 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 				EscapeReconsiderAccumulator = 0;
 				const FResult ResumeResult = bPendingHomeAlignmentSafety ? FResult{ false, EThreat::Invalid, nullptr, TEXT("HomeAlignmentPending") }
 					: Check(Requested, false, Value(S->ResumeAdditionalMargin, 100), TEXT("ResumeProbe"));
-				const bool bNormalSafe = ResumeResult.bSafe;
+				const bool bNormalSafe = ResumeResult.bSafe && bTerrainForwardClear;
 				if (bDiagnostics) CombatLastResumeReason = ResumeResult.Reason;
 				SafeResumeElapsed = bNormalSafe ? SafeResumeElapsed + CheckElapsed : 0;
 				const float Confirmation = Value(S->ResumeConfirmationTime, 0.8f, 0.1f, 10);
@@ -776,10 +825,44 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 				else if (EscapeAction == EEnemyShipEscapeAction::Reverse)
 				{
 					bool bForwardSafe = false;
-					for (auto Action : { EEnemyShipEscapeAction::Forward, EEnemyShipEscapeAction::ForwardRight, EEnemyShipEscapeAction::ForwardLeft })
+					for (auto Action : { EEnemyShipEscapeAction::ReverseRight, EEnemyShipEscapeAction::ReverseLeft,
+						EEnemyShipEscapeAction::ForwardRight, EEnemyShipEscapeAction::ForwardLeft, EEnemyShipEscapeAction::Forward })
+					{
+						if (bTerrainPriority && !bTerrainForwardClear && Action != EEnemyShipEscapeAction::ReverseRight
+							&& Action != EEnemyShipEscapeAction::ReverseLeft) continue;
+						if (Action == EEnemyShipEscapeAction::Forward && !bTerrainForwardClear) continue;
 						if (Check(EscapeControl(Action), true, Value(S->ResumeAdditionalMargin, 100), TEXT("ReverseExitProbe")).bSafe) { bForwardSafe = true; break; }
+					}
 					ForwardResumeElapsed = bForwardSafe ? ForwardResumeElapsed + CheckElapsed : 0;
 					if (ForwardResumeElapsed >= Confirmation) EnterSafetyWait(TEXT("ReverseToForwardConfirmed"));
+				}
+			}
+		}
+		if (bTerrainPriority)
+		{
+			if (const FRuntimeOverride* Override = FindWinningOverride())
+				if (auto* Charge = Cast<UGA_EnemyShipCharge>(Override->Requester.Get())) Charge->StopForNavigationSafety();
+			const bool bAlreadyReversing = SafetyState == EEnemyShipLocalSafetyState::Escaping
+				&& (EscapeAction == EEnemyShipEscapeAction::ReverseRight || EscapeAction == EEnemyShipEscapeAction::ReverseLeft);
+			if (!bAlreadyReversing)
+			{
+				const FResult Right = Query.CheckTerrainHeading(45.0f);
+				const FResult Left = Query.CheckTerrainHeading(-45.0f);
+				bool bLeftFirst = bPreferLeftEscape;
+				if (FMath::Abs(Left.HitDistance - Right.HitDistance) > Value(S->TerrainSideTieDistance, 200))
+					bLeftFirst = Left.HitDistance > Right.HitDistance;
+				StartEscape(bLeftFirst ? EEnemyShipEscapeAction::ReverseLeft : EEnemyShipEscapeAction::ReverseRight);
+				RetryRemaining = 0;
+				LogCombatSafety(TEXT("TerrainReverse"), TEXT("ForcedWithoutPathCheck"));
+			}
+			else
+			{
+				SafeResumeElapsed = bTerrainForwardClear ? SafeResumeElapsed + Elapsed : 0;
+				if (SafeResumeElapsed >= Value(S->ResumeConfirmationTime, 0.8f, 0.1f, 10))
+				{
+					LogCombatSafety(TEXT("Resume"), TEXT("TerrainCorridorClear"));
+					ResetLocalSafety();
+					Requested = ResolveRequestedControl(BaseOutput);
 				}
 			}
 		}
@@ -815,7 +898,7 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 				: bModeChanged ? TEXT("SafetyModeChanged") : bThrottleChanged ? TEXT("ThrottleTransition") : TEXT("SteeringTransition"),
 				FString::Printf(TEXT("PrevMove=%.3f PrevTurn=%.3f PrevMode=%d BaseMove=%.3f BaseTurn=%.3f PropScale=%.3f TurnScale=%.3f Source=%s"),
 					CombatAppliedMove, CombatAppliedTurn, CombatAppliedMode, BaseOutput.MoveInput, BaseOutput.TurnInput,
-					Requested.PropulsionMultiplier, Requested.TurnMultiplier, Winner ? TEXT("Override") : TEXT("Navigation")));
+					Requested.PropulsionMultiplier, Requested.TurnMultiplier, HasActiveOverride() ? TEXT("Override") : TEXT("Navigation")));
 		}
 		bCombatAppliedControlValid = true;
 		CombatAppliedMove = ActualMove;

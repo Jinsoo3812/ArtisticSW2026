@@ -79,6 +79,8 @@ public:
 	UPROPERTY(Transient) float LocalPreferredCameraDistance = 0.f;
 	bool IsDevelopmentTestInputBlockedByServerUI() const;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class USWDevTestInputComponent> DevTestInput;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<class USWCameraRevealComponent> CameraReveal;
 	virtual bool CaptureLatestLifeProgress(APawn* SourcePawn) override;
 	virtual bool CanAcceptLifeDeath(APawn* SourcePawn) const override;
 	virtual void SetDeathFlowState(const FSWDeathFlowState& State) override;

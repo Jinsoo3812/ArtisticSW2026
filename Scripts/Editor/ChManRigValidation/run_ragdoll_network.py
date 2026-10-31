@@ -5,7 +5,7 @@ policy is separately covered by the native MultiGameMode lifecycle tests.
 """
 import unreal,json,time,traceback,math
 from pathlib import Path
-OUT=Path(unreal.Paths.project_saved_dir())/'PlayerRagdollValidation';LIB=unreal.SWCharacterRigValidationLibrary
+OUT=Path(globals().get('NETWORK_OUTPUT_DIR',Path(unreal.Paths.project_saved_dir())/'PlayerRagdollValidation'));OUT.mkdir(parents=True,exist_ok=True);LIB=unreal.SWCharacterRigValidationLibrary
 LEVEL=unreal.get_editor_subsystem(unreal.LevelEditorSubsystem);EDITOR=unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem);ACTORS=unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 RESULT={'errors':[],'samples':[],'new_lives':[]};FLOOR=1000
 def save():(OUT/'network.json').write_text(json.dumps(RESULT,indent=2),encoding='utf8')
@@ -55,7 +55,13 @@ class Runner:
                 if elapsed<.5:return
                 if elapsed-self.last_sample>.5:
                     rows=[self.row(p) for w in [self.server,self.client] for p in self.players(w)]
-                    assert len(rows)==4 and all(r['health_dead'] and r['simulating'] and r['visible'] for r in rows),'Death replication did not produce four visible physical corpses'
+                    if not(len(rows)==4 and all(r['health_dead'] and r['simulating'] and r['visible'] for r in rows)):
+                        assert elapsed<5,'Montage completion/replication did not produce four visible physical corpses'
+                        return
+                    for world in [self.server,self.client]:
+                        for pawn in self.players(world):
+                            visual=unreal.SWCorpsePoseLibrary.get_visual(pawn)
+                            assert visual and visual.is_visible(),'Replicated physical corpse has no corrected skin'
                     assert all(b['finite'] for r in rows for b in r['bodies'])
                     for row in rows:
                         if 'ChManUE5' in row['mesh']:assert row['impact_direction'] and row['impact_bone']=='index_03_r'

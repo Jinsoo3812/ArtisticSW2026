@@ -164,6 +164,11 @@ public:
 	void SetNetworkSunVisible();
 	UFUNCTION(BlueprintCallable, Category = "Weather|Network")
 	void SetNetworkWeatherTime(int32 Hour, int32 Minute, uint8 Weather);
+	/** Development console entry; negative Weather lists the authored enum. */
+	bool ApplyDevelopmentWeather(int32 Hour, int32 Minute, int32 Weather, FString& OutMessage);
+	/** Named weather (empty preserves current weather) and hour (-1 preserves current time). */
+	bool ApplyDevelopmentWeatherPreset(const FString& WeatherName, int32 Hour, FString& OutMessage);
+	static double CalculateHourDuration(int32 Hour, double BaseSeconds, double Sunrise, double Sunset, double DayFraction);
 	/** Read the presented weather; no clock, material, or replication state is changed. */
 	UFUNCTION(BlueprintPure, Category = "Weather|Audio")
 	bool AllowsCoastalWildlifeAudio() const;
@@ -193,6 +198,7 @@ private:
 	bool ValidateAdapter() const;
 	bool Invoke(FName FunctionName, const TMap<FName, double>& Arguments = {});
 	double ReadNumber(FName Name) const;
+	double GetHourDuration(int32 Hour) const;
 	void WriteNumber(FName Name, double Value);
 	UObject* ReadObject(FName Name) const;
 	bool CaptureSegment(FSWWeatherPlaybackSegment& Segment);

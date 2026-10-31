@@ -17,6 +17,7 @@
 #include "BaseGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "Ship.h"
+#include "SWNetworkWeatherActor.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -447,6 +448,42 @@ void USWDevTestInputComponent::RequestCampaignSkip(FName Target)
  ServerSkipCampaign(Target, ServerRestoreGeneration);
 }
 
+void USWDevTestInputComponent::ServerSetWeather_Implementation(int32 Hour, int32 Minute, int32 Weather)
+{
+ if (!SWDevTestInput::Allowed()) return;
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ const AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ if (!PC || !Mode || (GetWorld()->GetNetMode() != NM_Standalone && !Mode->IsRoomHostController(PC))) return;
+ for (TActorIterator<ASWNetworkWeatherActor> It(GetWorld()); It; ++It)
+ {
+  FString Message;
+  It->ApplyDevelopmentWeather(Hour, Minute, Weather, Message);
+  PC->ClientMessage(Message);
+  UE_LOG(LogSWDevTestInput, Display, TEXT("%s"), *Message);
+  return;
+ }
+ PC->ClientMessage(TEXT("No network weather actor in this world."));
+}
+
+void USWDevTestInputComponent::ServerSetWeatherPreset_Implementation(const FString& WeatherName, int32 Hour)
+{
+ if (!SWDevTestInput::Allowed()) return;
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ const AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ if (!PC || !Mode) return;
+ if (GetWorld()->GetNetMode() != NM_Standalone && !Mode->IsRoomHostController(PC))
+ { PC->ClientMessage(TEXT("Weather/time commands require the room host.")); return; }
+ for (TActorIterator<ASWNetworkWeatherActor> It(GetWorld()); It; ++It)
+ {
+  FString Message;
+  It->ApplyDevelopmentWeatherPreset(WeatherName, Hour, Message);
+  PC->ClientMessage(Message);
+  UE_LOG(LogSWDevTestInput, Display, TEXT("%s"), *Message);
+  return;
+ }
+ PC->ClientMessage(TEXT("No network weather actor in this world."));
+}
+
 void USWDevTestInputComponent::ServerSkipCampaign_Implementation(FName Target, int32 ExpectedGeneration)
 {
  if (!SWDevTestInput::Allowed()) return;
@@ -503,6 +540,38 @@ FAutoConsoleCommandWithWorldAndArgs ShipSpeedMultiplier(TEXT("SW.DevTest.ShipSpe
 FAutoConsoleCommandWithWorldAndArgs RepairPlanks(TEXT("SW.DevTest.RepairPlanks"), TEXT("Top up local host's ordinary/good wooden planks and iron plates to 50 each; requires Session 1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
   if (Args.IsEmpty()) if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerGrantRepairPlanks();
+ }));
+FAutoConsoleCommandWithWorldAndArgs WeatherSet(TEXT("SW.Weather.Set"), TEXT("Host: <hour 0-23> <minute 0-59> <weather ID>. No arguments lists authored weather IDs."),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  int32 Hour = 12, Minute = 0, Weather = -1;
+  if (!Args.IsEmpty() && (Args.Num() != 3 || !LexTryParseString(Hour, *Args[0])
+   || !LexTryParseString(Minute, *Args[1]) || !LexTryParseString(Weather, *Args[2]) || Weather < 0))
+  { UE_LOG(LogSWDevTestInput, Warning, TEXT("Usage: SW.Weather.Set [hour minute weatherID]")); return; }
+  if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetWeather(Hour, Minute, Weather);
+ }));
+FAutoConsoleCommandWithWorldAndArgs WeatherPreset(TEXT("SW.Weather.Preset"),
+ TEXT("Host: <authored weather name>, e.g. Sunny, Cloudy, Rainy, Thunder. Preserves time. No arguments lists weather IDs/names."),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  if (Args.Num() > 1) { UE_LOG(LogSWDevTestInput, Warning, TEXT("Usage: SW.Weather.Preset [weatherName]")); return; }
+  if (USWDevTestInputComponent* Input = FindDevelopmentInput(World))
+  {
+   if (Args.IsEmpty()) Input->ServerSetWeather(12, 0, -1);
+   else Input->ServerSetWeatherPreset(Args[0], -1);
+  }
+ }));
+FAutoConsoleCommandWithWorldAndArgs TimePreset(TEXT("SW.Time.Set"),
+ TEXT("Host: Morning (08:00), Noon (12:00), Evening (18:00), Night (22:00). Preserves weather; normal clock continues."),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World) {
+  int32 Hour = INDEX_NONE;
+  if (Args.Num() == 1)
+  {
+   if (Args[0].Equals(TEXT("Morning"), ESearchCase::IgnoreCase)) Hour = 8;
+   else if (Args[0].Equals(TEXT("Noon"), ESearchCase::IgnoreCase)) Hour = 12;
+   else if (Args[0].Equals(TEXT("Evening"), ESearchCase::IgnoreCase)) Hour = 18;
+   else if (Args[0].Equals(TEXT("Night"), ESearchCase::IgnoreCase)) Hour = 22;
+  }
+  if (Hour < 0) { UE_LOG(LogSWDevTestInput, Warning, TEXT("Usage: SW.Time.Set Morning|Noon|Evening|Night")); return; }
+  if (USWDevTestInputComponent* Input = FindDevelopmentInput(World)) Input->ServerSetWeatherPreset(FString(), Hour);
  }));
 FAutoConsoleCommandWithWorldAndArgs FreeUpgrade(TEXT("SW.DevTest.ShipUpgradeFree"), TEXT("Ignore ship materials 0|1"),
  FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& A, UWorld* W) { SetDevelopmentOption(A, W, TEXT("ShipUpgradeFree")); }));

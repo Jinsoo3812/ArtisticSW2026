@@ -2,7 +2,7 @@
 import unreal,json,time,traceback
 from pathlib import Path
 ROOT=Path(unreal.Paths.project_dir()).resolve();assert (ROOT/'ArtisticSW2026.uproject').exists()
-OUT=ROOT/'Saved/PlayerRagdollPoseFix';RESULT={'events':[],'errors':[]}
+OUT=Path(globals().get('PLAYGROUND_OUTPUT_DIR',ROOT/'Saved/PlayerRagdollPoseFix'));OUT.mkdir(parents=True,exist_ok=True);RESULT={'events':[],'errors':[]}
 LEVEL=unreal.get_editor_subsystem(unreal.LevelEditorSubsystem);EDITOR=unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 LIB=unreal.SWCharacterRigValidationLibrary
 def save():(OUT/'playground_test.json').write_text(json.dumps(RESULT,indent=2),encoding='utf8')
@@ -15,7 +15,7 @@ class Test:
     def start_death(self):
         self.old=self.pc.get_controlled_pawn();self.start=unreal.GameplayStatics.get_time_seconds(self.world)
         assert self.mode.execute_test_chord(False),'Death chord binding not installed'
-        assert self.old.get_editor_property('mesh').is_any_simulating_physics()
+        self.saw_physics=False
         self.state='waiting'
     def tick(self,dt):
         try:
@@ -40,9 +40,15 @@ class Test:
                 assert not self.mode.get_editor_property('last_error'),str(self.mode.get_editor_property('last_error'))
                 if pawn==self.old:
                     assert elapsed<10.5,'Automatic respawn late'
-                    if elapsed>1:assert pawn.get_editor_property('mesh').is_any_simulating_physics()
+                    assert json.loads(LIB.snapshot_ragdoll(pawn))['visible'],'Death montage/corpse must remain visible'
+                    if pawn.get_editor_property('mesh').is_any_simulating_physics():
+                        self.saw_physics=True
+                        visual=unreal.SWCorpsePoseLibrary.get_visual(pawn)
+                        if elapsed>1:assert visual and visual.is_visible()
+                    if elapsed>8:assert self.saw_physics,'Death montage did not transition to a corpse'
                     return
                 assert 9.8<=elapsed<=10.5,elapsed
+                assert self.saw_physics,'Respawn happened without displaying the corpse'
                 snap=json.loads(LIB.snapshot_ragdoll(pawn));assert snap['visible'] and not snap['simulating'] and not snap['health_dead'] and snap['asc_avatar']==snap['actor']
                 RESULT['events'].append({'event':'respawn','character':'Man' if self.round==0 else 'Woman','seconds':elapsed,'snapshot':{k:snap[k] for k in ['actor','visible','simulating','health_dead','asc_avatar']}})
                 self.round+=1

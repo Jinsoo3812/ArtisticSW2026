@@ -7,9 +7,9 @@ RAGDOLL_CASES=globals().get('REVIEW_CASES',[(label,30,mode) for label in ['Man',
 RAGDOLL_FILENAME=globals().get('REVIEW_FILENAME','player_pose_fix.json')
 base=ROOT/'Scripts/Editor/ChManRigValidation/run_ragdoll_pie.py'
 exec(compile(base.read_text(encoding='utf8').replace('RUNNER=Runner()',''),str(base),'exec'))
-OUT=ROOT/'Saved/PlayerRagdollPoseFix';OUT.mkdir(parents=True,exist_ok=True)
+OUT=Path(globals().get('POSE_OUTPUT_DIR',ROOT/'Saved/PlayerRagdollPoseFix'));OUT.mkdir(parents=True,exist_ok=True)
 RESULT['project']=str(ROOT);RESULT['capture_method']='Unreal PIE world SceneCapture2D FinalColorLDR, not Blender reconstruction'
-SHOTS=ROOT/'Saved/PlayerRagdollPoseFix/Screenshots';SHOTS.mkdir(parents=True,exist_ok=True)
+SHOTS=OUT/'Screenshots';SHOTS.mkdir(parents=True,exist_ok=True)
 
 class ReviewRunner(Runner):
     def __init__(self):
@@ -117,7 +117,7 @@ class ReviewRunner(Runner):
                 self.case['source_twist_off_axis_cm']=max(before);self.case['corrected_twist_off_axis_cm']=max(after)
             self.screenshot(s,'settled')
     def finish(self):
-        if not RESULT['errors'] and len(RESULT['cases'])==8:
+        if not RESULT['errors'] and len(RESULT['cases'])==len(RAGDOLL_CASES):
             RESULT['completed']=True
         super().finish()
 

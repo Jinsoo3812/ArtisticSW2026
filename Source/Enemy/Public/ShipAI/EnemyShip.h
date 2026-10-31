@@ -41,6 +41,7 @@ class UEnemyShipPatternRuntimeComponent;
 class UEnemyShipSkillModuleData;
 class UGameplayAbility;
 class USWCabinWaterCullComponent;
+class ULocalLightComponent;
 
 UENUM(BlueprintType)
 enum class EEnemyShipOrbitDirectionOverride : uint8
@@ -131,6 +132,17 @@ public:
 
 protected:
 	double InitialBeginPlayMs = 0.0;
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Cabin Lighting", meta = (ClampMin = "0.0", Units = "cm"))
+	float CabinLightEnableDistance = 3000.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Cabin Lighting", meta = (ClampMin = "0.0", Units = "cm"))
+	float CabinLightDisableDistance = 4000.0f;
+
+	void InitializeCabinLighting();
+	void UpdateCabinLighting();
+	TArray<TWeakObjectPtr<ULocalLightComponent>> CabinLights;
+	FTimerHandle CabinLightingTimer;
+	bool bCabinLightsEnabled = false;
+
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;

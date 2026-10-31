@@ -36,9 +36,9 @@ for data in contexts:
     context=data.get_asset()
     for mapping in context.get_editor_property('mappings'):
         key=str(unreal.InputLibrary.get_key_display_name(mapping.get_editor_property('key')))
-        if key in ['F7','F10']:conflicts.append({'context':context.get_path_name(),'key':key})
+        if key in ['F11','F10']:conflicts.append({'context':context.get_path_name(),'key':key})
 assert not conflicts,conflicts
-report['keys']={'audited_contexts':len(contexts),'conflicts':conflicts,'death':'Ctrl+Alt+Shift+F10','gender':'Ctrl+Alt+Shift+F7'}
+report['keys']={'audited_contexts':len(contexts),'conflicts':conflicts,'death':'Ctrl+Alt+Shift+F10','gender':'Ctrl+Alt+Shift+F11'}
 
 path='/Game/Developers/PlayerRagdoll/BP_PlayerRagdollTestGameMode'
 if unreal.EditorAssetLibrary.does_asset_exist(path):bp=unreal.load_asset(path)

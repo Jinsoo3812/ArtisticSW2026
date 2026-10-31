@@ -1,5 +1,7 @@
 # 남녀 리그·시체 시스템 팀 테스트
 
+> ShipAI 병합 후에는 [최신 통합 안내](ShipAI_Corpse_Integration_2026-10-31.md)를 먼저 확인한다. 성별 전환 키는 Ctrl+Alt+Shift+F11이다.
+
 > 현재 시체 뒤틀림·여성 재질 수정은 실제 프로젝트에 통합돼 있다. [프로젝트 보정 및 10초 부활 테스트 안내](Player_Ragdoll_PoseFix_2026-10-31.md)를 먼저 확인한다. 테스트 맵은 `/Game/Developers/PlayerRagdoll/L_PlayerRagdollTest`다.
 
 공유 브랜치: **JYU_merge**. 남녀 리그, 실제 플레이어 BP/ABP 연결, 체형별 PhysicsAsset 및 기존 생명주기에 연결한 시체 표현을 포함한다.

@@ -653,10 +653,10 @@ void AShip::BeginPlay()
 	if (HelmInteractable)
 	{
 		const FText ObjectName = HelmInteractable->InteractUIInfo.ObjectName.IsEmpty()
-			? NSLOCTEXT("ShipInteraction", "HelmObject", "Ship Helm")
+			? NSLOCTEXT("ShipInteraction", "HelmObject", "타륜")
 			: HelmInteractable->InteractUIInfo.ObjectName;
 		const FText ActionText = HelmInteractable->InteractUIInfo.ActionText.IsEmpty()
-			? NSLOCTEXT("ShipInteraction", "HelmAction", "Take Control")
+			? NSLOCTEXT("ShipInteraction", "HelmAction", "조종하기")
 			: HelmInteractable->InteractUIInfo.ActionText;
 		HelmInteractable->InitializeInteractable(ObjectName, ActionText);
 	}
@@ -3398,10 +3398,10 @@ void AShip::UpdateAnchorInteractionUI()
 {
 	if (AnchorInteractable)
 	{
-		const FText ObjectName = NSLOCTEXT("ShipInteraction", "AnchorObject", "닻 (Anchor)");
+		const FText ObjectName = NSLOCTEXT("ShipInteraction", "AnchorObject", "닻");
 		const FText ActionText = bIsAnchorDropped
-			? NSLOCTEXT("ShipInteraction", "AnchorRaiseAction", "닻 올리기 (Raise Anchor)")
-			: NSLOCTEXT("ShipInteraction", "AnchorDropAction", "닻 내리기 (Drop Anchor)");
+			? NSLOCTEXT("ShipInteraction", "AnchorRaiseAction", "닻 올리기")
+			: NSLOCTEXT("ShipInteraction", "AnchorDropAction", "닻 내리기");
 
 		AnchorInteractable->InitializeInteractable(ObjectName, ActionText);
 	}

@@ -152,13 +152,13 @@ private:
 
 public:
 
-	/** Physics presentation only; persistent ASC and GameMode still own the life cycle. */
+	/** ShipAI montage first, physical corpse after completion; life ownership is unchanged. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Death")
 	TObjectPtr<class USWPlayerRagdollComponent> PlayerRagdollComponent;
 	virtual void ApplyLocalDeathRagdoll() override;
 	virtual void ResetLocalDeathRagdoll() override;
 	virtual void PrepareDeathMovement() override;
-	virtual bool ShouldPlayDeathMontage() const override;
+	virtual bool ShouldKeepCharacterMovementOnDeath() const override;
 	virtual bool IsMoveInputIgnored() const override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:

@@ -113,7 +113,7 @@ void UShipUpgradeNodeWidget::RefreshBuiltInVisuals()
 		Image_Icon->SetVisibility(
 			bLocked ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 		// State color belongs to the node background, never to the icon.
-		Image_Icon->SetOpacity(1.0f);
+		Image_Icon->SetColorAndOpacity(FLinearColor::White);
 	}
 	if (Text_Name)
 	{

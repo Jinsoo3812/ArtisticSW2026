@@ -41,7 +41,7 @@ void ASWCorpsePlaygroundMode::Tick(float DeltaSeconds)
     {
         EnableInput(PC);InputComponent->Priority=100;
         InputComponent->BindKey(FInputChord(EKeys::F10,true,true,true,false),IE_Pressed,this,&ASWCorpsePlaygroundMode::TriggerDeath).bConsumeInput=true;
-        InputComponent->BindKey(FInputChord(EKeys::F7,true,true,true,false),IE_Pressed,this,&ASWCorpsePlaygroundMode::SwitchGender).bConsumeInput=true;
+        InputComponent->BindKey(FInputChord(EKeys::F11,true,true,true,false),IE_Pressed,this,&ASWCorpsePlaygroundMode::SwitchGender).bConsumeInput=true;
         bBoundInput=true;
     }
     if(!bPending&&Dead(PC->GetPawn()))BeginCountdown();
@@ -49,7 +49,7 @@ void ASWCorpsePlaygroundMode::Tick(float DeltaSeconds)
         if(ACharacter* C=Cast<ACharacter>(PC->GetPawn()))DeathCamera->SetActorLocationAndRotation(C->GetMesh()->GetSocketLocation(TEXT("pelvis"))+CameraOffset,CameraRotation);
     if(GEngine)
     {
-        FString Text=TEXT("CORPSE TEST  |  Move normally  |  Ctrl+Alt+Shift+F10: Death  |  Ctrl+Alt+Shift+F7: Switch Man/Woman");
+        FString Text=TEXT("CORPSE TEST  |  Move normally  |  Ctrl+Alt+Shift+F10: Death  |  Ctrl+Alt+Shift+F11: Switch Man/Woman");
         if(bPending)Text+=FString::Printf(TEXT("  |  Respawn %.1fs"),GetRespawnRemaining());
         if(!LastError.IsEmpty())Text+=TEXT("  |  ")+LastError;
         GEngine->AddOnScreenDebugMessage(0xC011,0.f,bPending?FColor::Orange:FColor::Cyan,Text);
@@ -84,7 +84,7 @@ void ASWCorpsePlaygroundMode::SwitchGender(){bFemale=!bFemale;TriggerDeath();if(
 bool ASWCorpsePlaygroundMode::ExecuteTestChord(bool bGenderSwitch)
 {
     if(!InputComponent)return false;
-    const FKey Key=bGenderSwitch?EKeys::F7:EKeys::F10;
+    const FKey Key=bGenderSwitch?EKeys::F11:EKeys::F10;
     for(FInputKeyBinding& Binding:InputComponent->KeyBindings)
         if(Binding.Chord.Key==Key&&Binding.Chord.bCtrl&&Binding.Chord.bAlt&&Binding.Chord.bShift&&!Binding.Chord.bCmd&&Binding.KeyEvent==IE_Pressed)
         {Binding.KeyDelegate.Execute(Key);return true;}

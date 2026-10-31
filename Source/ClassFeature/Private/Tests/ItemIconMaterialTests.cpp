@@ -12,6 +12,7 @@
 #include "Item/ItemSubsystem.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/ScopeExit.h"
+#include "UI/Crafting/CraftingIngredientEntryWidget.h"
 
 namespace ItemIconTests
 {
@@ -37,7 +38,9 @@ bool FItemIconMaterialIsolationTest::RunTest(const FString&)
  UTexture2D* Pear = ItemIconTests::LoadIcon(TEXT("ItemUI_05_Sail"));
  if (!TestNotNull(TEXT("Wood icon"),Wood) || !TestNotNull(TEXT("Pear icon"),Pear)) return false;
  First->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+ First->SetColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.5f));
  TestTrue(TEXT("Common icon uses effect material"),UItemIconLibrary::SetItemIconWithRarity(First,Wood,Item_Rarity_Common));
+ TestTrue(TEXT("Placeholder black tint is removed on first icon assignment"), First->GetColorAndOpacity().Equals(FLinearColor::White));
  TestTrue(TEXT("Rare icon uses effect material"),UItemIconLibrary::SetItemIconWithRarity(Second,Pear,Item_Rarity_Rare));
  UMaterialInstanceDynamic* A = Cast<UMaterialInstanceDynamic>(First->GetBrush().GetResourceObject());
  UMaterialInstanceDynamic* B = Cast<UMaterialInstanceDynamic>(Second->GetBrush().GetResourceObject());
@@ -84,6 +87,38 @@ bool FItemIconFallbackTest::RunTest(const FString&)
  return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FWorkbenchIngredientIconTest,
+ "ArtisticSW.UI.ItemIcon.WorkbenchFirstDisplay", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FWorkbenchIngredientIconTest::RunTest(const FString&)
+{
+ UTexture2D* Wood = ItemIconTests::LoadIcon(TEXT("ItemUI_01_Wood"));
+ if (!TestNotNull(TEXT("Ingredient icon"), Wood)) return false;
+ for (const TCHAR* Path : {
+  TEXT("/Game/Blueprints/02_UI/UI_WorkTable/UI_Crafting/WBP_CraftingIngredientEntry.WBP_CraftingIngredientEntry_C"),
+  TEXT("/Game/Blueprints/02_UI/UI_WorkTable/UI_SkillUpgrade/WBP_SkillIngredientEntry.WBP_SkillIngredientEntry_C")})
+ {
+  UClass* WidgetClass = LoadClass<UCraftingIngredientEntryWidget>(nullptr, Path);
+  if (!TestNotNull(TEXT("Authored ingredient class"), WidgetClass)) continue;
+  UCraftingIngredientEntryWidget* Entry = NewObject<UCraftingIngredientEntryWidget>(GetTransientPackage(), WidgetClass);
+  Entry->Initialize();
+  UImage* Image = Cast<UImage>(Entry->WidgetTree->FindWidget(TEXT("IngredientIconImage")));
+  if (!TestNotNull(TEXT("Ingredient image"), Image)) continue;
+  AddInfo(FString::Printf(TEXT("%s initial Color=%s"), Path, *Image->GetColorAndOpacity().ToString()));
+  FCraftingIngredientView Ingredient;
+  Ingredient.ItemTag = Item_Id_Material_WeaponMaterial_Wood;
+  Ingredient.Icon = Wood;
+  // Production applies ingredient data before adding the entry to its parent.
+  Entry->SetupFromIngredient(Ingredient);
+  auto SlateWidget = Entry->TakeWidget();
+  TestTrue(TEXT("First constructed ingredient icon is untinted"), Image->GetColorAndOpacity().Equals(FLinearColor::White));
+  TestTrue(TEXT("First constructed ingredient has the correct texture"),
+   ItemIconTests::TextureValue(Cast<UMaterialInstanceDynamic>(Image->GetBrush().GetResourceObject())) == Wood);
+  Entry->SetupFromIngredient(Ingredient);
+  TestTrue(TEXT("Refresh keeps the same visible tint"), Image->GetColorAndOpacity().Equals(FLinearColor::White));
+ }
+ return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FItemIconCatalogIntegrationTest,
  "ArtisticSW.UI.ItemIcon.InventoryWidgetIntegration", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FItemIconCatalogIntegrationTest::RunTest(const FString&)
@@ -117,3 +152,4 @@ bool FItemIconCatalogIntegrationTest::RunTest(const FString&)
  return true;
 }
 #endif
+
