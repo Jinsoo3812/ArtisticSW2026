@@ -2,7 +2,6 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -153,11 +152,6 @@ bool EnemyBowShotPreparation::Prepare(const AActor* Shooter, const AActor* Targe
 			*Input.ShotId.ToString(), *GetNameSafe(Shooter), *GetNameSafe(Target), *GetNameSafe(ShooterShip),
 			*GetNameSafe(TargetShip), bCompensated, Reason, FlightTime, *Input.AimPoint.ToString(),
 			*Intercept.ToString(), *Motion.LinearVelocity.ToString(), *Motion.AngularVelocity.ToString());
-		if (bCompensated)
-		{
-			DrawDebugPoint(Shooter->GetWorld(), Intercept, 16.0f, FColor::Blue, false, 3.0f);
-			DrawDebugLine(Shooter->GetWorld(), Input.AimPoint, Intercept, FColor::Blue, false, 3.0f);
-		}
 	}
 	return true;
 }
