@@ -242,7 +242,7 @@ public:
 	bool GrantEnemyShipAbilityClasses(const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses);
 	bool ConfigureEnemyShipArchetype(UEnemyShipArchetypeData* Archetype);
 	void SetSquadAssignedIdealDistance(float IdealDistance);
-	void ResetAfterReturnToSpawn();
+	void ResetAfterReturnToSpawn(bool bRestoreHomeTransform = true);
 
 	/** Server-authored far-distance lifecycle. The visual hull remains visible while dormant. */
 	void SetDistanceOptimizationDormant(bool bDormant);

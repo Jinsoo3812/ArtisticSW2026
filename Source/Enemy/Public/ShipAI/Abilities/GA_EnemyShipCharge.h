@@ -20,6 +20,10 @@ class ENEMY_API UGA_EnemyShipCharge : public UEnemyShipGameplayAbility
 
 public:
 	UGA_EnemyShipCharge();
+	bool IsChargeStarted() const { return bChargeStarted; }
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
+		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	virtual void PostLoad() override;
 
 	virtual void ActivateAbility(
@@ -161,4 +165,8 @@ private:
 	bool bAddedChargingTag = false;
 	bool bCollisionConsumed = false;
 	bool bChargeStarted = false;
+	FVector TerrainProgressLocation = FVector::ZeroVector;
+	double TerrainProgressTime = 0.0;
+	double ChargeStartTime = 0.0;
+	float TerrainStallElapsed = 0.0f;
 };

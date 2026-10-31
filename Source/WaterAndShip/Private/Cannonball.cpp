@@ -11,6 +11,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Engine/OverlapResult.h"
+#include "EngineUtils.h"
 #include "Ship.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
@@ -141,9 +142,18 @@ void ACannonball::ConfigureProjectileCollision()
 		SphereCollision->SetCollisionObjectType(
 			bEnemyProjectile ? ECC_GameTraceChannel3 : ECC_GameTraceChannel2);
 		SphereCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-		// WaterBody is WorldStatic and must keep generating the server-authoritative
-		// actor overlap used by URippleSubsystem.
-		SphereCollision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
+		SphereCollision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+		// Water volumes share WorldStatic with terrain. Keep their pair response
+		// overlapping so terrain blocking does not stop projectiles at the volume boundary.
+		for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
+		{
+			TInlineComponentArray<UPrimitiveComponent*> Components(*It);
+			for (UPrimitiveComponent* Component : Components)
+			{
+				Component->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Overlap);
+				Component->SetCollisionResponseToChannel(ECC_GameTraceChannel3, ECR_Overlap);
+			}
+		}
 		SphereCollision->SetCollisionResponseToChannel(ECC_ShipDamage, ECR_Block);
 		SphereCollision->SetCollisionResponseToChannel(ECC_EnemyShipObstacle, ECR_Block);
 		SphereCollision->SetGenerateOverlapEvents(true);
@@ -378,6 +388,16 @@ void ACannonball::HandleBlockingImpact(
 			TEXT("ACannonball: Exploded on obstacle %s at %s."),
 			*GetNameSafe(OtherActor),
 			*Hit.ImpactPoint.ToCompactString());
+		Destroy();
+	}
+	else if (HasAuthority() && OtherComp && OtherComp->GetCollisionObjectType() == ECC_WorldStatic
+		&& !OtherActor->IsA<AWaterBody>() && !OtherComp->GetCollisionProfileName().ToString().Contains(TEXT("Water")))
+	{
+		bHasProcessedBlockingImpact = true;
+		DeactivateProjectile();
+		SpawnNiagaraEffectForAll(ShipImpactEffect, Hit.ImpactPoint, ShipImpactEffectScale,
+			ShipImpactEffectLifetimeScale, ShipImpactEffectPlaybackSpeed);
+		MulticastImpactSound(ESWWorldSound::CannonSolidImpact, Hit.ImpactPoint);
 		Destroy();
 	}
 }

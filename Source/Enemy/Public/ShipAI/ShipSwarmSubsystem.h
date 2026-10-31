@@ -50,6 +50,7 @@ public:
 
 	/** Predicts active same-target ship traffic and deployed skill obstacles. */
 	FEnemyShipAvoidanceDecision EvaluateAvoidance(AEnemyShip* Ship);
+	void GatherSafetyPeers(const AEnemyShip* Ship, TArray<TWeakObjectPtr<AEnemyShip>>& Out) const;
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS

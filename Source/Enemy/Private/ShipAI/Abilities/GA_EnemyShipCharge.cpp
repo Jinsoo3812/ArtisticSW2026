@@ -13,6 +13,8 @@
 #include "ShipAI/Abilities/EnemyShipChargeTelegraph.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
+#include "ShipAI/EnemyShipAvoidanceSettings.h"
+#include "ShipAI/EnemyShipLocalSafety.h"
 #include "TimerManager.h"
 
 UGA_EnemyShipCharge::UGA_EnemyShipCharge()
@@ -21,6 +23,16 @@ UGA_EnemyShipCharge::UGA_EnemyShipCharge()
 	CooldownDurationSeconds = 10.0f;
 	DamageGameplayEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
 	ChargeTelegraphClass = AEnemyShipChargeTelegraph::StaticClass();
+}
+
+bool UGA_EnemyShipCharge::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags)) return false;
+	const AEnemyShip* Ship = ActorInfo ? Cast<AEnemyShip>(ActorInfo->AvatarActor.Get()) : nullptr;
+	const auto* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
+	return Navigation && !Navigation->IsAvoidanceManeuverActive();
 }
 
 void UGA_EnemyShipCharge::ActivateAbility(
@@ -53,6 +65,8 @@ void UGA_EnemyShipCharge::ActivateAbility(
 	bCollisionConsumed = false;
 	bChargeStarted = false;
 	bApplyCooldownOnEnd = false;
+	TerrainStallElapsed = 0;
+	TerrainProgressTime = 0;
 	ResolvedChargeDistance = FMath::Max(1.0f, FVector::Dist2D(
 		Ship->GetActorLocation(), Target->GetActorLocation()));
 
@@ -134,6 +148,8 @@ void UGA_EnemyShipCharge::EndAbility(
 	ResolvedChargeDistance = 1.0f;
 	ChargeStartLocation = FVector::ZeroVector;
 	ChargeDirection = FVector::ForwardVector;
+	TerrainStallElapsed = 0;
+	TerrainProgressTime = ChargeStartTime = 0;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -265,6 +281,29 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 	FVector DesiredDirection = bChargeStarted
 		? ChargeDirection
 		: Target->GetActorLocation() - Ship->GetActorLocation();
+	if (bChargeStarted)
+	{
+		using namespace EnemyShipLocalSafety;
+		const auto* S = GetDefault<UEnemyShipAvoidanceSettings>();
+		const double Now = Ship->GetWorld()->GetTimeSeconds();
+		const float Window = Now - TerrainProgressTime;
+		if (Window >= 0.25f)
+		{
+			const float ProgressSpeed = FVector::DotProduct(Ship->GetActorLocation() - TerrainProgressLocation, ChargeDirection) / Window;
+			if (Now - ChargeStartTime >= Value(S->ChargeTerrainStallGrace, 1, 0, 10)
+				&& ProgressSpeed < Value(S->ChargeMinimumProgressSpeed, 20, 0.1f)
+				&& HasTerrainAhead(*Ship, Value(S->SafetyMinimumProbeDistance, 300, 1))) TerrainStallElapsed += Window;
+			else TerrainStallElapsed = 0;
+			TerrainProgressLocation = Ship->GetActorLocation();
+			TerrainProgressTime = Now;
+			if (TerrainStallElapsed >= Value(S->ChargeTerrainStallTime, 2, 0.25f, 30))
+			{
+				Navigation->NotifyChargeTerrainStall();
+				EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+				return;
+			}
+		}
+	}
 	DesiredDirection.Z = 0.0f;
 	if (!DesiredDirection.Normalize())
 	{
@@ -314,6 +353,10 @@ void UGA_EnemyShipCharge::BeginCharge()
 	}
 
 	bChargeStarted = true;
+	if (auto* Navigation = Ship->GetNavigationComponent()) Navigation->ResetLocalSafety();
+	ChargeStartTime = TerrainProgressTime = Ship->GetWorld()->GetTimeSeconds();
+	TerrainProgressLocation = Ship->GetActorLocation();
+	TerrainStallElapsed = 0;
 	ChargeStartLocation = Ship->GetActorLocation();
 	ChargeDirection = Ship->GetActorForwardVector().GetSafeNormal2D();
 	if (ChargeDirection.IsNearlyZero())
