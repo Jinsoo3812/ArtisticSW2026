@@ -1,0 +1,73 @@
+{
+  "limbs": {
+    "arm_l": {
+      "fk_to_ik": {
+        "max_head_error_cm": 0.0009264787235885692,
+        "max_rotation_error_deg": 0.0
+      },
+      "goal_error_cm": 2.33240065611877e-05,
+      "length_error_cm": 7.1760582642799164e-06,
+      "ik_to_fk": {
+        "max_head_error_cm": 2.7059689192779177e-05,
+        "max_rotation_error_deg": 0.0
+      }
+    },
+    "arm_r": {
+      "fk_to_ik": {
+        "max_head_error_cm": 0.0009710545661834801,
+        "max_rotation_error_deg": 0.0
+      },
+      "goal_error_cm": 0.00015485920199786546,
+      "length_error_cm": 6.677006262056917e-05,
+      "ik_to_fk": {
+        "max_head_error_cm": 3.3527612686157227e-05,
+        "max_rotation_error_deg": 0.0
+      }
+    },
+    "leg_l": {
+      "fk_to_ik": {
+        "max_head_error_cm": 0.0027892993629129352,
+        "max_rotation_error_deg": 0.0
+      },
+      "goal_error_cm": 0.000603997205749893,
+      "length_error_cm": 1.911349268302054e-05,
+      "ik_to_fk": {
+        "max_head_error_cm": 1.2067008269388615e-05,
+        "max_rotation_error_deg": 0.0
+      }
+    },
+    "leg_r": {
+      "fk_to_ik": {
+        "max_head_error_cm": 0.0028922501320334045,
+        "max_rotation_error_deg": 0.0
+      },
+      "goal_error_cm": 0.0005954351867129586,
+      "length_error_cm": 1.832267140788879e-05,
+      "ik_to_fk": {
+        "max_head_error_cm": 3.557603474352754e-05,
+        "max_rotation_error_deg": 0.0
+      }
+    }
+  },
+  "extra_controls": {
+    "ROLL_heel_l": {
+      "max_skin_motion_cm": 4.381832947107941
+    },
+    "ROLL_toe_r": {
+      "max_skin_motion_cm": 13.14100538068878
+    },
+    "FK_index_01_l": {
+      "max_skin_motion_cm": 0.30063728920504573
+    },
+    "FK_cc_base_l_eye": {
+      "max_skin_motion_cm": 0.612514231364892
+    },
+    "LOOK_eyes": {
+      "max_skin_motion_cm": 0.6125404736972916
+    }
+  },
+  "root_head_error_cm": 0.0,
+  "marker_error_cm": 0.0,
+  "independent_weapon_head_error_cm": 1.2731557704981462e-05,
+  "passed": true
+}

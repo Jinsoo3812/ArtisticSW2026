@@ -152,9 +152,13 @@ private:
 
 public:
 
-	/** Legacy ragdoll entry points now hide the player without starting physics. */
+	/** Physics presentation only; persistent ASC and GameMode still own the life cycle. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Death")
+	TObjectPtr<class USWPlayerRagdollComponent> PlayerRagdollComponent;
 	virtual void ApplyLocalDeathRagdoll() override;
+	virtual void ResetLocalDeathRagdoll() override;
 	virtual void PrepareDeathMovement() override;
+	virtual bool ShouldPlayDeathMontage() const override;
 	virtual bool IsMoveInputIgnored() const override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:

@@ -1,0 +1,102 @@
+{
+  "stage": "complete",
+  "interchange_fbx_enabled": false,
+  "imported_paths": [
+    "/Game/jiwon/Characters/ChManUE5/SKM_ChMan_UE5.SKM_ChMan_UE5"
+  ],
+  "original_materials": {
+    "ChManMtl_Hair": "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+    "ChManMtl_Accessory": "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+    "ChManMtl_Clothes": "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+    "ChManMtl_StylizedBag": "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+    "ChManMtl_Eyes": "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+    "Pump_shoes_2": "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+    "ChManMtl_Body": "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+  },
+  "skeleton": "/Game/jiwon/Characters/ChManUE5/SKM_ChMan_UE5_Skeleton.SKM_ChMan_UE5_Skeleton",
+  "materials": [
+    {
+      "slot": "M_ChManHair",
+      "material": "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair"
+    },
+    {
+      "slot": "M_ChManAccessory",
+      "material": "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory"
+    },
+    {
+      "slot": "M_ChManClothes",
+      "material": "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes"
+    },
+    {
+      "slot": "M_ChManStylizedBag",
+      "material": "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag"
+    },
+    {
+      "slot": "M_ChManEye",
+      "material": "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye"
+    },
+    {
+      "slot": "M_ChManShoes",
+      "material": "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes"
+    },
+    {
+      "slot": "M_ChManBody",
+      "material": "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+    }
+  ],
+  "compatible_skeleton_set": true,
+  "saved": true,
+  "docs": {
+    "AnimPoseEvaluationOptions": "Anim Pose Evaluation Options\r\n\r\n**C++ Source:**\r\n\r\n- **Module**: AnimationBlueprintLibrary\r\n- **File**: AnimPose.h\r\n\r\n**Editor Properties:** (see get_editor_property/set_editor_property)\r\n\r\n- ``evaluate_curves`` (bool):  [Read-Write] Whether or not to evaluate Animation Curves\r\n- ``evaluation_type`` (AnimDataEvalType):  [Read-Write] Type of evaluation which should be used\r\n- ``extract_root_motion`` (bool):  [Read-Write] Whether or not to extract root motion values\r\n- ``incorporate_root_motion_into_pose`` (bool):  [Read-Write] Whether or not to force root motion being incorporated into retrieved pose\r\n- ``optional_skeletal_mesh`` (SkeletalMesh):  [Read-Write] Optional skeletal mesh with proportions to use when evaluating a pose\r\n- ``retrieve_additive_as_full_pose`` (bool):  [Read-Write] Whether or additive animations should be applied to their base-pose\r\n- ``should_retarget`` (bool):  [Read-Write] Whether or not to retarget animation during evaluation",
+    "AnimPoseExtensions": "Script exposed functionality for populating, retrieving data from and setting data on FAnimPose\r\n\r\n**C++ Source:**\r\n\r\n- **Module**: AnimationBlueprintLibrary\r\n- **File**: AnimPose.h\r\n",
+    "AnimSequenceExporterFBX": "Anim Sequence Exporter FBX\r\n\r\n**C++ Source:**\r\n\r\n- **Module**: UnrealEd\r\n- **File**: AnimSequenceExporterFBX.h\r\n\r\n**Editor Properties:** (see get_editor_property/set_editor_property)\r\n\r\n- ``export_task`` (AssetExportTask):  [Read-Write]\r\n- ``format_description`` (Array[str]):  [Read-Write] Descriptiong of the export format\r\n- ``format_extension`` (Array[str]):  [Read-Write] File extension to use for this exporter\r\n- ``supported_class`` (type(Class)):  [Read-Write] Supported class of this exporter\r\n- ``text`` (bool):  [Read-Write] If true, this will export the data as text"
+  },
+  "pose_methods": {
+    "get_anim_pose_at_frame": "X.get_anim_pose_at_frame(animation_sequence_base, frame_index, evaluation_options) -> AnimPose\r\nEvaluates an Animation Sequence Base to generate a valid Anim Pose instance\r\n\r\nArgs:\r\n    animation_sequence_base (AnimSequenceBase): Animation sequence base to evaluate the pose from\r\n    frame_index (int32): Exact frame at which the pose should be evaluated\r\n    evaluation_options (AnimPoseEvaluationOptions): Options determining the way the pose should be evaluated\r\n\r\nReturns:\r\n    AnimPose: \r\n\r\n    pose (AnimPose): Anim Pose to hold the evaluated data",
+    "get_anim_pose_at_time": "X.get_anim_pose_at_time(animation_sequence_base, time, evaluation_options) -> AnimPose\r\nEvaluates an Animation Sequence Base to generate a valid Anim Pose instance\r\n\r\nArgs:\r\n    animation_sequence_base (AnimSequenceBase): Animation sequence base to evaluate the pose from\r\n    time (double): Time at which the pose should be evaluated\r\n    evaluation_options (AnimPoseEvaluationOptions): Options determining the way the pose should be evaluated\r\n\r\nReturns:\r\n    AnimPose: \r\n\r\n    pose (AnimPose): Anim Pose to hold the evaluated data",
+    "get_bone_names": "X.get_bone_names(pose) -> Array[Name]\r\nReturns an array of bone names contained by the pose\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the names from\r\n\r\nReturns:\r\n    Array[Name]: \r\n\r\n    bones (Array[Name]): Array to be populated with the bone names",
+    "get_bone_pose": "X.get_bone_pose(pose, bone_name, space=AnimPoseSpaces.LOCAL) -> Transform\r\nRetrieves the transform for the provided bone name from a pose\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the transform from\r\n    bone_name (Name): Name of the bone to retrieve\r\n    space (AnimPoseSpaces): Space in which the transform should be retrieved\r\n\r\nReturns:\r\n    Transform: Transform in requested space for bone if found, otherwise return identity transform",
+    "get_class": "get_class(self) -> Class -- get the Unreal class of this instance",
+    "get_curve_names": "X.get_curve_names(pose) -> Array[Name]\r\nReturns an array of curve names contained by the pose\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the names from\r\n\r\nReturns:\r\n    Array[Name]: \r\n\r\n    curves (Array[Name]): Array to be populated with the curve names",
+    "get_curve_weight": "X.get_curve_weight(pose, curve_name) -> float\r\nReturns the weight of an evaluated curve - if found\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the value from\r\n    curve_name (Name): Curve to retrieve the weight value for\r\n\r\nReturns:\r\n    float: Curve weight value, if found - 0.f otherwise",
+    "get_default_object": "get_default_object(cls: Type[_T]) -> _T -- get the Unreal class default object (CDO) of this type",
+    "get_editor_property": "get_editor_property(self, name: str) -> object -- get the value of any property visible to the editor",
+    "get_fname": "get_fname(self) -> Name -- get the name of this instance",
+    "get_full_name": "get_full_name(self) -> str -- get the full name (class name + full path) of this instance",
+    "get_name": "get_name(self) -> str -- get the name of this instance",
+    "get_outer": "get_outer(self) -> Any -- get the outer object from this instance (if any)",
+    "get_outermost": "get_outermost(self) -> Package -- get the outermost object (the package) from this instance",
+    "get_package": "get_package(self) -> Package -- get the package directly associated with this instance",
+    "get_path_name": "get_path_name(self) -> str -- get the path name of this instance",
+    "get_ref_bone_pose": "X.get_ref_bone_pose(pose, bone_name, space=AnimPoseSpaces.LOCAL) -> Transform\r\nRetrieves the reference pose transform for the provided bone name\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the transform from\r\n    bone_name (Name): Name of the bone to retrieve\r\n    space (AnimPoseSpaces): Space in which the transform should be retrieved\r\n\r\nReturns:\r\n    Transform: Transform in requested space for bone if found, otherwise return identity transform",
+    "get_ref_pose_relative_transform": "X.get_ref_pose_relative_transform(pose, from_bone_name, to_bone_name, space=AnimPoseSpaces.LOCAL) -> Transform\r\nRetrieves the relative transform for the reference pose between the two provided bone names\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the transform from\r\n    from_bone_name (Name): Name of the bone to retrieve the transform relative from\r\n    to_bone_name (Name): Name of the bone to retrieve the transform relative to\r\n    space (AnimPoseSpaces): Space in which the transform should be retrieved\r\n\r\nReturns:\r\n    Transform: Relative transform in requested space for bone if found, otherwise return identity transform",
+    "get_reference_pose": "X.get_reference_pose(skeleton) -> AnimPose\r\nPopulates an Anim Pose with the reference poses stored for the provided USkeleton\r\n\r\nArgs:\r\n    skeleton (Skeleton): USkeleton object to retrieve the reference pose from\r\n\r\nReturns:\r\n    AnimPose: \r\n\r\n    out_pose (AnimPose): Anim pose to hold the reference pose",
+    "get_relative_to_ref_pose_transform": "X.get_relative_to_ref_pose_transform(pose, bone_name, space=AnimPoseSpaces.LOCAL) -> Transform\r\nRetrieves the relative transform between reference and animated bone transform\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the transform from\r\n    bone_name (Name): Name of the bone to retrieve the relative transform for\r\n    space (AnimPoseSpaces): Space in which the transform should be retrieved\r\n\r\nReturns:\r\n    Transform: Relative transform in requested space for bone if found, otherwise return identity transform",
+    "get_relative_transform": "X.get_relative_transform(pose, from_bone_name, to_bone_name, space=AnimPoseSpaces.LOCAL) -> Transform\r\nRetrieves the relative transform between the two provided bone names\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the transform from\r\n    from_bone_name (Name): Name of the bone to retrieve the transform relative from\r\n    to_bone_name (Name): Name of the bone to retrieve the transform relative to\r\n    space (AnimPoseSpaces): Space in which the transform should be retrieved\r\n\r\nReturns:\r\n    Transform: Relative transform in requested space for bone if found, otherwise return identity transform",
+    "get_socket_names": "X.get_socket_names(pose) -> Array[Name]\r\nReturns an array of socket names contained by the pose\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the names from\r\n\r\nReturns:\r\n    Array[Name]: \r\n\r\n    sockets (Array[Name]): Array to be populated with the socket names",
+    "get_socket_pose": "X.get_socket_pose(pose, socket_name, space=AnimPoseSpaces.LOCAL) -> Transform\r\nRetrieves the transform for the provided socket name from a pose\r\n\r\nArgs:\r\n    pose (AnimPose): Anim Pose to retrieve the transform from\r\n    socket_name (Name): Name of the socket to retrieve\r\n    space (AnimPoseSpaces): Space in which the transform should be retrieved\r\n\r\nReturns:\r\n    Transform: Transform in requested space for bone if found, otherwise return identity transform",
+    "get_typed_outer": "get_typed_outer(self, type: Union[Class, type]) -> Any -- get the first outer object of the given type from this instance (if any)",
+    "get_world": "get_world(self) -> Optional[World] -- get the world associated with this instance (if any)"
+  },
+  "animations": {
+    "Idle": {
+      "asset": "/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle",
+      "class": "AnimSequence",
+      "skeleton": "/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin",
+      "exported": true
+    },
+    "Walk": {
+      "asset": "/Game/Characters/Mannequins/Anims/Unarmed/Walk/MF_Unarmed_Walk_Fwd",
+      "class": "AnimSequence",
+      "skeleton": "/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin",
+      "exported": true
+    },
+    "Jump": {
+      "asset": "/Game/Characters/Mannequins/Anims/Unarmed/Jump/MM_Jump",
+      "class": "AnimSequence",
+      "skeleton": "/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin",
+      "exported": true
+    }
+  },
+  "roundtrip_exported": true
+}

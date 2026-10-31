@@ -38,9 +38,16 @@ bool FPlayerDeathCameraTest::RunTest(const FString& Parameters)
 	Controller->OnRep_DeathFlowState();
 	TestEqual(TEXT("Waiting camera remains attached to corpse"), Camera->GetAttachParentActor(), static_cast<AActor*>(Life.Player));
 	TestFalse(TEXT("Camera follows corpse movement without recapturing the alive POV"), Camera->GetActorLocation().Equals(AlivePOV.Location));
+	const FVector Offset=Camera->GetActorLocation()-Life.Player->GetMesh()->GetSocketLocation(TEXT("pelvis"));
+	Life.Player->SetActorRotation(FRotator(75,110,65));
+	Controller->ApplyLocalDeathFlow();
+	TestTrue(TEXT("Ragdoll rotation cannot roll spectator horizon"),Camera->GetActorRotation().Equals(AlivePOV.Rotation,.01));
+	TestTrue(TEXT("Orbit offset remains world-space while pelvis rotates"),Camera->GetActorLocation().Equals(Life.Player->GetMesh()->GetSocketLocation(TEXT("pelvis"))+Offset,.01));
+	const FVector LastCorpseView=Camera->GetActorLocation();
 	Life.Player->Destroy();
 	Controller->ApplyLocalDeathFlow();
 	TestEqual(TEXT("Corpse expiry does not invalidate spectator camera"), Controller->GetViewTarget(), static_cast<AActor*>(Camera));
+	TestTrue(TEXT("Corpse expiry retains final view without snapping to the alive position"),Camera->GetActorLocation().Equals(LastCorpseView,.01));
 	ABasePlayer* Replacement = Fixture.SpawnPlayer();
 	if (!Replacement) return false;
 	Controller->Possess(Replacement);

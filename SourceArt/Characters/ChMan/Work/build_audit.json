@@ -1,0 +1,62 @@
+{
+  "source": "C:\\Users\\I\\Desktop\\ChManNewRig.FBX",
+  "reference": "UE 5.7.4 /Game/Characters/Mannequins/Meshes/SKM_Manny_Simple",
+  "source_vertices": 33006,
+  "output_vertices": 33158,
+  "source_polygons": 55128,
+  "output_polygons": 55276,
+  "output_bones": 120,
+  "core_bones_including_root": 89,
+  "renamed_weighted_twists": {
+    "cc_base_l_upperarmtwist01": "upperarm_twist_01_l",
+    "cc_base_l_upperarmtwist02": "upperarm_twist_02_l",
+    "cc_base_l_forearmtwist01": "lowerarm_twist_01_l",
+    "cc_base_l_forearmtwist02": "lowerarm_twist_02_l",
+    "cc_base_l_thightwist01": "thigh_twist_01_l",
+    "cc_base_l_thightwist02": "thigh_twist_02_l",
+    "cc_base_l_calftwist01": "calf_twist_01_l",
+    "cc_base_l_calftwist02": "calf_twist_02_l",
+    "cc_base_r_upperarmtwist01": "upperarm_twist_01_r",
+    "cc_base_r_upperarmtwist02": "upperarm_twist_02_r",
+    "cc_base_r_forearmtwist01": "lowerarm_twist_01_r",
+    "cc_base_r_forearmtwist02": "lowerarm_twist_02_r",
+    "cc_base_r_thightwist01": "thigh_twist_01_r",
+    "cc_base_r_thightwist02": "thigh_twist_02_r",
+    "cc_base_r_calftwist01": "calf_twist_01_r",
+    "cc_base_r_calftwist02": "calf_twist_02_r"
+  },
+  "skin_insets": [
+    {
+      "side": "l",
+      "boundary_vertices": 19,
+      "original_center_cm": [
+        27.907657623291016,
+        3.978973388671875,
+        124.46800231933594
+      ],
+      "inset_center_cm": [
+        16.538084030151367,
+        0.8606672286987305,
+        129.18280029296875
+      ]
+    },
+    {
+      "side": "r",
+      "boundary_vertices": 19,
+      "original_center_cm": [
+        -27.85895347595215,
+        3.9211089611053467,
+        124.62409973144531
+      ],
+      "inset_center_cm": [
+        -16.53814697265625,
+        0.8606557846069336,
+        129.18275451660156
+      ]
+    }
+  ],
+  "missing_core": [],
+  "parent_mismatches": [],
+  "max_core_basis_angle_deg": 0.0,
+  "original_surface_max_rest_delta_cm": 2.81549150164294e-05
+}

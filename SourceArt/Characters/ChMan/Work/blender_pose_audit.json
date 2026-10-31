@@ -1,0 +1,85 @@
+{
+  "samples": [
+    {
+      "arm_raise_from_rest_deg": 60,
+      "max_limb_marker_error_cm": 0.0,
+      "render": "03_fixed_arms_raised.png"
+    },
+    {
+      "arm_raise_from_rest_deg": 90,
+      "max_limb_marker_error_cm": 0.0,
+      "render": "04_fixed_arms_up_front.png"
+    },
+    {
+      "arm_raise_from_rest_deg": 120,
+      "max_limb_marker_error_cm": 0.0,
+      "render": "05_fixed_overhead_back.png"
+    },
+    {
+      "arm_raise_from_rest_deg": 0,
+      "max_limb_marker_error_cm": 0.0,
+      "render": "06_fixed_rest.png"
+    }
+  ],
+  "weight_sum_min": 0.9999999552965164,
+  "weight_sum_max": 1.0000000447034836,
+  "unweighted_vertices": 0,
+  "max_influences": 7,
+  "root_head": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "armature_transform": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "mesh_transform": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ]
+}

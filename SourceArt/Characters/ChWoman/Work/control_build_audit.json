@@ -1,0 +1,22 @@
+{
+  "limbs": {
+    "arm_l": {
+      "rest_mid_error_cm": 0.0015043029462785851,
+      "pole_angle": 2.2756604988283486
+    },
+    "leg_l": {
+      "rest_mid_error_cm": 0.37465546748245876,
+      "pole_angle": -0.2086213871524472
+    },
+    "arm_r": {
+      "rest_mid_error_cm": 0.0014324559411946786,
+      "pole_angle": 0.8659321547614445
+    },
+    "leg_r": {
+      "rest_mid_error_cm": 0.4313283967611591,
+      "pole_angle": 3.141592653589793
+    }
+  },
+  "controller_bones": 152,
+  "export_bones": 120
+}

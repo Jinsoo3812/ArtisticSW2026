@@ -173,6 +173,9 @@ private:
 	bool bHasObservedPOV = false;
 	FMinimalViewInfo LastOwnAlivePOV;
 	FMinimalViewInfo FrozenOwnDeathPOV;
+	TWeakObjectPtr<ABasePlayer> DeathCameraCorpse;
+	FVector DeathCameraWorldOffset = FVector::ZeroVector;
+	bool bHasCorpseCameraOffset = false;
 	int32 PublishRestoreGeneration = 0;
 	int32 PublishObservationGeneration = 0;
 	uint32 CameraSequence = 0;

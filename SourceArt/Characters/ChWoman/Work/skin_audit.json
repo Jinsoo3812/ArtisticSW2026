@@ -1,0 +1,9 @@
+{
+  "core_axis_error_deg": 0.0,
+  "degenerate_faces": [],
+  "zero_normal_vertices": 0,
+  "weight_min": 0.9999999557621777,
+  "weight_max": 1.0000000447034836,
+  "unweighted": 0,
+  "max_influence": 6
+}

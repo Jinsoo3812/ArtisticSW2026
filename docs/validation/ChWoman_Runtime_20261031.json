@@ -1,0 +1,1000 @@
+{
+  "date": "2026-10-31",
+  "runtime": "real standalone PIE, saved production female BP/ABP, production controller, no runtime mesh/ABP override",
+  "mesh": "/Game/jiwon/Characters/ChWomanUE5/SKM_ChWoman_UE5.SKM_ChWoman_UE5",
+  "animation": "/Game/Anim_Logic/ABP_Player_Woman.ABP_Player_Woman_C",
+  "post_process": "/Game/jiwon/Characters/ChWomanUE5/ABP_ChWoman_FinalMarkers.ABP_ChWoman_FinalMarkers_C",
+  "controller": "/Game/Blueprints/Player/BP_BasePlayerController.BP_BasePlayerController_C",
+  "cases": [
+    {
+      "name": "saved_woman_30",
+      "requested_fps": 30,
+      "frames": 779,
+      "sampled_seconds": 26.130149591714144,
+      "min_dt": 0.03333339840173721,
+      "max_dt": 0.18600769340991974,
+      "phase_stats": {
+        "idle": {
+          "frames": 44,
+          "active_mm_frames": 44,
+          "invalid_active_mm_frames": 2,
+          "max_speed": 0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.04198651089906491
+        },
+        "walk": {
+          "frames": 90,
+          "active_mm_frames": 5,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 175.00000000000023,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.2936858243333411
+        },
+        "run": {
+          "frames": 90,
+          "active_mm_frames": 90,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.27811539549429654
+        },
+        "stop": {
+          "frames": 45,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17272894821129725
+        },
+        "strafe_right": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.00000000000085,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17381211677420438
+        },
+        "backward": {
+          "frames": 60,
+          "active_mm_frames": 59,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0000000000033,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17391735082437876
+        },
+        "turn_in_place": {
+          "frames": 60,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.15337528552064583
+        },
+        "sprint": {
+          "frames": 90,
+          "active_mm_frames": 19,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 700.0000000000068,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17318102044968242
+        },
+        "jump_forward": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 848.7679636949808,
+          "air_frames": 30,
+          "max_limb_length_error_cm": 0.1732627782315035
+        },
+        "land_stop": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17324867097740082
+        },
+        "jump_side": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 693.1114494119074,
+          "air_frames": 30,
+          "max_limb_length_error_cm": 0.17313408040417855
+        },
+        "final_idle": {
+          "frames": 60,
+          "active_mm_frames": 8,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17290224662844622
+        }
+      },
+      "nonfinite": 0,
+      "max_radius_cm": 145.14639698162517,
+      "max_scale_error": 0.06818178837949584,
+      "max_limb_length_error_cm": 0.2936858243333411,
+      "max_local_rotation_step_deg": 74.2408204687669,
+      "max_deform_rotation_step_deg": 56.412356372167345,
+      "max_component_rotation_step_deg": 93.53283406046243,
+      "max_ik_component_rotation_step_deg": 90.0000025044782,
+      "max_rotation_speed_deg_s": 2227.2202664129723,
+      "outliers": [],
+      "helper_errors": {
+        "ik_hand_l": 6.444038954788686e-14,
+        "ik_hand_r": 6.073478075051767e-14,
+        "ik_foot_l": 6.434238129413513e-14,
+        "ik_foot_r": 8.416632894979254e-14
+      },
+      "helper_rotation_errors": {
+        "ik_hand_l": 2.4148365394514667e-06,
+        "ik_hand_r": 2.4148365394514667e-06,
+        "ik_foot_l": 2.4148365394514667e-06,
+        "ik_foot_r": 2.4148365394514667e-06
+      },
+      "max_deform_scale_error": 2.300739288330078e-05,
+      "max_scale_detail": {
+        "bone": "ik_foot_l",
+        "phase": "idle",
+        "scale": [
+          0.9318182116205042,
+          0.9318182414228265,
+          0.9318182116205042
+        ]
+      },
+      "max_component_rotation_detail": {
+        "bone": "pinky_03_l",
+        "phase": "idle",
+        "angle": 93.53283406046243,
+        "dt": 0.03333350270986557
+      },
+      "max_rotation_step_detail": {
+        "bone": "ik_hand_l",
+        "phase": "jump_forward",
+        "phase_elapsed": 0.06666680052876472,
+        "angle": 74.2408204687669,
+        "dt": 0.03333339840173721
+      },
+      "databases": [
+        "None",
+        "/Game/Anim_Logic/PSD/PSD_Idle_Relaxed.PSD_Idle_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Run_Locomotion_Relaxed.PSD_Run_Locomotion_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Run_Tnasition_Relaxed.PSD_Run_Tnasition_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion_Realxed.PSD_Sprint_Locomotion_Realxed"
+      ],
+      "animations": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Loop.M_Relaxed_Stand_Idle_Loop",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_F.M_Relaxed_Run_Loop_F",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_BR.M_Relaxed_Run_Loop_BR",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_B_Rfoot.M_Relaxed_Run_Box_RL_B_Rfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_B.M_Relaxed_Run_Loop_B",
+        "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Relaxed_Sprint_Loop_F.M_Relaxed_Sprint_Loop_F"
+      ],
+      "effective_fps": 29.774035440145486
+    },
+    {
+      "name": "saved_woman_60",
+      "requested_fps": 60,
+      "frames": 1590,
+      "sampled_seconds": 26.483508199453354,
+      "min_dt": 0.016666699200868607,
+      "max_dt": 0.016678299754858017,
+      "phase_stats": {
+        "idle": {
+          "frames": 120,
+          "active_mm_frames": 120,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.04198651089907912
+        },
+        "walk": {
+          "frames": 180,
+          "active_mm_frames": 11,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 175.00000000000023,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.29361817583731664
+        },
+        "run": {
+          "frames": 180,
+          "active_mm_frames": 180,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.2781196235252956
+        },
+        "stop": {
+          "frames": 90,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.1727289460026249
+        },
+        "strafe_right": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17379027793330692
+        },
+        "backward": {
+          "frames": 120,
+          "active_mm_frames": 119,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0000000000067,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.2731710298731045
+        },
+        "turn_in_place": {
+          "frames": 120,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.30551844705690456
+        },
+        "sprint": {
+          "frames": 180,
+          "active_mm_frames": 46,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 700.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17332199988959474
+        },
+        "jump_forward": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 858.1095306704002,
+          "air_frames": 61,
+          "max_limb_length_error_cm": 0.17326278183114852
+        },
+        "land_stop": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17272894293898133
+        },
+        "jump_side": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 704.5234047201498,
+          "air_frames": 61,
+          "max_limb_length_error_cm": 0.17313406861696734
+        },
+        "final_idle": {
+          "frames": 120,
+          "active_mm_frames": 25,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.1703559573967759
+        }
+      },
+      "nonfinite": 0,
+      "max_radius_cm": 144.9552584463007,
+      "max_scale_error": 0.08761274382355566,
+      "max_limb_length_error_cm": 0.30551844705690456,
+      "max_local_rotation_step_deg": 45.000001252239066,
+      "max_deform_rotation_step_deg": 45.000001252239066,
+      "max_component_rotation_step_deg": 90.0000025044782,
+      "max_ik_component_rotation_step_deg": 90.0000025044782,
+      "max_rotation_speed_deg_s": 2699.9785103455024,
+      "outliers": [],
+      "helper_errors": {
+        "ik_hand_l": 7.833235178414685e-14,
+        "ik_hand_r": 5.4693331884225857e-14,
+        "ik_foot_l": 7.213408716298969e-14,
+        "ik_foot_r": 8.733102101588383e-14
+      },
+      "helper_rotation_errors": {
+        "ik_hand_l": 2.9575586669421963e-06,
+        "ik_hand_r": 2.4148365394514667e-06,
+        "ik_foot_l": 2.4148365394514667e-06,
+        "ik_foot_r": 2.4148365394514667e-06
+      },
+      "max_deform_scale_error": 0.006789837865930792,
+      "max_scale_detail": {
+        "bone": "ik_foot_l",
+        "phase": "idle",
+        "scale": [
+          0.9123872561764443,
+          0.9123872604989458,
+          0.9123872561764443
+        ]
+      },
+      "max_component_rotation_detail": {
+        "bone": "ik_foot_root",
+        "phase": "jump_side",
+        "angle": 90.0000025044782,
+        "dt": 0.016666799783706665
+      },
+      "max_rotation_step_detail": {
+        "bone": "root",
+        "phase": "jump_side",
+        "phase_elapsed": 0.05000029876828194,
+        "angle": 45.000001252239066,
+        "dt": 0.016666799783706665
+      },
+      "databases": [
+        "/Game/Anim_Logic/PSD/PSD_Idle_Relaxed.PSD_Idle_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Run_Locomotion_Relaxed.PSD_Run_Locomotion_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Run_Tnasition_Relaxed.PSD_Run_Tnasition_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion_Realxed.PSD_Sprint_Locomotion_Realxed"
+      ],
+      "animations": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Loop.M_Relaxed_Stand_Idle_Loop",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_F.M_Relaxed_Run_Loop_F",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_BR.M_Relaxed_Run_Loop_BR",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_B_Lfoot.M_Relaxed_Run_Box_RL_B_Lfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_B.M_Relaxed_Run_Loop_B",
+        "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Relaxed_Sprint_Loop_F.M_Relaxed_Sprint_Loop_F"
+      ],
+      "effective_fps": 59.99960383016018
+    },
+    {
+      "name": "saved_woman_120",
+      "requested_fps": 120,
+      "frames": 3171,
+      "sampled_seconds": 26.520778700709343,
+      "min_dt": 0.008333399891853333,
+      "max_dt": 0.022664397954940796,
+      "phase_stats": {
+        "idle": {
+          "frames": 238,
+          "active_mm_frames": 238,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.04198651089908978
+        },
+        "walk": {
+          "frames": 359,
+          "active_mm_frames": 23,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 175.0000000000017,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.28216866788216066
+        },
+        "run": {
+          "frames": 358,
+          "active_mm_frames": 358,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.00000000000006,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.2747808883768741
+        },
+        "stop": {
+          "frames": 179,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17270367187693836
+        },
+        "strafe_right": {
+          "frames": 240,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.00000000000085,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.1737796080804408
+        },
+        "backward": {
+          "frames": 240,
+          "active_mm_frames": 239,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0000000000137,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.2731635999957902
+        },
+        "turn_in_place": {
+          "frames": 239,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.29527841947172107
+        },
+        "sprint": {
+          "frames": 359,
+          "active_mm_frames": 93,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 700.0000000000273,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17331591221254783
+        },
+        "jump_forward": {
+          "frames": 240,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 861.063715703041,
+          "air_frames": 122,
+          "max_limb_length_error_cm": 0.1732627876040702
+        },
+        "land_stop": {
+          "frames": 239,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17255484765079032
+        },
+        "jump_side": {
+          "frames": 240,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 705.9044984964215,
+          "air_frames": 122,
+          "max_limb_length_error_cm": 0.1728570359505568
+        },
+        "final_idle": {
+          "frames": 240,
+          "active_mm_frames": 53,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.1704134286876453
+        }
+      },
+      "nonfinite": 0,
+      "max_radius_cm": 144.95375085097777,
+      "max_scale_error": 0.08764392251226194,
+      "max_limb_length_error_cm": 0.29527841947172107,
+      "max_local_rotation_step_deg": 45.2822813245077,
+      "max_deform_rotation_step_deg": 45.000001252239066,
+      "max_component_rotation_step_deg": 90.0000025044782,
+      "max_ik_component_rotation_step_deg": 90.0000025044782,
+      "max_rotation_speed_deg_s": 5433.764774122078,
+      "outliers": [],
+      "helper_errors": {
+        "ik_hand_l": 9.486477326574551e-14,
+        "ik_hand_r": 5.0274350720104997e-14,
+        "ik_foot_l": 7.706707309486327e-14,
+        "ik_foot_r": 1.004388035371106e-13
+      },
+      "helper_rotation_errors": {
+        "ik_hand_l": 2.4148365394514667e-06,
+        "ik_hand_r": 2.4148365394514667e-06,
+        "ik_foot_l": 2.4148365394514667e-06,
+        "ik_foot_r": 2.9575586669421963e-06
+      },
+      "max_deform_scale_error": 0.00678958111745942,
+      "max_scale_detail": {
+        "bone": "ik_foot_l",
+        "phase": "idle",
+        "scale": [
+          0.9123560774877381,
+          0.9123560817693549,
+          0.9123560774877381
+        ]
+      },
+      "max_component_rotation_detail": {
+        "bone": "ik_foot_root",
+        "phase": "jump_side",
+        "angle": 90.0000025044782,
+        "dt": 0.008333500474691391
+      },
+      "max_rotation_step_detail": {
+        "bone": "ik_foot_l",
+        "phase": "jump_side",
+        "phase_elapsed": 0.025000497698783875,
+        "angle": 45.2822813245077,
+        "dt": 0.008333500474691391
+      },
+      "databases": [
+        "/Game/Anim_Logic/PSD/PSD_Idle_Relaxed.PSD_Idle_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Run_Locomotion_Relaxed.PSD_Run_Locomotion_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Run_Tnasition_Relaxed.PSD_Run_Tnasition_Relaxed",
+        "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion_Realxed.PSD_Sprint_Locomotion_Realxed"
+      ],
+      "animations": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Loop.M_Relaxed_Stand_Idle_Loop",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_F.M_Relaxed_Run_Loop_F",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_BR.M_Relaxed_Run_Loop_BR",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Box_RL_B_Lfoot.M_Relaxed_Run_Box_RL_B_Lfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Loop_B.M_Relaxed_Run_Loop_B",
+        "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Relaxed_Sprint_Loop_F.M_Relaxed_Sprint_Loop_F"
+      ],
+      "effective_fps": 119.52891865559035
+    }
+  ],
+  "controls": {
+    "limbs": {
+      "arm_l": {
+        "fk_to_ik": {
+          "max_head_error_cm": 0.0009264787235885692,
+          "max_rotation_error_deg": 0.0
+        },
+        "goal_error_cm": 2.33240065611877e-05,
+        "length_error_cm": 7.1760582642799164e-06,
+        "ik_to_fk": {
+          "max_head_error_cm": 2.7059689192779177e-05,
+          "max_rotation_error_deg": 0.0
+        }
+      },
+      "arm_r": {
+        "fk_to_ik": {
+          "max_head_error_cm": 0.0009710545661834801,
+          "max_rotation_error_deg": 0.0
+        },
+        "goal_error_cm": 0.00015485920199786546,
+        "length_error_cm": 6.677006262056917e-05,
+        "ik_to_fk": {
+          "max_head_error_cm": 3.3527612686157227e-05,
+          "max_rotation_error_deg": 0.0
+        }
+      },
+      "leg_l": {
+        "fk_to_ik": {
+          "max_head_error_cm": 0.0027892993629129352,
+          "max_rotation_error_deg": 0.0
+        },
+        "goal_error_cm": 0.000603997205749893,
+        "length_error_cm": 1.911349268302054e-05,
+        "ik_to_fk": {
+          "max_head_error_cm": 1.2067008269388615e-05,
+          "max_rotation_error_deg": 0.0
+        }
+      },
+      "leg_r": {
+        "fk_to_ik": {
+          "max_head_error_cm": 0.0028922501320334045,
+          "max_rotation_error_deg": 0.0
+        },
+        "goal_error_cm": 0.0005954351867129586,
+        "length_error_cm": 1.832267140788879e-05,
+        "ik_to_fk": {
+          "max_head_error_cm": 3.557603474352754e-05,
+          "max_rotation_error_deg": 0.0
+        }
+      }
+    },
+    "extra_controls": {
+      "ROLL_heel_l": {
+        "max_skin_motion_cm": 4.381832947107941
+      },
+      "ROLL_toe_r": {
+        "max_skin_motion_cm": 13.14100538068878
+      },
+      "FK_index_01_l": {
+        "max_skin_motion_cm": 0.30063728920504573
+      },
+      "FK_cc_base_l_eye": {
+        "max_skin_motion_cm": 0.612514231364892
+      },
+      "LOOK_eyes": {
+        "max_skin_motion_cm": 0.6125404736972916
+      }
+    },
+    "root_head_error_cm": 0.0,
+    "marker_error_cm": 0.0,
+    "independent_weapon_head_error_cm": 1.2731557704981462e-05,
+    "passed": true
+  },
+  "bake_blender": {
+    "samples": [
+      {
+        "source_frame": 1,
+        "import_frame": 2,
+        "max_head_error_cm": 0.00021153679718496516,
+        "worst_head": "cc_base_r_bigtoe1",
+        "max_rotation_error_deg": 0.05595291023658669
+      },
+      {
+        "source_frame": 4,
+        "import_frame": 5,
+        "max_head_error_cm": 0.00022112045744110024,
+        "worst_head": "cc_base_r_bigtoe1",
+        "max_rotation_error_deg": 0.03956468205889273
+      },
+      {
+        "source_frame": 8,
+        "import_frame": 9,
+        "max_head_error_cm": 0.00022686253272091535,
+        "worst_head": "cc_base_r_bigtoe1",
+        "max_rotation_error_deg": 0.05595291023658669
+      }
+    ],
+    "bone_count": 120,
+    "import_animation_offset_frames": 1,
+    "action_range": [
+      2.0,
+      9.0
+    ]
+  },
+  "bake_unreal": {
+    "asset": "/Game/Developers/ChWomanRigValidation/AS_ControlRig_Bake_Validation.AS_ControlRig_Bake_Validation",
+    "duration": 0.2800000011920929,
+    "samples": [
+      {
+        "frame": 1,
+        "worst_bone": "cc_base_r_bigtoe1",
+        "max_head_error_cm": 0.0017824767605801133
+      },
+      {
+        "frame": 4,
+        "worst_bone": "cc_base_r_bigtoe1",
+        "max_head_error_cm": 0.001782699755305849
+      },
+      {
+        "frame": 8,
+        "worst_bone": "cc_base_r_indextoe1",
+        "max_head_error_cm": 0.0017820787514393683
+      }
+    ],
+    "source_fps": 25.0,
+    "passed": true
+  },
+  "ue_roundtrip": {
+    "blender_bones": 120,
+    "ue_fbx_blender_bones": 119,
+    "root_note": "UE FBX represents root as the armature object, not a missing root.",
+    "missing_except_object_root": [],
+    "max_vertex_nearest_delta_cm": 1.2644053981603065e-05,
+    "max_original_surface_delta_cm": 1.2644053981603065e-05,
+    "max_bone_head_delta_cm": 0.00027600554896175497,
+    "max_axis_angle_deg": 0.05595291023658669,
+    "mesh_height_cm": 160.04281044006348,
+    "root_object_scale": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "eye_binding": {
+    "eye_vertices": 818,
+    "per_side": {
+      "l": 409,
+      "r": 409
+    },
+    "new_face_weights": [
+      "cc_base_l_eye",
+      "cc_base_r_eye"
+    ],
+    "jaw_lips_morphs": "not authored; original facial reference bones preserved"
+  },
+  "source_scale": {
+    "animation": "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Relaxed_Run_Stop_B_Lfoot.M_Relaxed_Run_Stop_B_Lfoot",
+    "samples": [
+      {
+        "target": "raw_source",
+        "proportion": 0,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_twist_02_r": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      {
+        "target": "raw_source",
+        "proportion": 0.25,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            0.9999983906745911,
+            0.9999983906745911,
+            0.9999983906745911
+          ],
+          "calf_twist_02_r": [
+            0.9999983906745911,
+            0.9999983906745911,
+            0.9999983906745911
+          ]
+        }
+      },
+      {
+        "target": "raw_source",
+        "proportion": 0.5,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            0.9977561235427856,
+            0.9977561235427856,
+            0.9977561235427856
+          ],
+          "calf_twist_02_r": [
+            0.9977561235427856,
+            0.9977561235427856,
+            0.9977561235427856
+          ]
+        }
+      },
+      {
+        "target": "raw_source",
+        "proportion": 0.75,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            1.00240957736969,
+            1.00240957736969,
+            1.00240957736969
+          ],
+          "calf_twist_02_r": [
+            1.00240957736969,
+            1.00240957736969,
+            1.00240957736969
+          ]
+        }
+      },
+      {
+        "target": "raw_source",
+        "proportion": 1,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_twist_02_r": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      {
+        "target": "compatible_woman",
+        "proportion": 0,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_twist_02_r": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      {
+        "target": "compatible_woman",
+        "proportion": 0.25,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            0.9999983906745911,
+            0.9999983906745911,
+            0.9999983906745911
+          ],
+          "calf_twist_02_r": [
+            0.9999983906745911,
+            0.9999983906745911,
+            0.9999983906745911
+          ]
+        }
+      },
+      {
+        "target": "compatible_woman",
+        "proportion": 0.5,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            0.9977561235427856,
+            0.9977561235427856,
+            0.9977561235427856
+          ],
+          "calf_twist_02_r": [
+            0.9977561235427856,
+            0.9977561235427856,
+            0.9977561235427856
+          ]
+        }
+      },
+      {
+        "target": "compatible_woman",
+        "proportion": 0.75,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            1.00240957736969,
+            1.00240957736969,
+            1.00240957736969
+          ],
+          "calf_twist_02_r": [
+            1.00240957736969,
+            1.00240957736969,
+            1.00240957736969
+          ]
+        }
+      },
+      {
+        "target": "compatible_woman",
+        "proportion": 1,
+        "scales": {
+          "thigh_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "thigh_twist_01_r": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "calf_twist_02_r": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      }
+    ]
+  },
+  "socket_reimport": {
+    "passed": true,
+    "before_count": 26,
+    "after_count": 13,
+    "checks": [
+      {
+        "operation": "repeat ensure",
+        "iteration": 0,
+        "socket_count": 13
+      },
+      {
+        "operation": "repeat ensure",
+        "iteration": 1,
+        "socket_count": 13
+      },
+      {
+        "operation": "repeat ensure",
+        "iteration": 2,
+        "socket_count": 13
+      },
+      {
+        "operation": "actual FBX reimport",
+        "iteration": 0,
+        "socket_count": 13
+      },
+      {
+        "operation": "actual FBX reimport",
+        "iteration": 1,
+        "socket_count": 13
+      }
+    ],
+    "male_socket_count": 13,
+    "scope": "only identical mesh-local duplicates removed; all socket transforms preserved"
+  },
+  "ue_eye_weights": {
+    "passed": true,
+    "ue_exported_weighted_eye_vertices": {
+      "l": 409,
+      "r": 409
+    },
+    "source": "latest actual Unreal mesh FBX export after repeated reimport"
+  },
+  "automation_successes": [
+    "PlayerGraphContract",
+    "ShipContext",
+    "AuthoredBlendStackContract",
+    "AuthoredChooserContinuity",
+    "DirectionStability",
+    "EngineWarpingBoundary",
+    "PlaybackContinuity",
+    "RapidDirectionPolicy",
+    "WarpingRuntimePolicy",
+    "CapturedGait",
+    "UncookedGameGraphLoads",
+    "AimInterruptionLifecycle",
+    "IndependentFlight",
+    "ShipPointVelocity"
+  ],
+  "automation_failures": [],
+  "fbx_sha256": "37A67B3F0FA490DBE5BB1247F4E4C6E8FDB304A40DC27B3BC5AE46F85BA3FDE6",
+  "limitations": [
+    "standalone fixture, full multiplayer game untested",
+    "weapon contact/all attack montages not visually approved",
+    "auto-fit physics, ragdoll not tuned",
+    "LOD/cook/packaging untested",
+    "jaw/lips/blinks/morph facial rig not authored",
+    "custom authoring rig, not full Rigify/UE Control Rig implementation",
+    "source animation missing experimental DB/notify reference warnings remain",
+    "75 degree local non-IK rotation candidate threshold, not an all-motion guarantee",
+    "non-unit unweighted helper scale preserved; twist scale varies up to 0.679 percent in runtime"
+  ]
+}

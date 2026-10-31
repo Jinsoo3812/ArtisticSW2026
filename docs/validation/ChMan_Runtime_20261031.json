@@ -1,0 +1,507 @@
+{
+  "date": "2026-10-31",
+  "runtime": "real standalone PIE, production saved male BP/ABP and controller",
+  "controller": "/Game/Blueprints/Player/BP_BasePlayerController.BP_BasePlayerController_C",
+  "mesh": "/Game/jiwon/Characters/ChManUE5/SKM_ChMan_UE5.SKM_ChMan_UE5",
+  "animation": "/Game/Anim_Logic/ABP_Player_Man.ABP_Player_Man_C",
+  "post_process": "/Game/jiwon/Characters/ChManUE5/ABP_ChMan_FinalMarkers.ABP_ChMan_FinalMarkers_C",
+  "errors": [],
+  "cases": [
+    {
+      "name": "dry_final_30",
+      "requested_fps": 30,
+      "frames": 779,
+      "sampled_seconds": 26.120329197496176,
+      "min_dt": 0.03333339840173721,
+      "max_dt": 0.17495480179786682,
+      "phase_stats": {
+        "idle": {
+          "frames": 44,
+          "active_mm_frames": 44,
+          "invalid_active_mm_frames": 2,
+          "max_speed": 0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.05252644237007331
+        },
+        "walk": {
+          "frames": 90,
+          "active_mm_frames": 17,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 175.00000000000085,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19663056973835324
+        },
+        "run": {
+          "frames": 90,
+          "active_mm_frames": 90,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19668128231799642
+        },
+        "stop": {
+          "frames": 45,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.1966675833748539
+        },
+        "strafe_right": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19688741676570487
+        },
+        "backward": {
+          "frames": 60,
+          "active_mm_frames": 59,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0000000000032,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19020532071883167
+        },
+        "turn_in_place": {
+          "frames": 60,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19292288483543274
+        },
+        "sprint": {
+          "frames": 90,
+          "active_mm_frames": 19,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 700.0000000000068,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19730234758208098
+        },
+        "jump_forward": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 848.7657483384885,
+          "air_frames": 30,
+          "max_limb_length_error_cm": 0.19660045978680074
+        },
+        "land_stop": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19611629600230884
+        },
+        "jump_side": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 693.1668341013454,
+          "air_frames": 30,
+          "max_limb_length_error_cm": 0.19635291790161347
+        },
+        "final_idle": {
+          "frames": 60,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.17792135067163883
+        }
+      },
+      "nonfinite": 0,
+      "max_radius_cm": 164.85360064028873,
+      "max_scale_error": 1.9788742065429688e-05,
+      "max_limb_length_error_cm": 0.19730234758208098,
+      "max_local_rotation_step_deg": 98.0560861021551,
+      "max_deform_rotation_step_deg": 72.44091631949284,
+      "max_component_rotation_step_deg": 79.22512134183114,
+      "max_ik_component_rotation_step_deg": 71.55484976584343,
+      "max_rotation_speed_deg_s": 2941.66763558076,
+      "outliers": [],
+      "helper_errors": {
+        "ik_hand_l": 1.3145040611561853e-13,
+        "ik_hand_r": 9.559374836295625e-14,
+        "ik_foot_l": 9.565974336450907e-14,
+        "ik_foot_r": 1.0748059869602744e-13
+      },
+      "helper_rotation_errors": {
+        "ik_hand_l": 2.4148365394514667e-06,
+        "ik_hand_r": 2.4148365394514667e-06,
+        "ik_foot_l": 1.7075472925031877e-06,
+        "ik_foot_r": 1.7075472925031877e-06
+      },
+      "max_component_rotation_detail": {
+        "bone": "thumb_01_l",
+        "phase": "jump_forward",
+        "angle": 79.22512134183114,
+        "dt": 0.03333350270986557
+      },
+      "max_rotation_step_detail": {
+        "bone": "ik_hand_l",
+        "phase": "jump_forward",
+        "phase_elapsed": 0.06666700169444084,
+        "angle": 98.0560861021551,
+        "dt": 0.03333350270986557
+      },
+      "animations": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F.M_Neutral_Run_Loop_F",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_BR.M_Neutral_Run_Loop_BR",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Diamond_BR_BL_Rfoot.M_Neutral_Run_Diamond_BR_BL_Rfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_B_LL_Rfoot.M_Neutral_Run_Box_B_LL_Rfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_B_LR_Rfoot.M_Neutral_Run_Box_B_LR_Rfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_B.M_Neutral_Run_Loop_B",
+        "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Neutral_Sprint_Loop_F.M_Neutral_Sprint_Loop_F"
+      ],
+      "databases": [
+        "None",
+        "/Game/Anim_Logic/PSD/PSD_Idle.PSD_Idle",
+        "/Game/Anim_Logic/PSD/PSD_Run_Locomotion.PSD_Run_Locomotion",
+        "/Game/Anim_Logic/PSD/PSD_Run_Tnasition.PSD_Run_Tnasition",
+        "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion.PSD_Sprint_Locomotion"
+      ],
+      "effective_sample_fps": 29.785229509074373
+    },
+    {
+      "name": "dry_final_60",
+      "requested_fps": 60,
+      "frames": 1590,
+      "sampled_seconds": 26.483643598854542,
+      "min_dt": 0.016666699200868607,
+      "max_dt": 0.016769200563430786,
+      "phase_stats": {
+        "idle": {
+          "frames": 120,
+          "active_mm_frames": 120,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.05252644237008752
+        },
+        "walk": {
+          "frames": 180,
+          "active_mm_frames": 35,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 175.00000000000023,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.20055978638842475
+        },
+        "run": {
+          "frames": 180,
+          "active_mm_frames": 180,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19666404011528726
+        },
+        "stop": {
+          "frames": 90,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19666408841651872
+        },
+        "strafe_right": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.00000000000085,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19686763678028996
+        },
+        "backward": {
+          "frames": 120,
+          "active_mm_frames": 119,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.00000000000693,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19774676557940296
+        },
+        "turn_in_place": {
+          "frames": 120,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.18529706757731645
+        },
+        "sprint": {
+          "frames": 180,
+          "active_mm_frames": 40,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 700.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.1967615161432903
+        },
+        "jump_forward": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 858.1098136313009,
+          "air_frames": 61,
+          "max_limb_length_error_cm": 0.1963476634319008
+        },
+        "land_stop": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19666410816175528
+        },
+        "jump_side": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 704.5220261328957,
+          "air_frames": 61,
+          "max_limb_length_error_cm": 0.19635291690374856
+        },
+        "final_idle": {
+          "frames": 120,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.18903006124994448
+        }
+      },
+      "nonfinite": 0,
+      "max_radius_cm": 179.27924159482066,
+      "max_scale_error": 2.002716064453125e-05,
+      "max_limb_length_error_cm": 0.20055978638842475,
+      "max_local_rotation_step_deg": 39.33645393100539,
+      "max_deform_rotation_step_deg": 39.068181714100554,
+      "max_component_rotation_step_deg": 35.84974429320589,
+      "max_ik_component_rotation_step_deg": 31.694653493825015,
+      "max_rotation_speed_deg_s": 2360.1683851425637,
+      "outliers": [],
+      "helper_errors": {
+        "ik_hand_l": 1.3406493525361332e-13,
+        "ik_hand_r": 8.10921975650084e-14,
+        "ik_foot_l": 8.257671381648961e-14,
+        "ik_foot_r": 9.45482510571428e-14
+      },
+      "helper_rotation_errors": {
+        "ik_hand_l": 2.9575586669421963e-06,
+        "ik_hand_r": 2.4148365394514667e-06,
+        "ik_foot_l": 2.4148365394514667e-06,
+        "ik_foot_r": 2.4148365394514667e-06
+      },
+      "max_component_rotation_detail": {
+        "bone": "thigh_l",
+        "phase": "jump_forward",
+        "angle": 35.84974429320589,
+        "dt": 0.016666799783706665
+      },
+      "max_rotation_step_detail": {
+        "bone": "ik_hand_l",
+        "phase": "walk",
+        "phase_elapsed": 0.08333379775285721,
+        "angle": 39.33645393100539,
+        "dt": 0.016666799783706665
+      },
+      "animations": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F.M_Neutral_Run_Loop_F",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_BR.M_Neutral_Run_Loop_BR",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RR_B_Lfoot.M_Neutral_Run_Box_RR_B_Lfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_B.M_Neutral_Run_Loop_B",
+        "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Neutral_Sprint_Loop_F.M_Neutral_Sprint_Loop_F"
+      ],
+      "databases": [
+        "/Game/Anim_Logic/PSD/PSD_Idle.PSD_Idle",
+        "/Game/Anim_Logic/PSD/PSD_Run_Locomotion.PSD_Run_Locomotion",
+        "/Game/Anim_Logic/PSD/PSD_Run_Tnasition.PSD_Run_Tnasition",
+        "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion.PSD_Sprint_Locomotion"
+      ],
+      "effective_sample_fps": 59.999297078168155
+    },
+    {
+      "name": "dry_final_120",
+      "requested_fps": 120,
+      "frames": 3168,
+      "sampled_seconds": 26.509872797876596,
+      "min_dt": 0.008333399891853333,
+      "max_dt": 0.02154430001974106,
+      "phase_stats": {
+        "idle": {
+          "frames": 238,
+          "active_mm_frames": 238,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.05252644237009463
+        },
+        "walk": {
+          "frames": 359,
+          "active_mm_frames": 71,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 175.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.20268654388121377
+        },
+        "run": {
+          "frames": 357,
+          "active_mm_frames": 357,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19637591916629304
+        },
+        "stop": {
+          "frames": 179,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19666410563956305
+        },
+        "strafe_right": {
+          "frames": 239,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.00000000000006,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19685436154950509
+        },
+        "backward": {
+          "frames": 239,
+          "active_mm_frames": 238,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0000000000135,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19774826329487638
+        },
+        "turn_in_place": {
+          "frames": 240,
+          "active_mm_frames": 1,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.1929228922774655
+        },
+        "sprint": {
+          "frames": 359,
+          "active_mm_frames": 82,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 700.0000000000273,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19651492526065795
+        },
+        "jump_forward": {
+          "frames": 239,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 861.1202173513301,
+          "air_frames": 122,
+          "max_limb_length_error_cm": 0.19617313612616982
+        },
+        "land_stop": {
+          "frames": 240,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19666759879633844
+        },
+        "jump_side": {
+          "frames": 239,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 708.021557160599,
+          "air_frames": 122,
+          "max_limb_length_error_cm": 0.1963529656317533
+        },
+        "final_idle": {
+          "frames": 240,
+          "active_mm_frames": 0,
+          "invalid_active_mm_frames": 0,
+          "max_speed": 500.0,
+          "air_frames": 0,
+          "max_limb_length_error_cm": 0.19146500150684176
+        }
+      },
+      "nonfinite": 0,
+      "max_radius_cm": 179.2831416044683,
+      "max_scale_error": 2.002716064453125e-05,
+      "max_limb_length_error_cm": 0.20268654388121377,
+      "max_local_rotation_step_deg": 24.675815273679024,
+      "max_deform_rotation_step_deg": 24.675815273679024,
+      "max_component_rotation_step_deg": 19.523612465583216,
+      "max_ik_component_rotation_step_deg": 19.523612465583142,
+      "max_rotation_speed_deg_s": 2961.03844340308,
+      "outliers": [],
+      "helper_errors": {
+        "ik_hand_l": 1.300991913211686e-13,
+        "ik_hand_r": 9.664426065637204e-14,
+        "ik_foot_l": 8.585520542392951e-14,
+        "ik_foot_r": 9.479822483716542e-14
+      },
+      "helper_rotation_errors": {
+        "ik_hand_l": 2.4148365394514667e-06,
+        "ik_hand_r": 2.4148365394514667e-06,
+        "ik_foot_l": 2.4148365394514667e-06,
+        "ik_foot_r": 2.4148365394514667e-06
+      },
+      "max_component_rotation_detail": {
+        "bone": "cc_base_r_toebasesharebone",
+        "phase": "sprint",
+        "angle": 19.523612465583216,
+        "dt": 0.008333500474691391
+      },
+      "max_rotation_step_detail": {
+        "bone": "calf_r",
+        "phase": "stop",
+        "phase_elapsed": 0.03333370015025139,
+        "angle": 24.675815273679024,
+        "dt": 0.008333500474691391
+      },
+      "animations": [
+        "/Game/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F.M_Neutral_Run_Loop_F",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_BR.M_Neutral_Run_Loop_BR",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Box_RR_B_Lfoot.M_Neutral_Run_Box_RR_B_Lfoot",
+        "/Game/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_B.M_Neutral_Run_Loop_B",
+        "/Game/Characters/UEFN_Mannequin/Animations/Sprint/M_Neutral_Sprint_Loop_F.M_Neutral_Sprint_Loop_F"
+      ],
+      "databases": [
+        "/Game/Anim_Logic/PSD/PSD_Idle.PSD_Idle",
+        "/Game/Anim_Logic/PSD/PSD_Run_Locomotion.PSD_Run_Locomotion",
+        "/Game/Anim_Logic/PSD/PSD_Run_Tnasition.PSD_Run_Tnasition",
+        "/Game/Anim_Logic/PSD/PSD_Sprint_Locomotion.PSD_Sprint_Locomotion"
+      ],
+      "effective_sample_fps": 119.46492629921907
+    }
+  ],
+  "automation_successes": [
+    "PlayerGraphContract",
+    "ShipContext",
+    "AuthoredBlendStackContract",
+    "AuthoredChooserContinuity",
+    "DirectionStability",
+    "EngineWarpingBoundary",
+    "PlaybackContinuity",
+    "RapidDirectionPolicy",
+    "WarpingRuntimePolicy",
+    "CapturedGait",
+    "UncookedGameGraphLoads",
+    "AimInterruptionLifecycle",
+    "IndependentFlight",
+    "ShipPointVelocity"
+  ],
+  "automation_failures": [],
+  "limitations": [
+    "standalone fixture, not full multiplayer game",
+    "weapon contact/all attack montages not visually approved",
+    "auto-fit physics, ragdoll not tuned",
+    "LOD/cook/packaging untested",
+    "source animation missing experimental DB/notify reference warnings remain",
+    "75 degree local rotation per-frame candidate threshold, not all-motion guarantee"
+  ]
+}

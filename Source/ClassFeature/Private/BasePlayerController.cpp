@@ -1817,6 +1817,7 @@ void ABasePlayerController::ApplyLocalDeathFlow()
  {
   UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=LocalDeathLock Controller=%s Waiting=%d GameOver=%d HasOwnPOV=%d OwnLocation=%s Pawn=%s"), *GetName(), bWaiting, bGameOver, bHasOwnPOV, *LastOwnAlivePOV.Location.ToString(), *GetNameSafe(GetPawn()));
   FrozenOwnDeathPOV = bHasOwnPOV ? LastOwnAlivePOV : FMinimalViewInfo();
+  DeathCameraCorpse.Reset(); bHasCorpseCameraOffset = false;
   if (!bHasOwnPOV && GetLifeCharacter())
   { FrozenOwnDeathPOV.Location = GetLifeCharacter()->GetActorLocation() + FVector(0, 0, 160); FrozenOwnDeathPOV.Rotation = GetControlRotation(); }
   bSavedAutoCamera = bAutoManageActiveCameraTarget; bAutoManageActiveCameraTarget = false;
@@ -1864,14 +1865,18 @@ void ABasePlayerController::ApplyLocalDeathFlow()
   {
    if (ABasePlayer* Corpse = GetLifeCharacter(); Corpse && Corpse->GetMesh())
    {
-    if (DeathCamera->GetAttachParentActor() != Corpse)
+    const FVector Focus=Corpse->GetMesh()->DoesSocketExist(TEXT("pelvis"))
+     ? Corpse->GetMesh()->GetSocketLocation(TEXT("pelvis")) : Corpse->GetActorLocation();
+    if (DeathCameraCorpse.Get()!=Corpse || !bHasCorpseCameraOffset)
     {
-     DeathCamera->SetActorLocationAndRotation(FrozenOwnDeathPOV.Location, FrozenOwnDeathPOV.Rotation);
-     DeathCamera->AttachToComponent(Corpse->GetMesh(), FAttachmentTransformRules::KeepWorldTransform,
-      Corpse->GetMesh()->DoesSocketExist(TEXT("pelvis")) ? FName(TEXT("pelvis")) : NAME_None);
+     DeathCameraCorpse=Corpse; DeathCameraWorldOffset=FrozenOwnDeathPOV.Location-Focus; bHasCorpseCameraOffset=true;
+     // Lifetime attachment only. A rolling pelvis must not rotate the orbit or horizon.
+     DeathCamera->AttachToComponent(Corpse->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+     DeathCamera->GetRootComponent()->SetUsingAbsoluteRotation(true);
     }
+    if (!Focus.ContainsNaN()) DeathCamera->SetActorLocationAndRotation(Focus+DeathCameraWorldOffset,FrozenOwnDeathPOV.Rotation);
    }
-   else if (!DeathCamera->GetAttachParentActor())
+   else if (!bHasCorpseCameraOffset)
     DeathCamera->SetActorLocationAndRotation(FrozenOwnDeathPOV.Location, FrozenOwnDeathPOV.Rotation);
    DeathCamera->GetCameraComponent()->SetFieldOfView(FrozenOwnDeathPOV.FOV);
    if (GetViewTarget() != DeathCamera) SetViewTargetWithBlend(DeathCamera, 0);
@@ -1884,6 +1889,7 @@ void ABasePlayerController::ApplyLocalDeathFlow()
   bDeathFlowInputModeApplied = false; bDeathFlowGameOverInput = false; bRetryFocusApplied = false;
   bAutoManageActiveCameraTarget = bSavedAutoCamera; SetViewTargetWithBlend(GetPawn(), 0);
   if (DeathCamera) DeathCamera->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+  DeathCameraCorpse.Reset(); bHasCorpseCameraOffset=false;
   if (PlayerHUDWidget) PlayerHUDWidget->SetVisibility(ESlateVisibility::Visible);
   SetInputMode(FInputModeGameOnly()); bShowMouseCursor = false;
   if (DeathFlowWidget) { DeathFlowWidget->RemoveFromParent(); DeathFlowWidget = nullptr; }

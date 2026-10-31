@@ -57,6 +57,12 @@ void UBaseDeathGameplayAbility::ActivateAbility(
 	K2_OnDeathStarted(EventData);
 	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=DeathGAAfterBlueprintStart Avatar=%s Active=%d Health=%s"),
 		*GetNameSafe(GetAvatarActorFromActorInfo()), IsActive(), *GetNameSafe(CachedHealthComponent));
+	if (bDeathFinished || !IsActive()) return;
+	if (const auto* Character=Cast<ABaseCharacter>(GetAvatarActorFromActorInfo()); Character && !Character->ShouldPlayDeathMontage())
+	{
+		FinishDeathWithCancel(false);
+		return;
+	}
 
 	if (PlayDeathMontage())
 	{
@@ -193,6 +199,7 @@ void UBaseDeathGameplayAbility::ApplyDeathState()
 
 bool UBaseDeathGameplayAbility::PlayDeathMontage()
 {
+	if (const auto* Character=Cast<ABaseCharacter>(GetAvatarActorFromActorInfo()); Character && !Character->ShouldPlayDeathMontage()) return false;
 	if (!DeathMontage)
 	{
 		return false;

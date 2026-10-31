@@ -9,6 +9,7 @@
 #include "UObject/StrongObjectPtr.h"
 #include "Development/SWDevelopmentOptions.h"
 #include "Components/SWFoleyComponent.h"
+#include "Components/SWPlayerRagdollComponent.h"
 #include "Audio/SWFoleyAudioProfile.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
 #include "Components/CapsuleComponent.h"
@@ -126,6 +127,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	FoleyComponent = CreateDefaultSubobject<USWFoleyComponent>(TEXT("Foley"));
+	PlayerRagdollComponent = CreateDefaultSubobject<USWPlayerRagdollComponent>(TEXT("PlayerRagdoll"));
 	FoleyComponent->bUseAnimationDrivenSurfaceStrokes = true;
 	FoleyComponent->ProfileOverride = TSoftObjectPtr<USWFoleyAudioProfile>(FSoftObjectPath(
 		TEXT("/Game/Audio/Foley/DA_Mannequin_Foley.DA_Mannequin_Foley")));
@@ -442,6 +444,11 @@ void ABasePlayer::HandleDeathStarted(UBaseHealthComponent* InHealthComponent)
 	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) ApplyLocalDeathRagdoll();
 }
 
+bool ABasePlayer::ShouldPlayDeathMontage() const
+{
+	return !PlayerRagdollComponent || !PlayerRagdollComponent->IsRagdollActive();
+}
+
 void ABasePlayer::PrepareDeathMovement()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
@@ -459,7 +466,9 @@ void ABasePlayer::PrepareDeathMovement()
 		Movement->ClearAccumulatedForces();
 		Movement->DisableMovement();
 	}
-	SetActorEnableCollision(false);
+	// Death abilities can call this again after ragdoll has started. Disable only
+	// locomotion collision; the corpse component owns mesh/world collision.
+	if (GetCapsuleComponent()) GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
@@ -484,7 +493,7 @@ void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 	// GameMode must capture/register the owning controller before unpossession.
 	// Presentation must never detach the player controller on either peer.
 	ApplyLocalDeathRagdoll();
-	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathHidden Player=%s NetMode=%d"),
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathPresentation Player=%s NetMode=%d"),
 		*GetName(), static_cast<int32>(GetNetMode()));
 	RetireLifeAbilityBindings();
 }
@@ -505,15 +514,18 @@ void ABasePlayer::RetireLifeAbilityBindings()
 
 void ABasePlayer::ApplyLocalDeathRagdoll()
 {
-	PrepareDeathMovement();
-	SetActorHiddenInGame(true);
-	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
+	if (bLocalDeathRagdollApplied) return;
+	bLocalDeathRagdollApplied = PlayerRagdollComponent && PlayerRagdollComponent->StartRagdoll();
+	if (!bLocalDeathRagdollApplied)
 	{
-		CharacterMesh->SetSimulatePhysics(false);
-		CharacterMesh->SetAllBodiesSimulatePhysics(false);
-		CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		CharacterMesh->SetVisibility(false, true);
-		CharacterMesh->SetHiddenInGame(true, true);
+		PrepareDeathMovement();
+		SetActorEnableCollision(false);
+		SetActorHiddenInGame(true);
+		if (USkeletalMeshComponent* CharacterMesh = GetMesh())
+		{
+			CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			CharacterMesh->SetVisibility(false,true);
+		}
 	}
 	// Equipment is a separate actor; hiding the pawn alone does not hide it.
 	TArray<AActor*> AttachedActors;
@@ -524,7 +536,12 @@ void ABasePlayer::ApplyLocalDeathRagdoll()
 		AttachedActor->SetActorEnableCollision(false);
 	}
 	// Keep controller ownership until GameMode captures progress and registers death.
-	// Do not set bLocalDeathRagdollApplied: the ragdoll camera must remain inactive.
+}
+
+void ABasePlayer::ResetLocalDeathRagdoll()
+{
+	if (PlayerRagdollComponent) PlayerRagdollComponent->RestoreLivingPresentation();
+	bLocalDeathRagdollApplied = false;
 }
 
 void ABasePlayer::CaptureRespawnProgress()

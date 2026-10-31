@@ -62,7 +62,7 @@ struct FWorld
 		if (Player)
 		{
 			Player->GetMesh()->SetSkeletalMesh(LoadObject<USkeletalMesh>(nullptr,
-				TEXT("/Game/jiwon/Characters/SKM_Player_Woman.SKM_Player_Woman")));
+				TEXT("/Game/jiwon/Characters/ChWomanUE5/SKM_ChWoman_UE5.SKM_ChWoman_UE5")));
 			Player->GetHealthComponent()->OnDeathFinished.AddUniqueDynamic(Player, &ABasePlayer::HandleDeathFinished);
 		}
 		return Player;

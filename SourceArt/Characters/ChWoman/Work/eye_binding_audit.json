@@ -1,0 +1,12 @@
+{
+  "eye_vertices": 818,
+  "per_side": {
+    "l": 409,
+    "r": 409
+  },
+  "new_face_weights": [
+    "cc_base_l_eye",
+    "cc_base_r_eye"
+  ],
+  "jaw_lips_morphs": "not authored; original facial reference bones preserved"
+}

@@ -1,0 +1,762 @@
+{
+  "date": "2026-10-31",
+  "engine": "UE 5.7.4",
+  "passed": true,
+  "bodies_per_character": 17,
+  "joints_per_character": 16,
+  "world_physics": "Existing async 60Hz; no global physics configuration changes",
+  "angular_metric": "Actual joint frames, swing/twist decomposition, Chaos elliptical GetConeAngleLimit radius",
+  "acceptance": {
+    "impact_limit_excess_deg_below": 15,
+    "impact_anchor_error_cm_below": 5,
+    "final_limit_excess_deg_below": 2,
+    "final_anchor_error_cm_below": 0.3,
+    "render_body_error_cm_below": 0.01,
+    "late_speed_stationary_cm_s_below": 5,
+    "late_speed_relative_to_platform_cm_s_below": 40
+  },
+  "cases": [
+    {
+      "character": "Man",
+      "requested_fps": 30,
+      "mode": "idle",
+      "frames": 240,
+      "effective_fps": 29.999845885532064,
+      "nonfinite": 0,
+      "max_speed_cm_s": 440.99806688953004,
+      "max_angular_speed_rad_s": 19.79273899489013,
+      "max_limit_excess_deg": 3.863959626572104,
+      "max_anchor_error_cm": 1.052023520423442,
+      "max_render_body_error_cm": 0.00010526125897900653,
+      "minimum_com_above_floor_cm": 5.227863464619986,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "calf_r",
+        "angles": [
+          1.0368297417114338,
+          67.34850215761456,
+          1.9486600406742636
+        ],
+        "limits": [
+          5,
+          63.5,
+          10
+        ],
+        "elapsed": 0.40000149980187416
+      },
+      "final_limit_excess_deg": 0.0940576452489239,
+      "final_anchor_error_cm": 0.021910662316872012
+    },
+    {
+      "character": "Man",
+      "requested_fps": 60,
+      "mode": "idle",
+      "frames": 480,
+      "effective_fps": 59.999574761126254,
+      "nonfinite": 0,
+      "max_speed_cm_s": 375.9317418868658,
+      "max_angular_speed_rad_s": 20.09616405287616,
+      "max_limit_excess_deg": 3.6487203470910217,
+      "max_anchor_error_cm": 0.913209907929944,
+      "max_render_body_error_cm": 9.547466296839149e-05,
+      "minimum_com_above_floor_cm": 4.47804318999647,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "hand_l",
+        "angles": [
+          -24.633023428130233,
+          9.351348110603423,
+          38.64872034709102
+        ],
+        "limits": [
+          25,
+          45,
+          35
+        ],
+        "elapsed": 1.2000067979097366
+      },
+      "final_limit_excess_deg": 0.0860977674918928,
+      "final_anchor_error_cm": 0.038036182688553556
+    },
+    {
+      "character": "Man",
+      "requested_fps": 120,
+      "mode": "idle",
+      "frames": 960,
+      "effective_fps": 119.9338639706766,
+      "nonfinite": 0,
+      "max_speed_cm_s": 374.3594851492137,
+      "max_angular_speed_rad_s": 18.370063889357766,
+      "max_limit_excess_deg": 3.7217499789752466,
+      "max_anchor_error_cm": 0.9462837198789715,
+      "max_render_body_error_cm": 8.473941030245723e-05,
+      "minimum_com_above_floor_cm": 4.95678622566993,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "calf_l",
+        "angles": [
+          -0.8244009702514333,
+          67.21194769998552,
+          -7.213575396973197
+        ],
+        "limits": [
+          5,
+          63.5,
+          10
+        ],
+        "elapsed": 0.4000056982040405
+      },
+      "final_limit_excess_deg": 0.15078636040107085,
+      "final_anchor_error_cm": 0.021353127812592118
+    },
+    {
+      "character": "Man",
+      "requested_fps": 60,
+      "mode": "run",
+      "frames": 480,
+      "effective_fps": 59.99896951858292,
+      "nonfinite": 0,
+      "max_speed_cm_s": 716.5735559182422,
+      "max_angular_speed_rad_s": 23.48604300254957,
+      "max_limit_excess_deg": 4.90311198339969,
+      "max_anchor_error_cm": 1.9723556004428904,
+      "max_render_body_error_cm": 0.00011007549282264236,
+      "minimum_com_above_floor_cm": 5.068539373116437,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "hand_r",
+        "angles": [
+          2.833727786346802,
+          -49.772221557211715,
+          -36.84255229809294
+        ],
+        "limits": [
+          25,
+          45,
+          35
+        ],
+        "elapsed": 0.5833363011479378
+      },
+      "final_limit_excess_deg": 0.3173976564703125,
+      "final_anchor_error_cm": 0.07298336526842095
+    },
+    {
+      "character": "Man",
+      "requested_fps": 60,
+      "mode": "sprint",
+      "frames": 480,
+      "effective_fps": 59.999457751644755,
+      "nonfinite": 0,
+      "max_speed_cm_s": 905.5125292371898,
+      "max_angular_speed_rad_s": 36.96537497035202,
+      "max_limit_excess_deg": 6.411547270995712,
+      "max_anchor_error_cm": 3.3115121796905678,
+      "max_render_body_error_cm": 0.00011313928097362446,
+      "minimum_com_above_floor_cm": 4.323165917661527,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "hand_r",
+        "angles": [
+          -16.786843074859593,
+          -25.236179001390248,
+          -41.41154727099571
+        ],
+        "limits": [
+          25,
+          45,
+          35
+        ],
+        "elapsed": 0.5833372995257378
+      },
+      "final_limit_excess_deg": 0.02311075998544254,
+      "final_anchor_error_cm": 0.03556990574276886
+    },
+    {
+      "character": "Man",
+      "requested_fps": 60,
+      "mode": "jump",
+      "frames": 480,
+      "effective_fps": 59.96090173212342,
+      "nonfinite": 0,
+      "max_speed_cm_s": 709.0825169925384,
+      "max_angular_speed_rad_s": 26.6513511780321,
+      "max_limit_excess_deg": 11.481966002314412,
+      "max_anchor_error_cm": 2.717183814593062,
+      "max_render_body_error_cm": 0.00011381461533168138,
+      "minimum_com_above_floor_cm": 5.068241295875623,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "foot_r",
+        "angles": [
+          -30.348251405922607,
+          18.39838251369235,
+          0.819716523167923
+        ],
+        "limits": [
+          20,
+          32.5,
+          12
+        ],
+        "elapsed": 0.43333590030670166
+      },
+      "final_limit_excess_deg": 0.40002799956680235,
+      "final_anchor_error_cm": 0.09773730384557293
+    },
+    {
+      "character": "Man",
+      "requested_fps": 60,
+      "mode": "platform",
+      "frames": 480,
+      "effective_fps": 59.99964449765319,
+      "nonfinite": 0,
+      "max_speed_cm_s": 414.3323767894858,
+      "max_angular_speed_rad_s": 16.048520922632626,
+      "max_limit_excess_deg": 4.2212779166328644,
+      "max_anchor_error_cm": 1.0912163533329533,
+      "max_render_body_error_cm": 0.00011328051412455727,
+      "minimum_com_above_floor_cm": 4.507948625257541,
+      "late_max_speed_cm_s": 5.598120943346141,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "foot_l",
+        "angles": [
+          4.277955412423539,
+          36.33193216407587,
+          12.560463153168598
+        ],
+        "limits": [
+          20,
+          32.5,
+          12
+        ],
+        "elapsed": 0.43333590030670166
+      },
+      "final_limit_excess_deg": 0.15505614707115,
+      "final_anchor_error_cm": 0.1556595838274428
+    },
+    {
+      "character": "Woman",
+      "requested_fps": 30,
+      "mode": "idle",
+      "frames": 240,
+      "effective_fps": 29.999836497899903,
+      "nonfinite": 0,
+      "max_speed_cm_s": 510.03719377434675,
+      "max_angular_speed_rad_s": 23.825273105337757,
+      "max_limit_excess_deg": 4.267912969517294,
+      "max_anchor_error_cm": 0.9695619630189871,
+      "max_render_body_error_cm": 0.0002250391465632029,
+      "minimum_com_above_floor_cm": 2.522507232086241,
+      "late_max_speed_cm_s": 0.6328911248753523,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "foot_r",
+        "angles": [
+          21.577144483683824,
+          23.211138252705062,
+          -5.709727740993022
+        ],
+        "limits": [
+          20,
+          32.5,
+          12
+        ],
+        "elapsed": 0.4666683003306389
+      },
+      "final_limit_excess_deg": 0.12886210691047495,
+      "final_anchor_error_cm": 0.07047832809444289
+    },
+    {
+      "character": "Woman",
+      "requested_fps": 60,
+      "mode": "idle",
+      "frames": 480,
+      "effective_fps": 59.99967525888908,
+      "nonfinite": 0,
+      "max_speed_cm_s": 515.2019490635222,
+      "max_angular_speed_rad_s": 27.257210318781237,
+      "max_limit_excess_deg": 3.828386976302717,
+      "max_anchor_error_cm": 0.8968880681124851,
+      "max_render_body_error_cm": 0.00022503451447218438,
+      "minimum_com_above_floor_cm": 2.7810450372687683,
+      "late_max_speed_cm_s": 0.8396952599556501,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "calf_r",
+        "angles": [
+          3.8774967282393913,
+          67.11139848981888,
+          10.27760947023639
+        ],
+        "limits": [
+          5,
+          63.5,
+          10
+        ],
+        "elapsed": 0.4000027999281883
+      },
+      "final_limit_excess_deg": 0.22885397038784738,
+      "final_anchor_error_cm": 0.0500908379464858
+    },
+    {
+      "character": "Woman",
+      "requested_fps": 120,
+      "mode": "idle",
+      "frames": 960,
+      "effective_fps": 119.9950442088461,
+      "nonfinite": 0,
+      "max_speed_cm_s": 536.301096221465,
+      "max_angular_speed_rad_s": 32.20628452729673,
+      "max_limit_excess_deg": 4.046132967490962,
+      "max_anchor_error_cm": 0.9155502846899145,
+      "max_render_body_error_cm": 0.00019369026305062775,
+      "minimum_com_above_floor_cm": 2.5369637719240927,
+      "late_max_speed_cm_s": 0.1012708233869452,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "calf_r",
+        "angles": [
+          4.2890550623379635,
+          67.28172848425895,
+          10.36128377286244
+        ],
+        "limits": [
+          5,
+          63.5,
+          10
+        ],
+        "elapsed": 0.3916728012263775
+      },
+      "final_limit_excess_deg": 0.10128952490916987,
+      "final_anchor_error_cm": 0.05370280953742867
+    },
+    {
+      "character": "Woman",
+      "requested_fps": 60,
+      "mode": "run",
+      "frames": 480,
+      "effective_fps": 59.99942252036926,
+      "nonfinite": 0,
+      "max_speed_cm_s": 860.3718682760418,
+      "max_angular_speed_rad_s": 40.33255387025072,
+      "max_limit_excess_deg": 4.097691528382434,
+      "max_anchor_error_cm": 1.4127208251098142,
+      "max_render_body_error_cm": 0.0002330726363944725,
+      "minimum_com_above_floor_cm": 3.807806727141269,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "hand_l",
+        "angles": [
+          -6.064836356287838,
+          48.479465827846965,
+          35.807120259013836
+        ],
+        "limits": [
+          25,
+          45,
+          35
+        ],
+        "elapsed": 0.5666701979935169
+      },
+      "final_limit_excess_deg": 0.6551279722020951,
+      "final_anchor_error_cm": 0.03699622713694945
+    },
+    {
+      "character": "Woman",
+      "requested_fps": 60,
+      "mode": "sprint",
+      "frames": 480,
+      "effective_fps": 59.99955000693332,
+      "nonfinite": 0,
+      "max_speed_cm_s": 898.140351313,
+      "max_angular_speed_rad_s": 57.74032593635008,
+      "max_limit_excess_deg": 7.711802455615249,
+      "max_anchor_error_cm": 2.6711301742442255,
+      "max_render_body_error_cm": 0.00022924420613917564,
+      "minimum_com_above_floor_cm": 2.425657328106695,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "hand_l",
+        "angles": [
+          17.826635014218937,
+          -19.683455622907765,
+          42.71180245561525
+        ],
+        "limits": [
+          25,
+          45,
+          35
+        ],
+        "elapsed": 0.7833376973867416
+      },
+      "final_limit_excess_deg": 0.06986215468320722,
+      "final_anchor_error_cm": 0.0803433666733027
+    },
+    {
+      "character": "Woman",
+      "requested_fps": 60,
+      "mode": "jump",
+      "frames": 480,
+      "effective_fps": 59.99941274167205,
+      "nonfinite": 0,
+      "max_speed_cm_s": 863.944470806435,
+      "max_angular_speed_rad_s": 28.29287027643929,
+      "max_limit_excess_deg": 6.282472293273756,
+      "max_anchor_error_cm": 1.5505902240649567,
+      "max_render_body_error_cm": 0.00018910034346882162,
+      "minimum_com_above_floor_cm": 2.242559199816924,
+      "late_max_speed_cm_s": 0,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "thigh_l",
+        "angles": [
+          -7.538019804234048,
+          70.65384284711944,
+          -33.34406869337889
+        ],
+        "limits": [
+          40,
+          65,
+          30
+        ],
+        "elapsed": 0.5000336021184921
+      },
+      "final_limit_excess_deg": 0.15464940548005401,
+      "final_anchor_error_cm": 0.0437064369668259
+    },
+    {
+      "character": "Woman",
+      "requested_fps": 60,
+      "mode": "platform",
+      "frames": 480,
+      "effective_fps": 59.99966173623472,
+      "nonfinite": 0,
+      "max_speed_cm_s": 430.9564239705494,
+      "max_angular_speed_rad_s": 26.609056787143185,
+      "max_limit_excess_deg": 3.8192229900221264,
+      "max_anchor_error_cm": 0.8812870855190171,
+      "max_render_body_error_cm": 0.0001937606486420449,
+      "minimum_com_above_floor_cm": 2.5370148954772276,
+      "late_max_speed_cm_s": 0.07820839075402748,
+      "duplicate_velocity_delta": 0.0,
+      "restored_speed": 250.0,
+      "worst_joint": {
+        "child": "calf_r",
+        "angles": [
+          3.6851550835180387,
+          67.12324797191769,
+          10.679413817191893
+        ],
+        "limits": [
+          5,
+          63.5,
+          10
+        ],
+        "elapsed": 0.4000019021332264
+      },
+      "final_limit_excess_deg": 0.12970072560703727,
+      "final_anchor_error_cm": 0.07938628135416587
+    }
+  ],
+  "network": {
+    "passed": true,
+    "worlds": [
+      "World=/Temp/UEDPIE_0_Untitled_1.Untitled NetMode=2 AudioDevice=4294967295",
+      "World=/Temp/UEDPIE_1_Untitled_1.Untitled NetMode=3 AudioDevice=4294967295"
+    ],
+    "sample_count": 15,
+    "corpse_replicas_per_sample": 4,
+    "new_lives": [
+      {
+        "actor": "BP_Player_Man_C_0",
+        "authority": true,
+        "simulating": true,
+        "visible": true,
+        "health_dead": true,
+        "asc_avatar": "BP_Player_Man_C_1"
+      },
+      {
+        "actor": "BP_Player_Woman_C_0",
+        "authority": true,
+        "simulating": true,
+        "visible": true,
+        "health_dead": true,
+        "asc_avatar": "BP_Player_Woman_C_1"
+      },
+      {
+        "actor": "BP_Player_Man_C_1",
+        "authority": true,
+        "simulating": false,
+        "visible": true,
+        "health_dead": false,
+        "asc_avatar": "BP_Player_Man_C_1"
+      },
+      {
+        "actor": "BP_Player_Woman_C_1",
+        "authority": true,
+        "simulating": false,
+        "visible": true,
+        "health_dead": false,
+        "asc_avatar": "BP_Player_Woman_C_1"
+      },
+      {
+        "actor": "BP_Player_Woman_C_0",
+        "authority": false,
+        "simulating": true,
+        "visible": true,
+        "health_dead": true,
+        "asc_avatar": "BP_Player_Woman_C_1"
+      },
+      {
+        "actor": "BP_Player_Man_C_0",
+        "authority": false,
+        "simulating": true,
+        "visible": true,
+        "health_dead": true,
+        "asc_avatar": "BP_Player_Man_C_1"
+      },
+      {
+        "actor": "BP_Player_Woman_C_1",
+        "authority": false,
+        "simulating": false,
+        "visible": true,
+        "health_dead": false,
+        "asc_avatar": "BP_Player_Woman_C_1"
+      },
+      {
+        "actor": "BP_Player_Man_C_1",
+        "authority": false,
+        "simulating": false,
+        "visible": true,
+        "health_dead": false,
+        "asc_avatar": "BP_Player_Man_C_1"
+      }
+    ],
+    "policy": "Replicated death/impact payload, locally simulated cosmetic corpses; body poses are not synchronized"
+  },
+  "automation": {
+    "passed": 23,
+    "with_warnings": 6,
+    "failed": 0,
+    "tests": [
+      {
+        "path": "ArtisticSW.Animation.FootPlacement.PlayerGraphContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.FootPlacement.ShipContext",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.AuthoredBlendStackContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.AuthoredChooserContinuity",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.DirectionStability",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.EngineWarpingBoundary",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.PlaybackContinuity",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.RapidDirectionPolicy",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.WarpingRuntimePolicy",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.Stop.CapturedGait",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Cannon.Operator.UncookedGameGraphLoads",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.CombatEffectContextDirection",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.DirectionAwayFromSource",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.NormalEnemyDefaults",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.ReplicationContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.ShipDeckCollision",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.GameMode.PlayerCorpseLifecycle",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.CameraFallback",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.LifeOwnership",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.RagdollPresentation",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.AimInterruptionLifecycle",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.IndependentFlight",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.ShipPointVelocity",
+        "state": "Success"
+      }
+    ]
+  },
+  "limits": [
+    "Flat translating ShipDeck proxy, not rotating/wave-driven/sinking ship or underwater buoyancy",
+    "No dedicated server, latency/loss, full room travel/reconnect or cook/package test",
+    "No cloth/hair simulation; visual surfaces may intersect floor/body",
+    "No mass-corpse performance benchmark; existing 5-second production corpse lifetime retained"
+  ],
+  "source_art": "SourceArt/Characters/Physics",
+  "raw_results": "Saved/PlayerRagdollValidation",
+  "render_review": {
+    "images": [
+      "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\SourceArt\\Characters\\Physics\\Review\\Man_idle.png",
+      "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\SourceArt\\Characters\\Physics\\Review\\Man_jump.png",
+      "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\SourceArt\\Characters\\Physics\\Review\\Man_platform.png",
+      "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\SourceArt\\Characters\\Physics\\Review\\Woman_idle.png",
+      "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\SourceArt\\Characters\\Physics\\Review\\Woman_jump.png",
+      "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\SourceArt\\Characters\\Physics\\Review\\Woman_platform.png"
+    ],
+    "bounds": [
+      {
+        "character": "Man",
+        "mode": "idle",
+        "lowest_vertex_cm": -5.127206817269325,
+        "material_minimum_cm": {
+          "M_ChManHair": 3.754042088985443,
+          "M_ChManAccessory": 6.620510667562485,
+          "M_ChManClothes": -3.457815572619438,
+          "M_ChManStylizedBag": 0.17711976543068886,
+          "M_ChManEye": 11.385771632194519,
+          "M_ChManShoes": -0.8543841540813446,
+          "M_ChManBody": -5.127206817269325
+        }
+      },
+      {
+        "character": "Man",
+        "mode": "jump",
+        "lowest_vertex_cm": -5.362575873732567,
+        "material_minimum_cm": {
+          "M_ChManHair": -5.362575873732567,
+          "M_ChManAccessory": -2.427525445818901,
+          "M_ChManClothes": -4.790149629116058,
+          "M_ChManStylizedBag": -5.135258287191391,
+          "M_ChManEye": 9.045867621898651,
+          "M_ChManShoes": -5.330207198858261,
+          "M_ChManBody": -5.038904026150703
+        }
+      },
+      {
+        "character": "Man",
+        "mode": "platform",
+        "lowest_vertex_cm": -2.2595930844545364,
+        "material_minimum_cm": {
+          "M_ChManHair": -2.1847933530807495,
+          "M_ChManAccessory": 0.7358720526099205,
+          "M_ChManClothes": -2.2595930844545364,
+          "M_ChManStylizedBag": -1.3803090900182724,
+          "M_ChManEye": -0.4416564479470253,
+          "M_ChManShoes": 2.3147575557231903,
+          "M_ChManBody": -2.0829901099205017
+        }
+      },
+      {
+        "character": "Woman",
+        "mode": "idle",
+        "lowest_vertex_cm": -18.374894559383392,
+        "material_minimum_cm": {
+          "M_ChGirlClothes": -1.358675491064787,
+          "M_ChGirlHair": -18.374894559383392,
+          "M_ChGirlAccessory": -3.6374133080244064,
+          "M_ChGirlBag": -9.987898170948029,
+          "M_ChGirlBody": -2.2765301167964935,
+          "M_ChGirlEyes": 7.644393295049667,
+          "M_ChGirlShoes": -4.1333019733428955
+        }
+      },
+      {
+        "character": "Woman",
+        "mode": "jump",
+        "lowest_vertex_cm": -7.083691656589508,
+        "material_minimum_cm": {
+          "M_ChGirlClothes": -2.7121396735310555,
+          "M_ChGirlHair": -6.1728402972221375,
+          "M_ChGirlAccessory": -3.208642825484276,
+          "M_ChGirlBag": -7.083691656589508,
+          "M_ChGirlBody": -3.4479573369026184,
+          "M_ChGirlEyes": 8.611404150724411,
+          "M_ChGirlShoes": -1.9881226122379303
+        }
+      },
+      {
+        "character": "Woman",
+        "mode": "platform",
+        "lowest_vertex_cm": -15.396597981452942,
+        "material_minimum_cm": {
+          "M_ChGirlClothes": -1.1724991723895073,
+          "M_ChGirlHair": -15.396597981452942,
+          "M_ChGirlAccessory": -3.299950435757637,
+          "M_ChGirlBag": -9.4740591943264,
+          "M_ChGirlBody": -2.1977949887514114,
+          "M_ChGirlEyes": 7.132337242364883,
+          "M_ChGirlShoes": -4.491335153579712
+        }
+      }
+    ],
+    "note": "Native UE evaluated component-space poses, reconstructed on Blender copies; floor is actual UE support plane, source files not saved."
+  }
+}

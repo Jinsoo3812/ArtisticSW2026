@@ -1,0 +1,31 @@
+{
+  "samples": [
+    {
+      "source_frame": 1,
+      "import_frame": 2,
+      "max_head_error_cm": 0.00021153679718496516,
+      "worst_head": "cc_base_r_bigtoe1",
+      "max_rotation_error_deg": 0.05595291023658669
+    },
+    {
+      "source_frame": 4,
+      "import_frame": 5,
+      "max_head_error_cm": 0.00022112045744110024,
+      "worst_head": "cc_base_r_bigtoe1",
+      "max_rotation_error_deg": 0.03956468205889273
+    },
+    {
+      "source_frame": 8,
+      "import_frame": 9,
+      "max_head_error_cm": 0.00022686253272091535,
+      "worst_head": "cc_base_r_bigtoe1",
+      "max_rotation_error_deg": 0.05595291023658669
+    }
+  ],
+  "bone_count": 120,
+  "import_animation_offset_frames": 1,
+  "action_range": [
+    2.0,
+    9.0
+  ]
+}

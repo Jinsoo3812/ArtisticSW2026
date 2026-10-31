@@ -1,0 +1,30 @@
+{
+  "arm_l": {
+    "fk_to_ik_position_cm": 0.0009264787235885692,
+    "fk_to_ik_rotation_deg": 0.0,
+    "goal_error_cm": 2.33240065611877e-05,
+    "ik_to_fk_position_cm": 2.7059689192779177e-05,
+    "ik_to_fk_rotation_deg": 0.0
+  },
+  "arm_r": {
+    "fk_to_ik_position_cm": 0.0009710545661834801,
+    "fk_to_ik_rotation_deg": 0.0,
+    "goal_error_cm": 0.00015485920199786546,
+    "ik_to_fk_position_cm": 3.3527612686157227e-05,
+    "ik_to_fk_rotation_deg": 0.0
+  },
+  "leg_l": {
+    "fk_to_ik_position_cm": 0.0027892993629129352,
+    "fk_to_ik_rotation_deg": 0.0,
+    "goal_error_cm": 0.000603997205749893,
+    "ik_to_fk_position_cm": 1.2067008269388615e-05,
+    "ik_to_fk_rotation_deg": 0.0
+  },
+  "leg_r": {
+    "fk_to_ik_position_cm": 0.0028922501320334045,
+    "fk_to_ik_rotation_deg": 0.0,
+    "goal_error_cm": 0.0005954351867129586,
+    "ik_to_fk_position_cm": 3.557603474352754e-05,
+    "ik_to_fk_rotation_deg": 0.0
+  }
+}

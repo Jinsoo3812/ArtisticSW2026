@@ -5,8 +5,12 @@
 #include "BaseGameplayTags.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Development/TestInput/SWDevTestInputComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "Components/SWPlayerRagdollComponent.h"
+#include "PhysicsEngine/BodyInstance.h"
+#include "CollisionChannels.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerDeathDevelopmentTest,
 	"ArtisticSW.Player.Death.LifeOwnership",
@@ -43,16 +47,16 @@ bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 	Equipment->AttachToComponent(Life.Player->GetMesh(), FAttachmentTransformRules::KeepWorldTransform);
 	// Exercise DeathStarted separately: an authored death montage may finish later.
 	Life.Player->HandleDeathStarted(OldHealth);
-	TestTrue(TEXT("Player disappears at death start"), Life.Player->IsHidden());
-	TestFalse(TEXT("Hidden player no longer collides"), Life.Player->GetActorEnableCollision());
+	TestFalse(TEXT("Corpse remains visible at death start"), Life.Player->IsHidden());
+	TestEqual(TEXT("Movement capsule cannot block the living player"), Life.Player->GetCapsuleComponent()->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 	TestTrue(TEXT("Attached equipment disappears with the player"), Equipment->IsHidden());
-	TestFalse(TEXT("Player never enters ragdoll physics"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
+	TestTrue(TEXT("Dead mesh enters ragdoll physics"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
 	TestEqual(TEXT("Invisible player cannot keep walking on the ship"), Life.Player->GetCharacterMovement()->MovementMode.GetValue(), MOVE_None);
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 0.0f);
 	TestTrue(TEXT("Existing death pipeline completes"), OldHealth->GetDeathState() == EBaseDeathState::DeathFinished);
 	Life.Player->ApplyLocalDeathRagdoll();
-	TestTrue(TEXT("Legacy ragdoll calls keep the player hidden"), Life.Player->IsHidden());
-	TestFalse(TEXT("Death completion never starts player physics"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
+	TestFalse(TEXT("Duplicate death keeps corpse visible"), Life.Player->IsHidden());
+	TestTrue(TEXT("Death completion retains the existing physical corpse"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
 	TestTrue(TEXT("Death tag remains on persistent ASC until new life"), ASC->HasMatchingGameplayTag(State_Dead));
 	TestNull(TEXT("GameMode releases possession after capture"), Life.Controller->GetPawn());
 	TestFalse(TEXT("Corpse no longer subscribes to shared health"),
@@ -107,5 +111,55 @@ bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Suicide alias registered"), IConsoleManager::Get().FindConsoleObject(TEXT("sw.DevTest.Suicide")));
 #endif
 	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerRagdollPresentationTest,
+    "ArtisticSW.Player.Death.RagdollPresentation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPlayerRagdollPresentationTest::RunTest(const FString& Parameters)
+{
+    PlayerLifeTests::FWorld Fixture;
+    const PlayerLifeTests::FLife Life=Fixture.SpawnLife();
+    if(!Life.Player||!Life.Controller)return false;
+    auto* Player=Life.Player;auto* Mesh=Player->GetMesh();
+    Mesh->SetRelativeScale3D(FVector(1.1f));
+    const FTransform Initial=Mesh->GetRelativeTransform();
+    const FName InitialProfile=Mesh->GetCollisionProfileName();
+    const ECollisionEnabled::Type InitialCapsule=Player->GetCapsuleComponent()->GetCollisionEnabled();
+    Mesh->SetGenerateOverlapEvents(true);Mesh->SetEnableGravity(false);
+    AActor* Equipment=Fixture.World->SpawnActor<AActor>();
+    auto* Root=NewObject<UStaticMeshComponent>(Equipment);Equipment->SetRootComponent(Root);Root->RegisterComponent();
+    Equipment->AttachToComponent(Mesh,FAttachmentTransformRules::KeepWorldTransform);
+    Player->GetCharacterMovement()->Velocity=FVector(400,30,0);
+    Player->ApplyLocalDeathRagdoll();
+    TestTrue(TEXT("Physical corpse visible"),!Player->IsHidden()&&Mesh->IsVisible()&&Mesh->IsAnySimulatingPhysics());
+    TestTrue(TEXT("Life flow still owns possession"),Life.Controller->GetPawn()==Player);
+    TestEqual(TEXT("Living pawns cannot be pushed by corpse"),Mesh->GetCollisionResponseToChannel(ECC_Pawn),ECR_Ignore);
+    TestEqual(TEXT("Corpse does not obstruct camera"),Mesh->GetCollisionResponseToChannel(ECC_Camera),ECR_Ignore);
+    TestEqual(TEXT("Corpse is not an animated weapon target"),Mesh->GetCollisionResponseToChannel(ECC_WeaponAim),ECR_Ignore);
+    TestEqual(TEXT("Moving ship remains a support surface"),Mesh->GetCollisionResponseToChannel(ECC_WorldDynamic),ECR_Block);
+    TestTrue(TEXT("Final animation is held during physics"),Mesh->bPauseAnims);
+    FBodyInstance* Pelvis=Mesh->GetBodyInstance(TEXT("pelvis"));
+    if(!TestNotNull(TEXT("Pelvis body"),Pelvis))return false;
+    const FVector Velocity=Pelvis->GetUnrealWorldVelocity();
+    TestTrue(TEXT("Movement momentum inherited"),Velocity.Equals(FVector(400,30,0),.1));
+    Player->PrepareDeathMovement();
+    TestTrue(TEXT("Death ability reentry cannot disable corpse world collision"),Player->GetActorEnableCollision()&&Mesh->GetCollisionEnabled()==ECollisionEnabled::QueryAndPhysics);
+    Player->ApplyLocalDeathRagdoll();
+    TestTrue(TEXT("Duplicate entry cannot reset or add momentum"),Pelvis->GetUnrealWorldVelocity().Equals(Velocity,.01));
+    Player->ResetLocalDeathRagdoll();
+    TestFalse(TEXT("Reset ends all simulation"),Mesh->IsAnySimulatingPhysics());
+    TestFalse(TEXT("Reset restores animation evaluation"),Mesh->bPauseAnims);
+    TestTrue(TEXT("Reset restores living overlap policy"),Mesh->GetGenerateOverlapEvents());
+    TestFalse(TEXT("Reset restores authored gravity flag"),Mesh->IsGravityEnabled());
+    TestFalse(TEXT("Reset restores animation physics blend policy"),Mesh->bBlendPhysics);
+    TestTrue(TEXT("Reset preserves mesh bind/component scale and attachment offset"),Mesh->GetRelativeTransform().Equals(Initial,.001));
+    TestEqual(TEXT("Reset restores living collision profile"),Mesh->GetCollisionProfileName(),InitialProfile);
+    TestEqual(TEXT("Reset restores capsule state"),Player->GetCapsuleComponent()->GetCollisionEnabled(),InitialCapsule);
+    TestFalse(TEXT("Reset restores attached equipment visibility"),Equipment->IsHidden());
+    TestTrue(TEXT("Reset restores attached equipment collision"),Equipment->GetActorEnableCollision());
+    TestFalse(TEXT("Presentation reset cannot retire the living ASC"),Life.State->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Dead));
+    return !HasAnyErrors();
 }
 #endif

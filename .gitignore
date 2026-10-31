@@ -50,6 +50,9 @@ __pycache__/
 # Precompiled Assets
 SourceArt/**/*.png
 SourceArt/**/*.tga
+!SourceArt/Characters/ChMan/Review/*.png
+!SourceArt/Characters/ChWoman/Review/*.png
+!SourceArt/Characters/Physics/Review/*.png
 
 # Binary Files
 Binaries/*

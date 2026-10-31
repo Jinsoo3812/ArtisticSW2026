@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "ue_exported_weighted_eye_vertices": {
+    "l": 409,
+    "r": 409
+  },
+  "source": "latest actual Unreal mesh FBX export after repeated reimport"
+}

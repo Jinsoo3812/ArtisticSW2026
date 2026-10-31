@@ -38,6 +38,8 @@ public class ClassFeatureEditor : ModuleRules
 			"AnimationModifiers",
 			"AnimGraph",
 			"AnimGraphRuntime",
+			"PoseSearch",
+			"PhysicsUtilities",
 			"ArtisticSWCore",
 			"ClassFeature",
 			"ClassFeatureAnimGraph",

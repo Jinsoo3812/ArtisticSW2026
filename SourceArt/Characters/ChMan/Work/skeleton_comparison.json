@@ -1,0 +1,255 @@
+{
+  "ref_arm": "REF_Manny",
+  "ref_matrix": [
+    [
+      0.009999999776482582,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.009999999776482582,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.009999999776482582,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "ref_bones": 88,
+  "missing": [
+    "lowerarm_twist_02_l",
+    "lowerarm_twist_01_l",
+    "upperarm_twist_01_l",
+    "upperarm_twist_02_l",
+    "lowerarm_twist_02_r",
+    "lowerarm_twist_01_r",
+    "upperarm_twist_01_r",
+    "upperarm_twist_02_r",
+    "calf_twist_02_r",
+    "calf_twist_01_r",
+    "thigh_twist_01_r",
+    "thigh_twist_02_r",
+    "calf_twist_02_l",
+    "calf_twist_01_l",
+    "thigh_twist_01_l",
+    "thigh_twist_02_l",
+    "interaction",
+    "center_of_mass"
+  ],
+  "extra": [
+    "cc_base_pelvis",
+    "cc_base_l_forearmtwist01",
+    "cc_base_l_forearmtwist02",
+    "cc_base_l_elbowsharebone",
+    "cc_base_l_upperarmtwist01",
+    "cc_base_l_upperarmtwist02",
+    "cc_base_facialbone",
+    "cc_base_jawroot",
+    "cc_base_tongue01",
+    "cc_base_tongue02",
+    "cc_base_tongue03",
+    "cc_base_teeth02",
+    "cc_base_r_eye",
+    "cc_base_l_eye",
+    "cc_base_upperjaw",
+    "cc_base_teeth01",
+    "cc_base_r_upperarmtwist01",
+    "cc_base_r_upperarmtwist02",
+    "cc_base_r_forearmtwist01",
+    "cc_base_r_forearmtwist02",
+    "cc_base_r_elbowsharebone",
+    "cc_base_l_ribstwist",
+    "cc_base_l_breast",
+    "cc_base_r_ribstwist",
+    "cc_base_r_breast",
+    "cc_base_l_toebasesharebone",
+    "cc_base_l_pinkytoe1",
+    "cc_base_l_ringtoe1",
+    "cc_base_l_midtoe1",
+    "cc_base_l_indextoe1",
+    "cc_base_l_bigtoe1",
+    "cc_base_l_calftwist01",
+    "cc_base_l_calftwist02",
+    "cc_base_l_kneesharebone",
+    "cc_base_l_thightwist01",
+    "cc_base_l_thightwist02",
+    "cc_base_r_thightwist01",
+    "cc_base_r_thightwist02",
+    "cc_base_r_pinkytoe1",
+    "cc_base_r_bigtoe1",
+    "cc_base_r_indextoe1",
+    "cc_base_r_midtoe1",
+    "cc_base_r_ringtoe1",
+    "cc_base_r_toebasesharebone",
+    "cc_base_r_kneesharebone",
+    "cc_base_r_calftwist01",
+    "cc_base_r_calftwist02"
+  ],
+  "comparison": [
+    {
+      "bone": "pelvis",
+      "source_cm": [
+        0.0,
+        0.0,
+        94.50030517578125
+      ],
+      "ref_m": [
+        -3.431499834557591e-19,
+        -0.022808661684393883,
+        0.9589678049087524
+      ],
+      "angle_deg": 3.64
+    },
+    {
+      "bone": "spine_01",
+      "source_cm": [
+        -1.5425142919411883e-05,
+        -0.33339130878448486,
+        99.56502532958984
+      ],
+      "ref_m": [
+        4.320219582757267e-18,
+        -0.020478617399930954,
+        0.9956644177436829
+      ],
+      "angle_deg": 15.12
+    },
+    {
+      "bone": "spine_05",
+      "source_cm": [
+        -3.0645387596450746e-05,
+        3.412594795227051,
+        135.62197875976562
+      ],
+      "ref_m": [
+        -4.0858162258248024e-14,
+        -0.00525096757337451,
+        1.4110221862792969
+      ],
+      "angle_deg": 13.85
+    },
+    {
+      "bone": "clavicle_l",
+      "source_cm": [
+        7.6353912353515625,
+        4.893995761871338,
+        143.8114776611328
+      ],
+      "ref_m": [
+        0.01427904237061739,
+        0.017398159950971603,
+        1.463010549545288
+      ],
+      "angle_deg": 13.59
+    },
+    {
+      "bone": "upperarm_l",
+      "source_cm": [
+        22.538084030151367,
+        8.42457103729248,
+        138.01376342773438
+      ],
+      "ref_m": [
+        0.190098837018013,
+        0.02557235211133957,
+        1.4358352422714233
+      ],
+      "angle_deg": 6.55
+    },
+    {
+      "bone": "lowerarm_l",
+      "source_cm": [
+        40.86484146118164,
+        9.156380653381348,
+        106.34297180175781
+      ],
+      "ref_m": [
+        0.35006994009017944,
+        0.01907007023692131,
+        1.2089195251464844
+      ],
+      "angle_deg": 18.41
+    },
+    {
+      "bone": "hand_l",
+      "source_cm": [
+        54.47267532348633,
+        -2.7076125144958496,
+        84.53832244873047
+      ],
+      "ref_m": [
+        0.47768595814704895,
+        -0.1569889485836029,
+        1.0446652173995972
+      ],
+      "angle_deg": 17.9
+    },
+    {
+      "bone": "thigh_l",
+      "source_cm": [
+        7.730435848236084,
+        4.899748802185059,
+        86.44261169433594
+      ],
+      "ref_m": [
+        0.09969202429056168,
+        -0.025405973196029663,
+        0.9354279637336731
+      ],
+      "angle_deg": 11.24
+    },
+    {
+      "bone": "calf_l",
+      "source_cm": [
+        14.736141204833984,
+        4.638182163238525,
+        51.352718353271484
+      ],
+      "ref_m": [
+        0.12332341074943542,
+        -0.025957157835364342,
+        0.502659797668457
+      ],
+      "angle_deg": 9.45
+    },
+    {
+      "bone": "foot_l",
+      "source_cm": [
+        20.039051055908203,
+        7.3547163009643555,
+        12.522281646728516
+      ],
+      "ref_m": [
+        0.14087669551372528,
+        0.009942568838596344,
+        0.08237628638744354
+      ],
+      "angle_deg": 12.56
+    },
+    {
+      "bone": "ball_l",
+      "source_cm": [
+        26.295576095581055,
+        -10.618587493896484,
+        6.685253620147705
+      ],
+      "ref_m": [
+        0.15777871012687683,
+        -0.1392880380153656,
+        0.007508242502808571
+      ],
+      "angle_deg": 13.23
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "blender_bones": 120,
+  "ue_fbx_blender_bones": 119,
+  "root_note": "UE FBX represents root as the armature object, not a missing root.",
+  "missing_except_object_root": [],
+  "max_vertex_nearest_delta_cm": 1.2644053981603065e-05,
+  "max_original_surface_delta_cm": 1.2644053981603065e-05,
+  "max_bone_head_delta_cm": 0.00027600554896175497,
+  "max_axis_angle_deg": 0.05595291023658669,
+  "mesh_height_cm": 160.04281044006348,
+  "root_object_scale": [
+    1.0,
+    1.0,
+    1.0
+  ]
+}

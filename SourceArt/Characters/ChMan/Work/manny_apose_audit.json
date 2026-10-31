@@ -1,0 +1,203 @@
+{
+  "pairs": [
+    {
+      "bone": "clavicle_l",
+      "end": "upperarm_l",
+      "before_deg": 15.776166039220351,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "upperarm_l",
+      "end": "lowerarm_l",
+      "before_deg": 7.984114625566909,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "lowerarm_l",
+      "end": "hand_l",
+      "before_deg": 13.520804278109937,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "hand_l",
+      "end": "middle_01_l",
+      "before_deg": 12.86584463199272,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "index_01_l",
+      "end": "index_02_l",
+      "before_deg": 11.628558425165851,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "index_02_l",
+      "end": "index_03_l",
+      "before_deg": 11.433440411146096,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "middle_01_l",
+      "end": "middle_02_l",
+      "before_deg": 14.375934570685425,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "middle_02_l",
+      "end": "middle_03_l",
+      "before_deg": 9.708995230636296,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "ring_01_l",
+      "end": "ring_02_l",
+      "before_deg": 17.38865758904447,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "ring_02_l",
+      "end": "ring_03_l",
+      "before_deg": 3.5947746639546083,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "pinky_01_l",
+      "end": "pinky_02_l",
+      "before_deg": 26.793621462929636,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "pinky_02_l",
+      "end": "pinky_03_l",
+      "before_deg": 12.32056160224663,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "thumb_01_l",
+      "end": "thumb_02_l",
+      "before_deg": 16.054846295093334,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "thumb_02_l",
+      "end": "thumb_03_l",
+      "before_deg": 11.089120329801998,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "thigh_l",
+      "end": "calf_l",
+      "before_deg": 8.17236146928163,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "calf_l",
+      "end": "foot_l",
+      "before_deg": 2.8271548894594396,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "clavicle_r",
+      "end": "upperarm_r",
+      "before_deg": 15.775136388202972,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "upperarm_r",
+      "end": "lowerarm_r",
+      "before_deg": 8.638678120712264,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "lowerarm_r",
+      "end": "hand_r",
+      "before_deg": 15.365417245556003,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "hand_r",
+      "end": "middle_01_r",
+      "before_deg": 15.566545826045369,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "index_01_r",
+      "end": "index_02_r",
+      "before_deg": 9.610693440554181,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "index_02_r",
+      "end": "index_03_r",
+      "before_deg": 7.737509791809952,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "middle_01_r",
+      "end": "middle_02_r",
+      "before_deg": 8.93795481202742,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "middle_02_r",
+      "end": "middle_03_r",
+      "before_deg": 7.1953840170077,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "ring_01_r",
+      "end": "ring_02_r",
+      "before_deg": 24.661682073895,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "ring_02_r",
+      "end": "ring_03_r",
+      "before_deg": 19.54165615883755,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "pinky_01_r",
+      "end": "pinky_02_r",
+      "before_deg": 19.74935538130847,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "pinky_02_r",
+      "end": "pinky_03_r",
+      "before_deg": 3.864320395586345,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "thumb_01_r",
+      "end": "thumb_02_r",
+      "before_deg": 31.199662090836267,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "thumb_02_r",
+      "end": "thumb_03_r",
+      "before_deg": 25.889084143219215,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "thigh_r",
+      "end": "calf_r",
+      "before_deg": 8.216543401701504,
+      "posed_direction_error_deg": 0.0
+    },
+    {
+      "bone": "calf_r",
+      "end": "foot_r",
+      "before_deg": 2.829369791741228,
+      "posed_direction_error_deg": 0.0
+    }
+  ],
+  "method": "Pose actual limbs to Manny anatomical directions, bake LBS mesh, rebind with canonical axes; preserve limb lengths and world foot orientation.",
+  "floor_shift_cm": 1.380413956940174,
+  "rebinding_max_surface_error_cm": 1.7881393432617188e-05,
+  "max_bone_length_change_cm": 0.00013317773415177925,
+  "max_final_direction_error_deg": 0.0,
+  "max_intentional_surface_movement_cm": 20.36798857652493,
+  "floor_min_z_cm": -6.988383649542129e-07
+}

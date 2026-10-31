@@ -1,0 +1,10 @@
+*.blend1
+*.blend2
+/Archive/
+/Reference/*.fbx
+/Work/UEValidation/
+Work/*.log
+Work/UEValidation/Content/
+Work/UEValidation/Intermediate/
+Work/UEValidation/Saved/
+Work/UEValidation/DerivedDataCache/

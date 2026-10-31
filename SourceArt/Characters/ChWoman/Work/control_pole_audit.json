@@ -1,0 +1,22 @@
+{
+  "arm_l": {
+    "mid_error_cm": 0.0009747240085479107,
+    "pole_angle": 2.2760439940253208,
+    "rotation_error_deg": 0.0
+  },
+  "arm_r": {
+    "mid_error_cm": 0.0010467834438349726,
+    "pole_angle": 0.8655486595644727,
+    "rotation_error_deg": 0.0
+  },
+  "leg_l": {
+    "mid_error_cm": 0.0005024940227868871,
+    "pole_angle": -1.3821166898849626,
+    "rotation_error_deg": 0.0
+  },
+  "leg_r": {
+    "mid_error_cm": 0.00019659449682907356,
+    "pole_angle": -1.7594759637048305,
+    "rotation_error_deg": 0.0
+  }
+}

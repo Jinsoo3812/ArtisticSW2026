@@ -1,0 +1,43 @@
+{
+  "source_vertices": 54393,
+  "vertices": 54393,
+  "bones": 120,
+  "renamed_twists": {
+    "cc_base_l_upperarmtwist01": "upperarm_twist_01_l",
+    "cc_base_l_upperarmtwist02": "upperarm_twist_02_l",
+    "cc_base_l_forearmtwist01": "lowerarm_twist_01_l",
+    "cc_base_l_forearmtwist02": "lowerarm_twist_02_l",
+    "cc_base_l_thightwist01": "thigh_twist_01_l",
+    "cc_base_l_thightwist02": "thigh_twist_02_l",
+    "cc_base_l_calftwist01": "calf_twist_01_l",
+    "cc_base_l_calftwist02": "calf_twist_02_l",
+    "cc_base_r_upperarmtwist01": "upperarm_twist_01_r",
+    "cc_base_r_upperarmtwist02": "upperarm_twist_02_r",
+    "cc_base_r_forearmtwist01": "lowerarm_twist_01_r",
+    "cc_base_r_forearmtwist02": "lowerarm_twist_02_r",
+    "cc_base_r_thightwist01": "thigh_twist_01_r",
+    "cc_base_r_thightwist02": "thigh_twist_02_r",
+    "cc_base_r_calftwist01": "calf_twist_01_r",
+    "cc_base_r_calftwist02": "calf_twist_02_r"
+  },
+  "canonical_rebind_surface_error_cm": 1.9082797281243946e-05,
+  "packed_images": [
+    "ChGirlMtl1_Mtl_Clothes_BaseColor.tga",
+    "ChGirlMtl1_Mtl_Clothes_Normal.tga",
+    "ChGirlMtl1_Mtl_Hair_BaseColor.tga",
+    "ChGirlMtl1_Mtl_Hair_Normal.tga",
+    "ChGirlMtl1_Mtl_Accessory_BaseColor.tga",
+    "ChGirlMtl1_Mtl_Accessory_Normal.tga",
+    "ChGirlMtl1_T_StylizedBag_BaseColor.tga",
+    "ChGirlMtl1_T_StylizedBag_Normal.tga",
+    "ChGirlMtl1_Mtl_GirlBodySkin_BaseColor.tga",
+    "ChGirlMtl1_Mtl_GirlBodySkin_Normal.tga",
+    "ChGirlMtl1_Mtl_Eyes_BaseColor.tga",
+    "ChGirlMtl1_Mtl_Eyes_Normal.tga",
+    "ChGirlMtl1_Pump_shoes_2_BaseColor.tga",
+    "ChGirlMtl1_Pump_shoes_2_Normal.tga"
+  ],
+  "shape_keys": 0,
+  "missing_core": [],
+  "parent_mismatches": []
+}
