@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "GameplayTagContainer.h"
 #include "ItemQuickSlotWidget.generated.h"
 
 class ABasePlayer;
@@ -9,6 +10,7 @@ class UBorder;
 class UImage;
 class UOverlay;
 class UTextBlock;
+class UDragDropOperation;
 
 /** HUD container that owns consumable quick slots 3, 4, and 5. */
 UCLASS(Blueprintable)
@@ -25,6 +27,11 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual bool NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent,
+		UDragDropOperation* InOperation) override;
+	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent,
+		UDragDropOperation* InOperation) override;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> ItemIconImage3;
@@ -60,6 +67,7 @@ protected:
 	TObjectPtr<UOverlay> ItemInfoOverlay5;
 
 private:
+	bool AssignItemAtScreenPosition(const FVector2D& ScreenPosition, FGameplayTag ItemTag);
 	void UnbindPlayer();
 	void RefreshSlot(int32 QuickSlotIndex, UImage* IconImage, UTextBlock* NameText,
 		UTextBlock* CountText, UBorder* PressedHighlightBorder,

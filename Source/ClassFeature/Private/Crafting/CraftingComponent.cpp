@@ -1,6 +1,8 @@
 #include "Crafting/CraftingComponent.h"
+#include "Development/SWDevelopmentOptions.h"
 
 #include "BasePlayer.h"
+#include "BaseGameplayTags.h"
 #include "Crafting/CraftingAccessComponent.h"
 #include "Crafting/CraftingOutputReceiver.h"
 #include "Inventory/InventoryComponent.h"
@@ -56,11 +58,11 @@ ECraftingAvailability UCraftingComponent::EvaluateAvailability(const FCraftingRe
 	{
 		return ECraftingAvailability::Disabled;
 	}
-	if (Recipe.RequiredRecipeItemTag.IsValid() && GetOwnedItemCount(Recipe.RequiredRecipeItemTag) <= 0)
+	if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe.RequiredRecipeItemTag.IsValid() && GetOwnedItemCount(Recipe.RequiredRecipeItemTag) <= 0)
 	{
 		return ECraftingAvailability::MissingRecipe;
 	}
-	if (Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid()
+	if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid()
 		&& GetOwnedItemCount(Recipe.RequiredRecipeItemTag) < CraftCount)
 	{
 		return ECraftingAvailability::MissingIngredients;
@@ -210,6 +212,12 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 		}
 	}
 	OutDetails.MaxCraftableCount = MaxCraftable;
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree))
+	{
+		OutDetails.RequiredRecipeItem.bEnough = true;
+		for (FCraftingIngredientView& View : OutDetails.Ingredients) View.bEnough = true;
+		OutDetails.MaxCraftableCount = MaxCraftCountPerRequest;
+	}
 	return true;
 }
 
@@ -299,7 +307,7 @@ bool UCraftingComponent::BuildCosts(const FCraftingRecipeRow& Recipe, int32 Craf
 		}
 		Totals.FindOrAdd(Ingredient.ItemTag) += static_cast<int64>(Ingredient.Quantity) * CraftCount;
 	}
-	if (Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid())
+	if (!SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe.bConsumeRecipeItem && Recipe.RequiredRecipeItemTag.IsValid())
 	{
 		Totals.FindOrAdd(Recipe.RequiredRecipeItemTag) += CraftCount;
 	}
@@ -314,6 +322,7 @@ bool UCraftingComponent::BuildCosts(const FCraftingRecipeRow& Recipe, int32 Craf
 		Stack.Quantity = static_cast<int32>(Pair.Value);
 		OutCosts.Add(Stack);
 	}
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree)) OutCosts.Reset();
 	return true;
 }
 
@@ -410,7 +419,8 @@ void UCraftingComponent::ProcessCraftRequest(const FCraftingRequest& Request)
 		CompleteRequest(Result);
 		return;
 	}
-	if (Recipe->RequiredRecipeItemTag.IsValid() && Inventory->GetItemCount(Recipe->RequiredRecipeItemTag) <= 0)
+	if (Request.Output.Type != ECraftingOutputType::SkillUnlock
+		&& !SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree) && Recipe->RequiredRecipeItemTag.IsValid() && Inventory->GetItemCount(Recipe->RequiredRecipeItemTag) <= 0)
 	{
 		Result.Reason = ECraftingFailureReason::MissingRecipe;
 		CompleteRequest(Result);
@@ -447,6 +457,25 @@ void UCraftingComponent::ProcessCraftRequest(const FCraftingRequest& Request)
 			return;
 		}
 		if (!SkillUnlockComponent->IsSkillUnlockConditionMet(SkillUnlockTag))
+		{
+			Result.Reason = ECraftingFailureReason::UnlockConditionNotMet;
+			CompleteRequest(Result);
+			return;
+		}
+		Result.Reason = SkillUnlockComponent->UnlockSkill(SkillUnlockTag)
+			? ECraftingFailureReason::Success : ECraftingFailureReason::OutputRejected;
+		Result.DeliveredQuantity = Result.Reason == ECraftingFailureReason::Success ? 1 : 0;
+		CompleteRequest(Result);
+		return;
+	}
+	if (Recipe->ResultItemTag.MatchesTag(Item_Id_Skill))
+	{
+		const ABasePlayer* Player = Cast<ABasePlayer>(Owner);
+		const UPlayerSkillComponent* Skills = Player ? Player->GetPlayerSkillComponent() : nullptr;
+		bool bUnlocked = false;
+		if (Skills) for (FGameplayTag Tag : Skills->GetRegisteredSkillTags())
+			if (Skills->GetSkillItemTag(Tag) == Recipe->ResultItemTag) bUnlocked = Skills->IsSkillUnlocked(Tag);
+		if (!bUnlocked)
 		{
 			Result.Reason = ECraftingFailureReason::UnlockConditionNotMet;
 			CompleteRequest(Result);
@@ -520,26 +549,6 @@ void UCraftingComponent::ProcessCraftRequest(const FCraftingRequest& Request)
 			if (!Inventory->AddItemsAtomically(Costs))
 			{
 				UE_LOG(LogTemp, Error, TEXT("Crafting rollback failed for %s."), *GetNameSafe(Owner));
-			}
-			Result.Reason = ECraftingFailureReason::OutputRejected;
-			CompleteRequest(Result);
-			return;
-		}
-	}
-	else if (Request.Output.Type == ECraftingOutputType::SkillUnlock)
-	{
-		if (!Inventory->RemoveItemsAtomically(Costs))
-		{
-			Result.Reason = ECraftingFailureReason::MissingIngredients;
-			CompleteRequest(Result);
-			return;
-		}
-		bDelivered = SkillUnlockComponent->UnlockSkill(SkillUnlockTag);
-		if (!bDelivered)
-		{
-			if (!Inventory->AddItemsAtomically(Costs))
-			{
-				UE_LOG(LogTemp, Error, TEXT("Skill crafting rollback failed for %s."), *GetNameSafe(Owner));
 			}
 			Result.Reason = ECraftingFailureReason::OutputRejected;
 			CompleteRequest(Result);

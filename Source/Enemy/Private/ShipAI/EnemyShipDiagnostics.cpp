@@ -9,6 +9,17 @@ static TAutoConsoleVariable<int32> CVarShipInitLog(TEXT("sw.EnemyShip.InitLog"),
 	TEXT("Initial pool Actor construction timing summaries. No Actor/ISM transition logs."));
 static TAutoConsoleVariable<int32> CVarCrewLog(TEXT("sw.EnemyCrew.Log"), 1,
 	TEXT("Bounded crew initialization, sight, request, readiness and activation diagnostics."));
+static TAutoConsoleVariable<int32> CVarQueueLog(TEXT("sw.EnemyShipPool.QueueLog"), 1,
+	TEXT("0=off, 1=queue lifecycle and bounded progress, 2=include per-stage changes. Development diagnostics; set separately on server/client."));
+
+int32 EnemyShipDiagnostics::QueueLogLevel()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	return CVarQueueLog.GetValueOnGameThread();
+#else
+	return 0;
+#endif
+}
 
 // Pool/crew diagnostics are commented out after runtime verification (2026-10-13).
 // Keep the gates off as well to avoid formatting, profile scans and timing work.

@@ -6,7 +6,8 @@
 #include "StoryDefinition.generated.h"
 
 /**
- * Static campaign rules. Runtime progress never belongs in this asset.
+ * Legacy asset schema retained for existing asset references only.
+ * Runtime campaign progression uses StoryFacadeSubsystem; these rules are not loaded or executed.
  */
 UCLASS(BlueprintType, Const)
 class STORY_API UStoryDefinition : public UPrimaryDataAsset

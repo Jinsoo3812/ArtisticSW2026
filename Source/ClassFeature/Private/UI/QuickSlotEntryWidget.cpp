@@ -6,6 +6,7 @@
 #include "Components/Border.h"
 #include "Engine/Texture2D.h"
 #include "BasePlayer.h"
+#include "UI/InventoryItemDragDropOperation.h"
 
 void UQuickSlotEntryWidget::SetupFromData(const FGameplayTag& InSlotTag, UTexture2D* InIcon, bool bEquipped, int32 InCount)
 {
@@ -96,4 +97,26 @@ FReply UQuickSlotEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 	}
 
 	return FReply::Unhandled();
+}
+
+bool UQuickSlotEntryWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent,
+	UDragDropOperation* InOperation)
+{
+	// HUD quick slots intentionally disable click interaction, but they must still
+	// accept items dragged from the inventory panel opened over the HUD.
+	if (QuickSlotIndex == INDEX_NONE)
+	{
+		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+	}
+
+	const UInventoryItemDragDropOperation* InventoryOperation = Cast<UInventoryItemDragDropOperation>(InOperation);
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwningPlayerPawn());
+	if (!InventoryOperation || !InventoryOperation->ItemTag.IsValid() || !Player
+		|| !Player->CanQuickSlotAcceptItem(QuickSlotIndex, InventoryOperation->ItemTag))
+	{
+		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
+	}
+
+	Player->AssignQuickSlotItem(QuickSlotIndex, InventoryOperation->ItemTag);
+	return true;
 }

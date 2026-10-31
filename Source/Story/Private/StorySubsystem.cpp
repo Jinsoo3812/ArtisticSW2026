@@ -1,40 +1,14 @@
 #include "StorySubsystem.h"
 
 #include "Kismet/GameplayStatics.h"
-#include "StoryActionReceiverComponent.h"
-#include "StoryDefinition.h"
 #include "StorySaveGame.h"
 #include "StorySettings.h"
 #include "StoryStateReplicator.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogStory, Log, All);
-
-void UStorySubsystem::Initialize(FSubsystemCollectionBase& Collection)
-{
-	Super::Initialize(Collection);
-
-	const UStorySettings* Settings = GetDefault<UStorySettings>();
-	UStoryDefinition* DefaultDefinition = Settings
-		? Settings->DefaultStoryDefinition.LoadSynchronous()
-		: nullptr;
-	if (!DefaultDefinition)
-	{
-		return;
-	}
-
-	TArray<FText> ValidationErrors;
-	if (DefaultDefinition->ValidateDefinition(ValidationErrors))
-	{
-		Definition = DefaultDefinition;
-	}
-}
-
 void UStorySubsystem::Deinitialize()
 {
-	ActionReceivers.Reset();
-	PendingActions.Reset();
 	ActiveReplicator.Reset();
 	Super::Deinitialize();
 }
@@ -64,30 +38,10 @@ void UStorySubsystem::InitializeConfiguredProgress()
 
 bool UStorySubsystem::ConfigureDefinition(UStoryDefinition* NewDefinition, bool bResetProgress)
 {
-	if (!HasStoryAuthority() || !NewDefinition)
-	{
-		return false;
-	}
-
-	TArray<FText> ValidationErrors;
-	if (!NewDefinition->ValidateDefinition(ValidationErrors))
-	{
-		for (const FText& Error : ValidationErrors)
-		{
-			UE_LOG(LogStory, Error, TEXT("Story definition validation failed: %s"), *Error.ToString());
-		}
-		return false;
-	}
-
-	Definition = NewDefinition;
-	if (bResetProgress)
-	{
-		return ResetProgress();
-	}
-
-	RebuildPendingActions();
-	TryExecutePendingActions();
-	return true;
+	// Compatibility entry point for old Blueprints. Campaign progression is owned by the facade.
+	(void)NewDefinition;
+	(void)bResetProgress;
+	return false;
 }
 
 bool UStorySubsystem::HasStoryAuthority() const
@@ -127,7 +81,6 @@ bool UStorySubsystem::AddFacts(const FGameplayTagContainer& FactTags)
 		return false;
 	}
 
-	EvaluateStateRules();
 	CommitProgressChange();
 	return true;
 }
@@ -140,7 +93,6 @@ bool UStorySubsystem::RemoveFact(FGameplayTag FactTag)
 	}
 
 	Facts.RemoveTag(FactTag);
-	EvaluateStateRules();
 	CommitProgressChange();
 	return true;
 }
@@ -163,7 +115,6 @@ bool UStorySubsystem::SetCounter(FGameplayTag CounterTag, int32 NewValue)
 	}
 
 	Counters.FindOrAdd(CounterTag) = NewValue;
-	EvaluateStateRules();
 	CommitProgressChange();
 	return true;
 }
@@ -196,23 +147,9 @@ bool UStorySubsystem::ResetProgress()
 
 	Facts.Reset();
 	Counters.Reset();
-	if (Definition)
-	{
-		Facts = Definition->InitialFacts;
-		for (const FStoryCounterValue& Counter : Definition->InitialCounters)
-		{
-			if (Counter.CounterTag.IsValid())
-			{
-				Counters.Add(Counter.CounterTag, Counter.Value);
-			}
-		}
-	}
 	AppliedActionKeys.Reset();
-	PendingActions.Reset();
 	bStartupProgressInitialized = true;
 
-	EvaluateStateRules();
-	RebuildPendingActions();
 	CommitProgressChange();
 	return true;
 }
@@ -237,7 +174,8 @@ UStorySaveGame* UStorySubsystem::BuildRoomProgress() const
 {
 	if (!HasStoryAuthority()) return nullptr;
 	UStorySaveGame* Save = NewObject<UStorySaveGame>(GetTransientPackage());
-	Save->StoryDefinitionId = Definition ? Definition->GetPrimaryAssetId() : FPrimaryAssetId();
+	// StoryDefinitionId is retained only to deserialize legacy saves.
+	Save->StoryDefinitionId = FPrimaryAssetId();
 	Save->Facts = Facts;
 	for (const TPair<FGameplayTag, int32>& Counter : Counters)
 	{
@@ -257,8 +195,6 @@ UStorySaveGame* UStorySubsystem::BuildRoomProgress() const
 bool UStorySubsystem::ApplyRoomProgress(const UStorySaveGame* Progress)
 {
 	if (!HasStoryAuthority() || !Progress || Progress->SaveVersion != 1) return false;
-	const FPrimaryAssetId CurrentId = Definition ? Definition->GetPrimaryAssetId() : FPrimaryAssetId();
-	if (Progress->StoryDefinitionId != CurrentId) return false;
 	TSet<FGameplayTag> SeenCounters;
 	for (const FStoryCounterValue& Counter : Progress->Counters)
 	{
@@ -273,8 +209,6 @@ bool UStorySubsystem::ApplyRoomProgress(const UStorySaveGame* Progress)
 	}
 	AppliedActionKeys = TSet<FName>(Progress->AppliedActionKeys);
 	bStartupProgressInitialized = true;
-	EvaluateStateRules();
-	RebuildPendingActions();
 	CommitProgressChange();
 	return true;
 }
@@ -299,38 +233,7 @@ bool UStorySubsystem::LoadProgressFromSlot(const FString& SlotName)
 		return false;
 	}
 
-	const FPrimaryAssetId CurrentDefinitionId = Definition
-		? Definition->GetPrimaryAssetId()
-		: FPrimaryAssetId();
-	if (Save->StoryDefinitionId.IsValid()
-		&& CurrentDefinitionId.IsValid()
-		&& Save->StoryDefinitionId != CurrentDefinitionId)
-	{
-		UE_LOG(
-			LogStory,
-			Error,
-			TEXT("Story save definition mismatch. Save=%s Current=%s"),
-			*Save->StoryDefinitionId.ToString(),
-			*CurrentDefinitionId.ToString());
-		return false;
-	}
-
-	Facts = Save->Facts;
-	Counters.Reset();
-	for (const FStoryCounterValue& Counter : Save->Counters)
-	{
-		if (Counter.CounterTag.IsValid())
-		{
-			Counters.Add(Counter.CounterTag, Counter.Value);
-		}
-	}
-	AppliedActionKeys = TSet<FName>(Save->AppliedActionKeys);
-	bStartupProgressInitialized = true;
-
-	EvaluateStateRules();
-	RebuildPendingActions();
-	CommitProgressChange();
-	return true;
+	return ApplyRoomProgress(Save);
 }
 
 FStoryProgressSnapshot UStorySubsystem::GetProgressSnapshot() const
@@ -398,136 +301,15 @@ void UStorySubsystem::ApplyReplicatedSnapshot(const FStoryProgressSnapshot& Snap
 	OnProgressChanged.Broadcast(Revision);
 }
 
+// Legacy action-receiver components remain loadable, but definition actions are retired.
 void UStorySubsystem::RegisterActionReceiver(UStoryActionReceiverComponent* Receiver)
 {
-	if (!Receiver || ActionReceivers.Contains(Receiver))
-	{
-		return;
-	}
-	ActionReceivers.Add(Receiver);
-	TryExecutePendingActions();
+	(void)Receiver;
 }
 
 void UStorySubsystem::UnregisterActionReceiver(UStoryActionReceiverComponent* Receiver)
 {
-	ActionReceivers.Remove(Receiver);
-}
-
-void UStorySubsystem::EvaluateStateRules()
-{
-	if (bEvaluatingRules || !Definition)
-	{
-		return;
-	}
-
-	TGuardValue<bool> Guard(bEvaluatingRules, true);
-	bool bActivatedInPass = false;
-	do
-	{
-		bActivatedInPass = false;
-		for (const FStoryStateRule& Rule : Definition->StateRules)
-		{
-			if (!Rule.StateTag.IsValid()
-				|| Facts.HasTagExact(Rule.StateTag)
-				|| !Rule.ActivationCondition.IsSatisfied(Facts, Counters))
-			{
-				continue;
-			}
-
-			Facts.AddTag(Rule.StateTag);
-			Facts.AppendTags(Rule.GrantedFacts);
-			for (const FGameplayTag& RemovedFact : Rule.RemovedFacts)
-			{
-				Facts.RemoveTag(RemovedFact);
-			}
-			QueueActionsForState(Rule);
-			OnStateActivated.Broadcast(Rule.StateTag);
-			bActivatedInPass = true;
-		}
-	}
-	while (bActivatedInPass);
-}
-
-void UStorySubsystem::QueueActionsForState(const FStoryStateRule& Rule)
-{
-	for (const FStoryActionSpec& Action : Rule.ActivationActions)
-	{
-		if (Action.ActionId.IsNone()
-			|| !Action.ActionType.IsValid()
-			|| AppliedActionKeys.Contains(MakeActionKey(Rule.StateTag, Action.ActionId)))
-		{
-			continue;
-		}
-
-		const bool bAlreadyPending = PendingActions.ContainsByPredicate(
-			[&Rule, &Action](const FPendingAction& Pending)
-			{
-				return Pending.OwningStateTag.MatchesTagExact(Rule.StateTag)
-					&& Pending.Action.ActionId == Action.ActionId;
-			});
-		if (!bAlreadyPending)
-		{
-			PendingActions.Add({ Rule.StateTag, Action });
-		}
-	}
-}
-
-void UStorySubsystem::RebuildPendingActions()
-{
-	PendingActions.Reset();
-	if (!Definition)
-	{
-		return;
-	}
-
-	for (const FStoryStateRule& Rule : Definition->StateRules)
-	{
-		if (Facts.HasTagExact(Rule.StateTag))
-		{
-			QueueActionsForState(Rule);
-		}
-	}
-}
-
-void UStorySubsystem::TryExecutePendingActions()
-{
-	if (!HasStoryAuthority() || bDispatchingActions)
-	{
-		return;
-	}
-
-	TGuardValue<bool> Guard(bDispatchingActions, true);
-	ActionReceivers.RemoveAll([](const TWeakObjectPtr<UStoryActionReceiverComponent>& Receiver)
-	{
-		return !Receiver.IsValid();
-	});
-
-	for (int32 PendingIndex = PendingActions.Num() - 1; PendingIndex >= 0; --PendingIndex)
-	{
-		const FPendingAction Pending = PendingActions[PendingIndex];
-		bool bHandled = false;
-		for (const TWeakObjectPtr<UStoryActionReceiverComponent>& ReceiverPtr : ActionReceivers)
-		{
-			UStoryActionReceiverComponent* Receiver = ReceiverPtr.Get();
-			if (Receiver
-				&& Receiver->CanHandleStoryAction(Pending.Action.ActionType)
-				&& Receiver->ExecuteStoryAction(Pending.Action))
-			{
-				bHandled = true;
-				break;
-			}
-		}
-
-		if (bHandled)
-		{
-			AppliedActionKeys.Add(MakeActionKey(Pending.OwningStateTag, Pending.Action.ActionId));
-			PendingActions.RemoveAtSwap(PendingIndex);
-		}
-		else
-		{
-			OnActionPending.Broadcast(Pending.OwningStateTag, Pending.Action);
-		}
-	}
+	(void)Receiver;
 }
 
 void UStorySubsystem::CommitProgressChange()
@@ -535,7 +317,6 @@ void UStorySubsystem::CommitProgressChange()
 	++Revision;
 	OnProgressChanged.Broadcast(Revision);
 	SynchronizeReplicator();
-	TryExecutePendingActions();
 }
 
 void UStorySubsystem::SynchronizeReplicator()
@@ -547,11 +328,6 @@ void UStorySubsystem::SynchronizeReplicator()
 			Replicator->SetSnapshot(GetProgressSnapshot());
 		}
 	}
-}
-
-FName UStorySubsystem::MakeActionKey(FGameplayTag StateTag, FName ActionId) const
-{
-	return FName(*FString::Printf(TEXT("%s:%s"), *StateTag.ToString(), *ActionId.ToString()));
 }
 
 FString UStorySubsystem::ResolveSlotName(const FString& RequestedSlotName) const

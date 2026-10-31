@@ -12,8 +12,7 @@
 #include "Skills/GravityVortexField.h"
 #include "Bombardment.h"
 #include "WaterSurfaceQueryLibrary.h"
-#include "Materials/MaterialParameterCollection.h"
-#include "Materials/MaterialParameterCollectionInstance.h"
+#include "SWWaterSkillOverlaySubsystem.h"
 
 UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 {
@@ -342,40 +341,24 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 
 void UGA_GravityVortexThrow::UpdateWaterPreview(const FVector& Center, float Radius)
 {
-	if (!GetWorld() || GetWorld()->IsNetMode(NM_DedicatedServer)) return;
-	if (!WaterParameterCollection)
+	if (GetWorld())
 	{
-		WaterParameterCollection = LoadObject<UMaterialParameterCollection>(nullptr,
-			TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom"));
-	}
-	UMaterialParameterCollectionInstance* Instance = WaterParameterCollection
-		? GetWorld()->GetParameterCollectionInstance(WaterParameterCollection) : nullptr;
-	if (!Instance) return;
-	const float SafeRadius = FMath::Max(1.0f, Radius);
-	if (!bWaterPreviewEnabled || FVector::DistSquared2D(Center, LastWaterPreviewCenter) > 25.0f
-		|| !FMath::IsNearlyEqual(SafeRadius, LastWaterPreviewRadius, 0.1f))
-	{
-		Instance->SetVectorParameterValue(TEXT("SW_VortexPreviewCenterRadius"),
-			FLinearColor(Center.X, Center.Y, Center.Z, SafeRadius));
-		LastWaterPreviewCenter = Center;
-		LastWaterPreviewRadius = SafeRadius;
-	}
-	if (!bWaterPreviewEnabled)
-	{
-		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 1.0f);
-		bWaterPreviewEnabled = true;
+		if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+		{
+			Overlays->Upsert(this, Center, Radius);
+		}
 	}
 }
 
 void UGA_GravityVortexThrow::ClearWaterPreview()
 {
-	if (!bWaterPreviewEnabled || !GetWorld() || !WaterParameterCollection) return;
-	if (UMaterialParameterCollectionInstance* Instance =
-		GetWorld()->GetParameterCollectionInstance(WaterParameterCollection))
+	if (GetWorld())
 	{
-		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 0.0f);
+		if (USWWaterSkillOverlaySubsystem* Overlays = GetWorld()->GetSubsystem<USWWaterSkillOverlaySubsystem>())
+		{
+			Overlays->Remove(this);
+		}
 	}
-	bWaterPreviewEnabled = false;
 }
 
 bool UGA_GravityVortexThrow::GetLaunchData(FVector& OutSpawnLocation, FVector& OutLaunchVelocity) const

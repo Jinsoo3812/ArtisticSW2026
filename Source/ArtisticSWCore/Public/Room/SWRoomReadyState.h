@@ -11,6 +11,8 @@ class ARTISTICSWCORE_API ASWRoomReadyState : public AInfo
 {
 	GENERATED_BODY()
 public:
+	UPROPERTY(Replicated) int32 DevelopmentOptionMask = 0;
+	UPROPERTY(Replicated) float DevelopmentShipSpeedMultiplier = 1.0f;
 	UPROPERTY(Replicated) ESWSessionLifePhase SessionLifePhase = ESWSessionLifePhase::Playing;
 	ASWRoomReadyState();
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Room") int32 RestoreGeneration = 0;

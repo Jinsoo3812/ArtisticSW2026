@@ -2,6 +2,7 @@
 
 
 #include "BaseEnemy.h"
+#include "Engine/GameInstance.h"
 #include "Components/SWFoleyComponent.h"
 #include "Audio/SWFoleyAudioProfile.h"
 #include "Room/SWRoomSnapshotComponent.h"
@@ -418,6 +419,10 @@ void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 
 		if (HasAuthority())
 		{
+			if (bCompleteStoryNodeOnDeath)
+				if (UGameInstance* GameInstance = GetGameInstance())
+					if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+						Story->CompleteStoryNode(CompletedStoryNodeOnDeath);
 			if (WeaponComponent)
 			{
 				WeaponComponent->DeactivateForOwnerDeath();

@@ -36,6 +36,9 @@ public class ClassFeatureEditor : ModuleRules
 			"AnimGraphRuntime",
 			"ArtisticSWCore",
 			"ClassFeature",
+			"Enemy",
+			"NPCDialogue",
+			"Story",
 			"GASCore",
 			"WaterAndShip",
 			"Water",
@@ -45,7 +48,9 @@ public class ClassFeatureEditor : ModuleRules
 			"MeshDescription",
 			"AssetRegistry",
 			"PropertyEditor",
-			"ImageCore"
+			"ImageCore",
+			"MaterialEditor",
+			"RHI"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

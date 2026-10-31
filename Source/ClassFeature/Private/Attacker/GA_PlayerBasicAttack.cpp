@@ -421,14 +421,24 @@ void UGA_PlayerBasicAttack::OnComboInputEvent(FGameplayEventData Payload)
 	}
 }
 
+int32 UGA_PlayerBasicAttack::ResolveHitWindowSection(FName PlayingSection) const
+{
+	// CurrentComboIndex is the queued next step immediately after a commit notify.
+	// Its hit window still belongs to the section actually playing on the ASC.
+	const int32 PlayingIndex = CachedComboSections.IsEmpty() ? 0 : CachedComboSections.IndexOfByKey(PlayingSection);
+	return PlayingIndex != INDEX_NONE && PlayingIndex != LastOpenedComboIndex
+		&& (CachedComboSections.IsEmpty() || PlayingIndex <= CurrentComboIndex) ? PlayingIndex : INDEX_NONE;
+}
+
 void UGA_PlayerBasicAttack::StartHitScan()
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player || !Player->HasAuthority() || !IsActive() || bAttackFinished || bHitScanActive
-		|| !IsValid(CachedSword) || Player->EquippedItem != CachedSword || LastOpenedComboIndex == CurrentComboIndex) return;
+		|| !IsValid(CachedSword) || Player->EquippedItem != CachedSword) return;
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	if (!SourceASC || (CachedComboSections.IsValidIndex(CurrentComboIndex)
-		&& SourceASC->GetCurrentMontageSectionName() != CachedComboSections[CurrentComboIndex])) return;
+	if (!SourceASC) return;
+	const int32 PlayingIndex = ResolveHitWindowSection(SourceASC->GetCurrentMontageSectionName());
+	if (PlayingIndex == INDEX_NONE) return;
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
 
@@ -440,7 +450,7 @@ void UGA_PlayerBasicAttack::StartHitScan()
 	CachedDamageSpecHandle = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
 
 	if (!CachedDamageSpecHandle.IsValid()) { FinishAttack(true); return; }
-	LastOpenedComboIndex = CurrentComboIndex;
+	LastOpenedComboIndex = PlayingIndex;
 	bHitScanActive = CachedSword->HitScanStart(CachedDamageSpecHandle);
 }
 

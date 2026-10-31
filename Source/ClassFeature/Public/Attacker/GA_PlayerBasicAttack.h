@@ -62,6 +62,8 @@ protected:
 	void OnComboInputEvent(FGameplayEventData Payload);
 
 private:
+	friend class FPlayerAttackQueuedSectionTest;
+	int32 ResolveHitWindowSection(FName PlayingSection) const;
 	bool CacheAttackData();
 	bool CacheComboSections(const TArray<FName>& ConfiguredSections);
 	bool PlayAttackMontage();

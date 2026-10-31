@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
 #include "WeaponDefinition.generated.h"
 
@@ -45,12 +46,61 @@ public:
 	TSoftClassPtr<AActor> ProjectileClass;
 };
 
-/** Single source of truth for a weapon; item identity and inventory stay in ItemData. */
+/** Shared assets for a weapon family. Per-item numeric balance belongs in FWeaponBalanceRow. */
+UCLASS(BlueprintType)
+class ARTISTICSWCORE_API UWeaponFamilyProfile : public UPrimaryDataAsset
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	TSoftClassPtr<ABaseItem> ActorClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UWeaponAbilitySet> AbilitySet;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UWeaponAnimationDataAsset> AnimationData;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	TSoftClassPtr<AActor> ProjectileClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	FGameplayTagContainer AllowedRoleTags;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	TArray<TSubclassOf<UGameplayEffect>> EquipEffects;
+};
+
+/** One authored row per item. Profile supplies assets; all per-item numeric values live here. */
+USTRUCT(BlueprintType)
+struct ARTISTICSWCORE_API FWeaponBalanceRow : public FTableRowBase
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (Categories = "Item.Id.Weapon"))
+	FGameplayTag ItemTag;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UWeaponFamilyProfile> Profile;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0"))
+	float StrengthBonus = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.01"))
+	float AttackCoefficient = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.01"))
+	float BasicAttackPlayRate = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.01"))
+	float AimCyclePlayRate = 1.f;
+};
+
+/** Transient runtime view built from a catalog DT row. No per-item DA is authored. */
 UCLASS(BlueprintType)
 class ARTISTICSWCORE_API UEquippableWeaponDefinition : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 public:
+	virtual void PostLoad() override;
+
+	/** Empty retains legacy standalone behavior. Authored catalog weapons use this row as authority. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon Balance", meta = (RowType = "/Script/ArtisticSWCore.WeaponBalanceRow"))
+	FDataTableRowHandle BalanceRow;
+
+	/** Rebuild runtime-only data after editing the table; errors clear the resolved definition. */
+	bool RefreshBalanceData(FString& OutError);
+
+	// Resolved compatibility fields. For table-backed weapons edit BalanceRow/Profile, not these values.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TSoftClassPtr<ABaseItem> ActorClass;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
