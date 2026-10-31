@@ -7,6 +7,9 @@
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#if WITH_EDITOR
+#include "TextureCompiler.h"
+#endif
 
 bool UItemIconLibrary::SetItemIcon(UImage* Image, UTexture2D* Texture, FGameplayTag ItemTag)
 {
@@ -27,6 +30,14 @@ bool UItemIconLibrary::SetItemIconWithRarity(UImage* Image, UTexture2D* Texture,
   Image->SetBrushFromTexture(nullptr);
   return false;
  }
+ // Designer placeholder tint must not multiply the actual item artwork by black.
+ Image->SetColorAndOpacity(FLinearColor::White);
+ // Match UImage::SetBrushFromTexture's UI resource preparation, also for materials.
+#if WITH_EDITOR
+ FTextureCompilingManager::Get().FinishCompilation({Texture});
+#endif
+ Texture->bForceMiplevelsToBeResident = true;
+ Texture->bIgnoreStreamingMipBias = true;
  const UItemIconSettings* Settings = GetDefault<UItemIconSettings>();
  UMaterialInterface* Parent = nullptr;
  bool bUsingPreset = false;

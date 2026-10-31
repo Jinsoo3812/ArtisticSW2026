@@ -809,8 +809,85 @@ bool ASWNetworkWeatherActor::ApplyDevelopmentWeather(int32 Hour, int32 Minute, i
 		|| !Enum->IsValidEnumValue(Weather) || Enum->GetIndexByValue(Weather) >= Enum->NumEnums() - 1)
 	{ OutMessage = TEXT("Invalid weather/time. Run SW.Weather.Set with no arguments to list weather IDs."); return false; }
 	SetNetworkWeatherTime(Hour, Minute, static_cast<uint8>(Weather));
+	if (bGenerationFailed) { OutMessage = TEXT("Weather change failed while generating replicated playback state."); return false; }
 	OutMessage = FString::Printf(TEXT("Weather set to %02d:%02d, %s; day/night 80/20."), Hour, Minute, *Enum->GetDisplayNameTextByValue(Weather).ToString());
-	return !bGenerationFailed;
+	return true;
+#else
+	return false;
+#endif
+}
+
+bool ASWNetworkWeatherActor::ApplyDevelopmentWeatherPreset(const FString& WeatherName, int32 Hour, FString& OutMessage)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (!HasAuthority() || !bAdapterReady || bGenerationFailed || ServerHistory.IsEmpty()
+		|| Hour < -1 || Hour > 23 || WeatherName.Len() > 64)
+	{
+		OutMessage = TEXT("Weather preset rejected: invalid request or server weather is not ready.");
+		return false;
+	}
+	// Use the authoritative history at presentation time, including on dedicated servers.
+	// PlannerState is ahead of the visible clock; actor properties can be from local playback.
+	const double Now = GetServerTime() - 2.;
+	const FSWWeatherPlaybackSegment* Current = &ServerHistory[0];
+	for (const FSWWeatherPlaybackSegment& Segment : ServerHistory)
+	{
+		if (Segment.StartServerTime > Now) break;
+		Current = &Segment;
+	}
+	const double Alpha = Current->SecondsPerHour > 0.
+		? FMath::Clamp((Now - Current->StartServerTime) / Current->SecondsPerHour, 0., 1.)
+		: Current->FrozenAlpha;
+	const int32 Minute = Hour < 0 ? FMath::Clamp(FMath::FloorToInt(Alpha * 60.), 0, 59) : 0;
+	if (Hour < 0) Hour = Current->Hour;
+	FProperty* Init = GetClass()->FindPropertyByName(TEXT("InitWeather"));
+	const FByteProperty* Byte = CastField<FByteProperty>(Init);
+	const FEnumProperty* Typed = CastField<FEnumProperty>(Init);
+	const UEnum* Enum = Byte ? Byte->Enum.Get() : (Typed ? Typed->GetEnum() : nullptr);
+	if (!Enum) { OutMessage = TEXT("Weather enum is unavailable."); return false; }
+	int32 Weather = INDEX_NONE;
+	if (!WeatherName.IsEmpty())
+	{
+		FString Name = WeatherName;
+		if (Name.Equals(TEXT("Clear"), ESearchCase::IgnoreCase)) Name = TEXT("Sunny");
+		if (Name.Equals(TEXT("Rain"), ESearchCase::IgnoreCase)) Name = TEXT("Rainy");
+		if (Name.Equals(TEXT("Storm"), ESearchCase::IgnoreCase)) Name = TEXT("Thunder");
+		for (int32 Index = 0; Index < Enum->NumEnums() - 1; ++Index)
+		{
+			if (Enum->GetDisplayNameTextByIndex(Index).ToString().Equals(Name, ESearchCase::IgnoreCase)
+				|| Enum->GetNameStringByIndex(Index).Equals(Name, ESearchCase::IgnoreCase))
+			{
+				Weather = static_cast<int32>(Enum->GetValueByIndex(Index));
+				break;
+			}
+		}
+	}
+	else
+	{
+		// Read the current weather struct into scratch memory without changing live visuals.
+		FStructProperty* Param = FindFProperty<FStructProperty>(GetClass(), TEXT("CurrentParam"));
+		const FSWWeatherPropertyValue* Value = Current->Properties.FindByPredicate(
+			[](const FSWWeatherPropertyValue& Entry) { return Entry.Name == TEXT("CurrentParam"); });
+		if (Param && Value)
+		{
+			FPropertyScratch Scratch(Param);
+			if (Param->ImportText_Direct(*Value->Value, Scratch.Value, this, PPF_None))
+			{
+				FProperty* Name = Param->Struct->FindPropertyByName(WeatherNameField);
+				if (const FByteProperty* Field = CastField<FByteProperty>(Name))
+					Weather = Field->GetPropertyValue_InContainer(Scratch.Value);
+				else if (const FEnumProperty* EnumField = CastField<FEnumProperty>(Name))
+					Weather = static_cast<int32>(EnumField->GetUnderlyingProperty()->GetSignedIntPropertyValue(EnumField->ContainerPtrToValuePtr<void>(Scratch.Value)));
+			}
+		}
+	}
+	if (Weather < 0)
+	{
+		ApplyDevelopmentWeather(12, 0, -1, OutMessage);
+		OutMessage = TEXT("Unknown weather name or current weather unavailable. ") + OutMessage;
+		return false;
+	}
+	return ApplyDevelopmentWeather(Hour, Minute, Weather, OutMessage);
 #else
 	return false;
 #endif

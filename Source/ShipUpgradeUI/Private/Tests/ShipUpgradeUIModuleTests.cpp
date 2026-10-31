@@ -20,6 +20,42 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInterface.h"
+#include "Components/Image.h"
+#include "Engine/Texture2D.h"
+#include "Upgrade/ShipUpgradeTreeDataAsset.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FShipUpgradeNodeIconTest,
+	"ArtisticSW.ShipUpgrade.UI.NodeIcons", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FShipUpgradeNodeIconTest::RunTest(const FString& Parameters)
+{
+	UShipUpgradeTreeDataAsset* Tree = LoadObject<UShipUpgradeTreeDataAsset>(nullptr,
+		TEXT("/Game/Blueprints/Item/Data/ShipUpgrade/DA_ShipUpgradeTree.DA_ShipUpgradeTree"));
+	UClass* NodeClass = LoadClass<UShipUpgradeNodeWidget>(nullptr,
+		TEXT("/Game/Blueprints/02_UI/UI_WorkTable/UI_ShipUpgrade/WBP_ShipUpgradeNode.WBP_ShipUpgradeNode_C"));
+	if (!TestNotNull(TEXT("Upgrade tree"), Tree) || !TestNotNull(TEXT("Authored node class"), NodeClass)) return false;
+	UShipUpgradeNodeWidget* Node = NewObject<UShipUpgradeNodeWidget>(GetTransientPackage(), NodeClass);
+	Node->Initialize();
+	UImage* Image = Cast<UImage>(Node->WidgetTree->FindWidget(TEXT("Image_Icon")));
+	if (!TestNotNull(TEXT("Node icon image"), Image)) return false;
+	AddInfo(FString::Printf(TEXT("Authored icon Color=%s Tint=%s Resource=%s"),
+		*Image->GetColorAndOpacity().ToString(), *Image->GetBrush().TintColor.GetSpecifiedColor().ToString(),
+		*GetPathNameSafe(Image->GetBrush().GetResourceObject())));
+	for (const FShipUpgradeNodeDefinition& Definition : Tree->Nodes)
+	{
+		UTexture2D* Texture = Definition.Icon.LoadSynchronous();
+		if (!TestNotNull(FString::Printf(TEXT("%s icon %s"), *Definition.NodeId.ToString(), *Definition.Icon.ToString()), Texture)) continue;
+		FShipUpgradeNodeView View;
+		View.NodeId = Definition.NodeId;
+		View.Icon = Definition.Icon;
+		View.State = EShipUpgradeNodeState::Available;
+		Node->ApplyNodeView(View);
+		TestTrue(TEXT("Resolved texture reaches node brush"), Image->GetBrush().GetResourceObject() == Texture);
+		TestTrue(TEXT("Available node icon is visible"), Image->GetVisibility() == ESlateVisibility::HitTestInvisible);
+		const FLinearColor Tint = Image->GetBrush().TintColor.GetSpecifiedColor() * Image->GetColorAndOpacity();
+		TestTrue(TEXT("Icon is not multiplied by black"), Tint.R > 0.f || Tint.G > 0.f || Tint.B > 0.f);
+	}
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShipUpgradeUIModulePlacementTest,
