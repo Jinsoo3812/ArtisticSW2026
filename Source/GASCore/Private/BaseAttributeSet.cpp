@@ -77,6 +77,16 @@ bool UBaseAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData&
 
 	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
 	const FGameplayAttribute& Attribute = Data.EvaluatedData.Attribute;
+	// Enforce co-op damage rules at the shared attribute boundary, including
+	// projectiles and effects that bypass individual weapon target filters.
+	const bool bIncomingDamage = Attribute == GetDamageAttribute()
+		|| (Attribute == GetHealthAttribute() && Data.EvaluatedData.Magnitude < 0.0f);
+	const UAbilitySystemComponent* SourceASC = Data.EffectSpec.GetContext().GetOriginalInstigatorAbilitySystemComponent();
+	if (bIncomingDamage && ASC && SourceASC && ASC != SourceASC
+		&& ASC->HasMatchingGameplayTag(Team_Player) && SourceASC->HasMatchingGameplayTag(Team_Player))
+	{
+		return false;
+	}
 	// Healing must never revive a dead avatar or accept non-finite values.
 	if (Attribute == GetHealingAttribute()
 		&& (!ASC || !ASC->IsOwnerActorAuthoritative() || ASC->HasMatchingGameplayTag(State_Dead)

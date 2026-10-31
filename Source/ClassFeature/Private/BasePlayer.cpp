@@ -439,7 +439,12 @@ bool ABasePlayer::IsMoveInputIgnored() const
 
 void ABasePlayer::HandleDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
-	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) ApplyLocalDeathRagdoll();
+	if (HealthComponent && InHealthComponent == HealthComponent && !HealthComponent->IsLifeInitializing()) PrepareDeathMovement();
+}
+
+bool ABasePlayer::ShouldKeepCharacterMovementOnDeath() const
+{
+	return HealthComponent && HealthComponent->GetDeathState() == EBaseDeathState::DeathStarted;
 }
 
 void ABasePlayer::PrepareDeathMovement()
@@ -457,9 +462,9 @@ void ABasePlayer::PrepareDeathMovement()
 	{
 		Movement->StopMovementImmediately();
 		Movement->ClearAccumulatedForces();
-		Movement->DisableMovement();
+		if (!ShouldKeepCharacterMovementOnDeath()) Movement->DisableMovement();
 	}
-	SetActorEnableCollision(false);
+	if (!ShouldKeepCharacterMovementOnDeath()) SetActorEnableCollision(false);
 }
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
@@ -506,6 +511,8 @@ void ABasePlayer::RetireLifeAbilityBindings()
 void ABasePlayer::ApplyLocalDeathRagdoll()
 {
 	PrepareDeathMovement();
+	// Retain ordinary capsule/floor/base movement until the death montage finishes.
+	if (ShouldKeepCharacterMovementOnDeath()) return;
 	SetActorHiddenInGame(true);
 	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{
@@ -4051,9 +4058,7 @@ void ABasePlayer::FinalizeStartingInventory(bool bFreshInventory)
  bStartingInventoryDecisionMade = true;
  UE_LOG(LogSWRoom, Display, TEXT("[SWInventoryDiag] Event=StartingItemsDecision Player=%s Restored=%d Fresh=%d"), *GetName(), bInventoryProgressRestored, bFreshInventory);
  if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsBefore"), true);
-#if WITH_EDITOR
  if (bFreshInventory) GiveStartingItemsForTest();
-#endif
  if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsAfter"), true);
 }
 

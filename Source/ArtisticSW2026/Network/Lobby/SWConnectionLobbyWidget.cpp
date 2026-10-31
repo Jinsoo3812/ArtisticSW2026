@@ -88,7 +88,12 @@ void USWConnectionLobbyWidget::Refresh()
 	Show(HostSection, bHostForm);
 	Show(ManualIPSection, bHostForm && Room && Room->NeedsManualPublicIP());
 	Show(HostedRoomSection, bHostForm && Room && !Room->GetRoomCode().IsEmpty());
-	Show(ContinueButton, bCanHost && Room->HasSavedRoom());
+	const bool bHasSavedRoom = Room && Room->HasSavedRoom();
+	// The authored wrapper is Collapsed; making only its child visible cannot
+	// reveal the button. Keep the wrapper in sync with the save availability.
+	if (WidgetTree) Show(WidgetTree->FindWidget(TEXT("ContinueButtonSizeBox")), bHasSavedRoom);
+	Show(ContinueButton, bHasSavedRoom);
+	if (ContinueButton) ContinueButton->SetIsEnabled(bCanHost);
 	if (CreateButton) CreateButton->SetIsEnabled(bCanHost);
 	if (AutoHostButton) AutoHostButton->SetIsEnabled(bCanHost && bCanSubmit);
 	if (ManualHostButton) ManualHostButton->SetIsEnabled(bCanHost && bCanSubmit);
