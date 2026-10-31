@@ -368,9 +368,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
-        14,
-        25,
-        12
+        10,
+        18,
+        8
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -395,9 +395,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
+        12,
         18,
-        25,
-        18
+        10
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -422,9 +422,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
-        20,
-        25,
-        25
+        12,
+        18,
+        15
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -449,9 +449,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
-        15,
-        20,
-        30
+        10,
+        12,
+        15
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -476,9 +476,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
-        75,
-        85,
-        55
+        55,
+        65,
+        25
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -499,13 +499,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        35.79957371038277,
+        -16.700426289617234,
         0
       ],
       "swing1_swing2_twist_deg": [
-        5,
-        72.5,
-        65
+        3,
+        20,
+        45
       ],
       "kind": "elbow",
       "rest_bend_deg": 36.70042628961723
@@ -530,9 +530,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
+        15,
         25,
-        45,
-        35
+        20
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -553,13 +553,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        45,
+        35,
         0
       ],
       "swing1_swing2_twist_deg": [
-        40,
-        65,
-        30
+        30,
+        50,
+        20
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -580,13 +580,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        60.40654381464784,
+        23.906543814647844,
         0
       ],
       "swing1_swing2_twist_deg": [
-        5,
-        63.5,
-        10
+        3,
+        25,
+        5
       ],
       "kind": "knee",
       "rest_bend_deg": 1.0934561853521578
@@ -607,13 +607,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        -12.5,
+        -7.5,
         0
       ],
       "swing1_swing2_twist_deg": [
-        20,
-        32.5,
-        12
+        12,
+        22.5,
+        8
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -638,9 +638,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
-        75,
-        85,
-        55
+        55,
+        65,
+        25
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -661,13 +661,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        35.79958874880196,
+        -16.70041125119804,
         0
       ],
       "swing1_swing2_twist_deg": [
-        5,
-        72.5,
-        65
+        3,
+        20,
+        45
       ],
       "kind": "elbow",
       "rest_bend_deg": 36.70041125119804
@@ -692,9 +692,9 @@
         0
       ],
       "swing1_swing2_twist_deg": [
+        15,
         25,
-        45,
-        35
+        20
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -715,13 +715,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        45,
+        35,
         0
       ],
       "swing1_swing2_twist_deg": [
-        40,
-        65,
-        30
+        30,
+        50,
+        20
       ],
       "kind": "cone",
       "rest_bend_deg": null
@@ -742,13 +742,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        60.40661955236679,
+        23.906619552366788,
         0
       ],
       "swing1_swing2_twist_deg": [
-        5,
-        63.5,
-        10
+        3,
+        25,
+        5
       ],
       "kind": "knee",
       "rest_bend_deg": 1.0933804476332118
@@ -769,13 +769,13 @@
       ],
       "bias_xyz_deg": [
         0,
-        -12.5,
+        -7.5,
         0
       ],
       "swing1_swing2_twist_deg": [
-        20,
-        32.5,
-        12
+        12,
+        22.5,
+        8
       ],
       "kind": "cone",
       "rest_bend_deg": null

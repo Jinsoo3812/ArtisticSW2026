@@ -1,6 +1,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
 #include "PlayerLifeTestWorld.h"
+#include "Components/SWCorpsePoseComponent.h"
+#include "Components/PoseableMeshComponent.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "Components/StaticMeshComponent.h"
@@ -126,6 +128,7 @@ bool FPlayerRagdollPresentationTest::RunTest(const FString& Parameters)
     Mesh->SetRelativeScale3D(FVector(1.1f));
     const FTransform Initial=Mesh->GetRelativeTransform();
     const FName InitialProfile=Mesh->GetCollisionProfileName();
+    const bool InitialMainPass=Mesh->bRenderInMainPass;
     const ECollisionEnabled::Type InitialCapsule=Player->GetCapsuleComponent()->GetCollisionEnabled();
     Mesh->SetGenerateOverlapEvents(true);Mesh->SetEnableGravity(false);
     AActor* Equipment=Fixture.World->SpawnActor<AActor>();
@@ -133,6 +136,14 @@ bool FPlayerRagdollPresentationTest::RunTest(const FString& Parameters)
     Equipment->AttachToComponent(Mesh,FAttachmentTransformRules::KeepWorldTransform);
     Player->GetCharacterMovement()->Velocity=FVector(400,30,0);
     Player->ApplyLocalDeathRagdoll();
+    auto* Pose=Player->FindComponentByClass<USWCorpsePoseComponent>();
+    if(!TestNotNull(TEXT("Normal death automatically installs corpse skin correction"),Pose))return false;
+    const TArray<FTransform> OriginalPose=Mesh->GetComponentSpaceTransforms();
+    Pose->TickComponent(1.f/60,LEVELTICK_All,nullptr);
+    TestNotNull(TEXT("Corrected visual uses the player skin"),Pose->Visual.Get());
+    TestFalse(TEXT("Source mesh does not double-render under corrected skin"),Mesh->bRenderInMainPass);
+    TestEqual(TEXT("Correction retains every physical source bone transform"),Mesh->GetComponentSpaceTransforms().Num(),OriginalPose.Num());
+    for(int32 I=0;I<OriginalPose.Num();++I)if(!OriginalPose[I].Equals(Mesh->GetComponentSpaceTransforms()[I],.0001)){AddError(TEXT("Skin correction modified source physics pose"));break;}
     TestTrue(TEXT("Physical corpse visible"),!Player->IsHidden()&&Mesh->IsVisible()&&Mesh->IsAnySimulatingPhysics());
     TestTrue(TEXT("Life flow still owns possession"),Life.Controller->GetPawn()==Player);
     TestEqual(TEXT("Living pawns cannot be pushed by corpse"),Mesh->GetCollisionResponseToChannel(ECC_Pawn),ECR_Ignore);
@@ -149,6 +160,9 @@ bool FPlayerRagdollPresentationTest::RunTest(const FString& Parameters)
     Player->ApplyLocalDeathRagdoll();
     TestTrue(TEXT("Duplicate entry cannot reset or add momentum"),Pelvis->GetUnrealWorldVelocity().Equals(Velocity,.01));
     Player->ResetLocalDeathRagdoll();
+    TestEqual(TEXT("Reset immediately restores original rendering"),Mesh->bRenderInMainPass,InitialMainPass);
+    TestFalse(TEXT("Reset hides corrected corpse skin"),Pose->Visual->IsVisible());
+    TestFalse(TEXT("Living character does not keep ticking corpse skin correction"),Pose->IsComponentTickEnabled());
     TestFalse(TEXT("Reset ends all simulation"),Mesh->IsAnySimulatingPhysics());
     TestFalse(TEXT("Reset restores animation evaluation"),Mesh->bPauseAnims);
     TestTrue(TEXT("Reset restores living overlap policy"),Mesh->GetGenerateOverlapEvents());

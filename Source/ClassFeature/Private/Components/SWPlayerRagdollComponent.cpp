@@ -1,4 +1,5 @@
 #include "Components/SWPlayerRagdollComponent.h"
+#include "Components/SWCorpsePoseComponent.h"
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -48,6 +49,7 @@ bool USWPlayerRagdollComponent::StartRagdoll()
         return false;
     }
 
+    USWCorpsePoseLibrary::Install(Player);
     UCharacterMovementComponent* Movement = Player->GetCharacterMovement();
     FVector Velocity = Player->GetVelocity();
     if (Movement && Movement->IsMovingOnGround())
@@ -136,6 +138,7 @@ void USWPlayerRagdollComponent::TickComponent(float DeltaTime,ELevelTick TickTyp
 
 void USWPlayerRagdollComponent::RestoreLivingPresentation()
 {
+    if(AActor* Owner=GetOwner())if(auto* Pose=Owner->FindComponentByClass<USWCorpsePoseComponent>())Pose->RestoreLivingPresentation();
     SetComponentTickEnabled(false); bActive=false;
     ACharacter* Player=Cast<ACharacter>(GetOwner()); USkeletalMeshComponent* Mesh=Player?Player->GetMesh():nullptr;
     if (!bSaved || !Mesh) return;

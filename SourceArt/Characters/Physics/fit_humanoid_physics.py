@@ -77,11 +77,11 @@ for label,a,m,asset,total_mass in [('Man',man_a,man_m,'ChManUE5/SKM_ChMan_UE5',7
             u=(p-start).normalized();v=(end-p).normalized();hinge=u.cross(v)
             if hinge.length<.001:hinge=Vector((-1,0,0))
             hinge.normalize();basis=axes(v,hinge);bend=math.degrees(math.atan2(hinge.dot(u.cross(v)),u.dot(v)))
-            minimum=-2 if stem=='calf' else 0;maximum=125 if stem=='calf' else 145
+            minimum=0;maximum=50 if stem=='calf' else 40
             lo=minimum-bend;hi=maximum-bend;bias[1]=(hi+lo)/2
             # Longitudinal twist is distinct from flexion: the forearm needs
             # pronation, the knee only a small amount of axial freedom.
-            limits=[5,(hi-lo)/2,65 if stem=='lowerarm' else 10];kind='elbow' if stem=='lowerarm' else 'knee'
+            limits=[3,(hi-lo)/2,45 if stem=='lowerarm' else 5];kind='elbow' if stem=='lowerarm' else 'knee'
         else:
             end={'spine_02':'spine_04','spine_04':'neck_01','neck_01':'head'}.get(child)
             if stem in ['upperarm','thigh']:end=('lowerarm' if stem=='upperarm' else 'calf')+'_'+side
@@ -90,14 +90,14 @@ for label,a,m,asset,total_mass in [('Man',man_a,man_m,'ChManUE5/SKM_ChMan_UE5',7
             secondary=Vector((1,0,0))
             if stem=='hand':secondary=joints['index_01_'+side]-joints['pinky_01_'+side]
             basis=axes(direction,secondary)
-            if child=='spine_02':limits=[14,25,12];bias[1]=5
-            elif child=='spine_04':limits=[18,25,18];bias[1]=5
-            elif child=='neck_01':limits=[20,25,25]
-            elif child=='head':limits=[15,20,30]
-            elif stem=='upperarm':limits=[75,85,55]
-            elif stem=='thigh':limits=[40,65,30];bias[1]=45
-            elif stem=='hand':limits=[25,45,35]
-            else:limits=[20,32.5,12];bias[1]=-12.5
+            if child=='spine_02':limits=[10,18,8];bias[1]=5
+            elif child=='spine_04':limits=[12,18,10];bias[1]=5
+            elif child=='neck_01':limits=[12,18,15]
+            elif child=='head':limits=[10,12,15]
+            elif stem=='upperarm':limits=[55,65,25]
+            elif stem=='thigh':limits=[30,50,20];bias[1]=35
+            elif stem=='hand':limits=[15,25,20]
+            else:limits=[12,22.5,8];bias[1]=-7.5
         descriptor['joints'].append({'child':child,'parent':parent,'pivot':list(p),'rotation':list(basis.to_quaternion()),'bias_xyz_deg':bias,'swing1_swing2_twist_deg':limits,'kind':kind,'rest_bend_deg':bend})
     (OUT/('Ch'+label+'_Physics.json')).write_text(json.dumps(descriptor,indent=2),encoding='utf8')
 result={'profiles':[{n:label for n,label in [('name',label)]} for label in ['Man','Woman']],'body_count':17,'joint_count':16}

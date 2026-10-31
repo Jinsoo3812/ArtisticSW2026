@@ -4,3 +4,4 @@ SourceArt/Characters/ChMan/*.blend filter=lfs diff=lfs merge=lfs -text
 SourceArt/Characters/ChMan/FBX/*.fbx filter=lfs diff=lfs merge=lfs -text
 SourceArt/Characters/ChWoman/*.blend filter=lfs diff=lfs merge=lfs -text
 SourceArt/Characters/ChWoman/FBX/*.fbx filter=lfs diff=lfs merge=lfs -text
+docs/images/PlayerRagdollPoseFix/*.png filter=lfs diff=lfs merge=lfs -text

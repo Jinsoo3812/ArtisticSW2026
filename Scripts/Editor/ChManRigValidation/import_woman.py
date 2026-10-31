@@ -13,8 +13,10 @@ try:
     mesh=unreal.load_asset(dest+'/SKM_ChWoman_UE5');assert mesh
     materials={s.material_slot_name:s.material_interface for s in unreal.load_asset('/Game/jiwon/Characters/SKM_Player_Woman').get_editor_property('materials')}
     slots=mesh.get_editor_property('materials')
-    for s in slots:
-        assert s.material_slot_name in materials;s.material_interface=materials[s.material_slot_name]
+    for index,s in enumerate(slots):
+        assert s.material_slot_name in materials and materials[s.material_slot_name]
+        s.material_interface=materials[s.material_slot_name]
+        slots[index]=s
     mesh.set_editor_property('materials',slots);skeleton=mesh.get_editor_property('skeleton')
     skeleton.set_editor_property('compatible_skeletons',[unreal.load_asset('/Game/Characters/Mannequins/Meshes/SK_Mannequin')]);skeleton.set_editor_property('use_retarget_modes_from_compatible_skeleton',True)
     assert lib.ensure_rig_physics(mesh)

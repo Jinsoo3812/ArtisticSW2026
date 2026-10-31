@@ -1,0 +1,552 @@
+{
+  "date": "2026-10-31",
+  "passed": true,
+  "scope": "actual project integration; no external plugin/test overlay required",
+  "automatic_install": "SWPlayerRagdollComponent::StartRagdoll -> SWCorpsePoseLibrary::Install",
+  "test_map": "/Game/Developers/PlayerRagdoll/L_PlayerRagdollTest",
+  "test_keys": {
+    "audited_contexts": 14,
+    "conflicts": [],
+    "death": "Ctrl+Alt+Shift+F10",
+    "gender": "Ctrl+Alt+Shift+F7"
+  },
+  "frames": 1896,
+  "cases": [
+    {
+      "character": "Man",
+      "mode": "idle",
+      "frames": 236,
+      "effective_fps": 28.944492953537377,
+      "max_limit_excess_deg": 1.6846717152083883,
+      "max_anchor_error_cm": 0.5791047619421642,
+      "max_visual_physical_error_cm": 0.00010684085574461978,
+      "source_twist_off_axis_cm": 6.458777066096479,
+      "corrected_twist_off_axis_cm": 8.439827514528778e-14,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ]
+      },
+      "worst_joint": {
+        "child": "hand_l",
+        "angles": [
+          -2.2844585846619734,
+          26.527527352467068,
+          20.813254574708367
+        ],
+        "limits": [
+          15,
+          25,
+          20
+        ],
+        "elapsed": 1.7169745974242687
+      },
+      "final_limit_excess_deg": 0.051824695364654616
+    },
+    {
+      "character": "Man",
+      "mode": "run",
+      "frames": 238,
+      "effective_fps": 29.273544161303988,
+      "max_limit_excess_deg": 15.637112834479435,
+      "max_anchor_error_cm": 2.100151587029728,
+      "max_visual_physical_error_cm": 9.708044848292637e-05,
+      "source_twist_off_axis_cm": 6.453162240244079,
+      "corrected_twist_off_axis_cm": 1.0628864955238688e-13,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ]
+      },
+      "worst_joint": {
+        "child": "hand_r",
+        "angles": [
+          -4.844108754119388,
+          -40.23195267372825,
+          -13.654688967136291
+        ],
+        "limits": [
+          15,
+          25,
+          20
+        ],
+        "elapsed": 0.5333352014422417
+      },
+      "final_limit_excess_deg": 0.10776094411409787
+    },
+    {
+      "character": "Man",
+      "mode": "sprint",
+      "frames": 238,
+      "effective_fps": 29.259689195400096,
+      "max_limit_excess_deg": 16.899375841407394,
+      "max_anchor_error_cm": 3.698776179603386,
+      "max_visual_physical_error_cm": 0.00010261212759468273,
+      "source_twist_off_axis_cm": 6.456759527021665,
+      "corrected_twist_off_axis_cm": 7.128703915463005e-14,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ]
+      },
+      "worst_joint": {
+        "child": "hand_r",
+        "angles": [
+          1.9185146436121119,
+          -41.83862021332727,
+          -21.189420814115323
+        ],
+        "limits": [
+          15,
+          25,
+          20
+        ],
+        "elapsed": 0.5000021979212761
+      },
+      "final_limit_excess_deg": 0.33431522824378934
+    },
+    {
+      "character": "Man",
+      "mode": "jump",
+      "frames": 236,
+      "effective_fps": 28.962737638354458,
+      "max_limit_excess_deg": 17.249898250838502,
+      "max_anchor_error_cm": 2.5793315680302595,
+      "max_visual_physical_error_cm": 9.949794721473303e-05,
+      "source_twist_off_axis_cm": 6.458313846328005,
+      "corrected_twist_off_axis_cm": 1.1323142802489556e-13,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChManMtl/M_ChManHair.M_ChManHair",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManAccessory.M_ChManAccessory",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManClothes.M_ChManClothes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManStylizedBag.M_ChManStylizedBag",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManEye.M_ChManEye",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManShoes.M_ChManShoes",
+          "/Game/jiwon/Characters/ChManMtl/M_ChManBody.M_ChManBody"
+        ]
+      },
+      "worst_joint": {
+        "child": "hand_l",
+        "angles": [
+          0.14677501183076322,
+          42.24954675471919,
+          10.424631057305673
+        ],
+        "limits": [
+          15,
+          25,
+          20
+        ],
+        "elapsed": 0.48584359511733055
+      },
+      "final_limit_excess_deg": 0.1909657095964441
+    },
+    {
+      "character": "Woman",
+      "mode": "idle",
+      "frames": 236,
+      "effective_fps": 28.965939038993188,
+      "max_limit_excess_deg": 1.7972882898587201,
+      "max_anchor_error_cm": 0.656743337442775,
+      "max_visual_physical_error_cm": 0.0002240849949959331,
+      "source_twist_off_axis_cm": 3.5727534237625704,
+      "corrected_twist_off_axis_cm": 7.810149209900002e-14,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ]
+      },
+      "worst_joint": {
+        "child": "foot_l",
+        "angles": [
+          4.099068200085295,
+          23.710744582986027,
+          -8.35434539033736
+        ],
+        "limits": [
+          12,
+          22.5,
+          8
+        ],
+        "elapsed": 1.3831647001206875
+      },
+      "final_limit_excess_deg": 0.06275596197322741
+    },
+    {
+      "character": "Woman",
+      "mode": "run",
+      "frames": 238,
+      "effective_fps": 29.28386780199415,
+      "max_limit_excess_deg": 1.6658183207111428,
+      "max_anchor_error_cm": 0.7783555004184618,
+      "max_visual_physical_error_cm": 0.00022602616282197763,
+      "source_twist_off_axis_cm": 3.5707025928115907,
+      "corrected_twist_off_axis_cm": 9.94323575358391e-14,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ]
+      },
+      "worst_joint": {
+        "child": "hand_r",
+        "angles": [
+          7.937877596595624,
+          -24.65664544064977,
+          -18.729092362091432
+        ],
+        "limits": [
+          15,
+          25,
+          20
+        ],
+        "elapsed": 0.46666840091347694
+      },
+      "final_limit_excess_deg": 0.08095251128953151
+    },
+    {
+      "character": "Woman",
+      "mode": "sprint",
+      "frames": 238,
+      "effective_fps": 29.27994991655662,
+      "max_limit_excess_deg": 7.719076191419095,
+      "max_anchor_error_cm": 2.1105144763219075,
+      "max_visual_physical_error_cm": 0.00021219568819738928,
+      "source_twist_off_axis_cm": 3.5723765923349786,
+      "corrected_twist_off_axis_cm": 1.5628912012441368e-13,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ]
+      },
+      "worst_joint": {
+        "child": "foot_l",
+        "angles": [
+          1.8934560062849974,
+          -30.12794279560549,
+          5.391097850222221
+        ],
+        "limits": [
+          12,
+          22.5,
+          8
+        ],
+        "elapsed": 0.30000139772892
+      },
+      "final_limit_excess_deg": 0.09429801739874932
+    },
+    {
+      "character": "Woman",
+      "mode": "jump",
+      "frames": 236,
+      "effective_fps": 28.996526419799462,
+      "max_limit_excess_deg": 24.330050102635063,
+      "max_anchor_error_cm": 3.157806179065365,
+      "max_visual_physical_error_cm": 0.000227069274374408,
+      "source_twist_off_axis_cm": 3.587099754110486,
+      "corrected_twist_off_axis_cm": 1.006214916996645e-13,
+      "restored_speed": 250.0,
+      "material_slots": {
+        "source": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ],
+        "visual": [
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlClothes.M_ChGirlClothes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlHair.M_ChGirlHair",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlAccessory.M_ChGirlAccessory",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBag.M_ChGirlBag",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlBody.M_ChGirlBody",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlEyes.M_ChGirlEyes",
+          "/Game/jiwon/Characters/ChGirlMtl/M_ChGirlShoes.M_ChGirlShoes"
+        ]
+      },
+      "worst_joint": {
+        "child": "hand_l",
+        "angles": [
+          11.00189663018908,
+          -17.14850749547716,
+          44.33005010263506
+        ],
+        "limits": [
+          15,
+          25,
+          20
+        ],
+        "elapsed": 1.1846155002713203
+      },
+      "final_limit_excess_deg": 0.15308416230339894
+    }
+  ],
+  "lifecycle": [
+    {
+      "event": "respawn",
+      "character": "Man",
+      "seconds": 10.000038001686335,
+      "snapshot": {
+        "actor": "BP_Player_Man_C_1",
+        "visible": true,
+        "simulating": false,
+        "health_dead": false,
+        "asc_avatar": "BP_Player_Man_C_1"
+      }
+    },
+    {
+      "event": "gender_switch",
+      "mesh": "/Game/jiwon/Characters/ChWomanUE5/SKM_ChWoman_UE5.SKM_ChWoman_UE5"
+    },
+    {
+      "event": "respawn",
+      "character": "Woman",
+      "seconds": 10.000045198947191,
+      "snapshot": {
+        "actor": "BP_Player_Woman_C_1",
+        "visible": true,
+        "simulating": false,
+        "health_dead": false,
+        "asc_avatar": "BP_Player_Woman_C_1"
+      }
+    }
+  ],
+  "automation": {
+    "passed": 23,
+    "with_warnings": 6,
+    "tests": [
+      {
+        "path": "ArtisticSW.Animation.FootPlacement.PlayerGraphContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.FootPlacement.ShipContext",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.AuthoredBlendStackContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.AuthoredChooserContinuity",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.DirectionStability",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.EngineWarpingBoundary",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.PlaybackContinuity",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.RapidDirectionPolicy",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.WarpingRuntimePolicy",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.Stop.CapturedGait",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Cannon.Operator.UncookedGameGraphLoads",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.CombatEffectContextDirection",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.DirectionAwayFromSource",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.NormalEnemyDefaults",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.ReplicationContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.ShipDeckCollision",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.GameMode.PlayerCorpseLifecycle",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.CameraFallback",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.LifeOwnership",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.RagdollPresentation",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.AimInterruptionLifecycle",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.IndependentFlight",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.ShipPointVelocity",
+        "state": "Success"
+      }
+    ]
+  },
+  "physics_assets": [
+    "/Game/jiwon/Characters/ChManUE5/PA_ChMan_UE5.PA_ChMan_UE5",
+    "/Game/jiwon/Characters/ChWomanUE5/PA_ChWoman_UE5.PA_ChWoman_UE5"
+  ],
+  "screenshots": [
+    "docs/images/PlayerRagdollPoseFix/Man_idle_transition_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Man_idle_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Man_idle_settled_top.png",
+    "docs/images/PlayerRagdollPoseFix/Man_run_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Man_run_settled_top.png",
+    "docs/images/PlayerRagdollPoseFix/Man_sprint_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Man_sprint_settled_top.png",
+    "docs/images/PlayerRagdollPoseFix/Man_jump_transition_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Man_jump_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Man_jump_settled_top.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_idle_transition_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_idle_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_idle_settled_top.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_run_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_run_settled_top.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_sprint_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_sprint_settled_top.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_jump_transition_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_jump_settled_angled.png",
+    "docs/images/PlayerRagdollPoseFix/Woman_jump_settled_top.png"
+  ],
+  "limits": [
+    "Finite solver still has transient angular excess; not a zero-error hard clamp",
+    "Cloth/hair/skin penetration is not fully solved",
+    "LOD/morph/custom primitive data, dedicated server, packet latency, mass-corpse performance and cook/packaging not verified in this change",
+    "Test GameMode is single-player PIE only; production 5-second lifecycle retained"
+  ]
+}

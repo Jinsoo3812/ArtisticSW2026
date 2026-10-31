@@ -1,5 +1,7 @@
 # 남녀 플레이어 PhysicsAsset·시체 통합 — 2026-10-31
 
+> 후속 반영: [시체 스킨 보정·여성 재질·프로젝트 테스트 맵](Player_Ragdoll_PoseFix_2026-10-31.md)을 실제 프로젝트에 통합했다. 아래 최초 관절 제한 수치는 후속 제작 JSON으로 갱신됐다.
+
 현재 운영 `BP_Player_Man`, `BP_Player_Woman`의 새 메시와 전용 PhysicsAsset에 맞춰 물리 시체를 연결했다. 기존 `Health → DeathStarted/Finished → MultiGameMode`의 생명주기와 PlayerState ASC·진행도·부활 소유권을 유지한다. 이전 캐릭터 리깅 보고서에서 “PhysicsAsset 자동 피팅, 래그돌 미검증”으로 남긴 항목은 이 보고서의 범위에서 갱신한다.
 
 ## 에셋과 관절

@@ -1,8 +1,10 @@
 # 남녀 플레이어 시체 물리 제작
 
+현재는 실제 프로젝트의 자동 시체 스킨 보정과 새 관절 제한을 사용한다. [적용 및 테스트 맵 안내](../../../../docs/Player_Ragdoll_PoseFix_2026-10-31.md)를 따른다.
+
 `ChMan_Physics.json`, `ChWoman_Physics.json`이 두 전용 PhysicsAsset의 재현 가능한 제작 입력이다. 단위는 cm, quaternion은 `[w,x,y,z]`다. `fit_humanoid_physics.py`는 Blender MCP에서 실제 제작본의 본과 body/clothes/shoes 정점 가중치를 읽어 피팅한다. 머리카락·가방·장식품은 충돌체 피팅에서 제외한다. 원본 Blender 리그와 FBX는 덮어쓰지 않는다.
 
-각 에셋은 17개 강체와 16개 관절이다. pelvis, spine_02, spine_04, neck_01, head와 양측 upperarm/lowerarm/hand/thigh/calf/foot만 시뮬레이션한다. twist·손가락·얼굴·IK marker마다 작은 강체를 만들지 않는다. 팔꿈치와 무릎은 실제 굽힘 평면과 긴 축을 분리한다. 팔꿈치 굽힘 0–145°, 무릎 -2–125°가 중심 편향과 제한으로 표현되고, 회내·회외는 팔 65°, 무릎 비틀림은 10°로 구별한다. 각도는 목표 제한이며 충격 순간 solver의 수치 오차를 0으로 보장하지 않는다.
+각 에셋은 17개 강체와 16개 관절이다. pelvis, spine_02, spine_04, neck_01, head와 양측 upperarm/lowerarm/hand/thigh/calf/foot만 시뮬레이션한다. twist·손가락·얼굴·IK marker마다 작은 강체를 만들지 않는다. 팔꿈치와 무릎의 굽힘 평면과 긴 축을 분리하며, 현재 목표 굽힘은 각각 0–40° / 0–50°다. 어깨 twist는 ±25°, 전완은 ±45°, 무릎 twist는 ±5°다. 중심 편향을 포함하므로 swing 반각을 전체 굽힘 범위와 혼동하지 않는다. 각도는 목표 제한이며 충격 순간 solver 수치 오차 0을 보장하지 않는다.
 
 제작 시 에디터를 종료하고 직접 UBT 빌드가 끝난 뒤 `Scripts/Editor/ChManRigValidation/author_player_ragdolls.py`를 Unreal Python으로 실행한다. 두 전용 메시 폴더에만 쓰도록 native authoring API의 경로를 제한했다. `UPhysicsConstraintTemplate::SetDefaultProfile`로 저장 프로파일을 갱신한다. 검증 스크립트는 다음 프로세스에서 재로드한 제한과 motion type을 입력 JSON과 비교한다.
 
