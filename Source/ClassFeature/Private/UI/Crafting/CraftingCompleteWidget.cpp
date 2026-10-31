@@ -1,4 +1,5 @@
 #include "UI/Crafting/CraftingCompleteWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -29,7 +30,7 @@ void UCraftingCompleteWidget::ShowCraftedItem(const FCraftingListEntry& Item)
 	if (CraftedItemIconImage)
 	{
 		UTexture2D* Icon = Item.Icon.LoadSynchronous();
-		CraftedItemIconImage->SetBrushFromTexture(Icon, true);
+		UItemIconLibrary::SetItemIconWithRarity(CraftedItemIconImage, Icon, Item.RarityTag);
 		CraftedItemIconImage->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 	if (CraftedItemNameText)
