@@ -44,8 +44,10 @@ for label in ['Man','Woman']:
         dest=ROOT/'docs/images/PlayerRagdollPoseFix'/('ShipAI_'+name)
         assert source.is_file();shutil.copy2(source,dest);images.append(dest.relative_to(ROOT).as_posix())
 result={'incoming_branch':'KKH/ShipAI','incoming_commit':git('rev-parse','origin/KKH/ShipAI').strip(),'destination_branch':'JYU_merge','before_merge_commit':'1c41c6e09d56a07e5fb9a77875a5c627b4f9fdf5',
+ 'test_keys':{'death':'Ctrl+Alt+Shift+F10','gender':'Ctrl+Alt+Shift+F11'},
+ 'runtime_content_validation_base':'180f2036; final ShipAI update 2a4fe193 changes only ship/enemy C++ and is checked by the final extended automation run',
  'policy':'ShipAI wins conflicts; preserve montage and based movement until DeathFinished; then corrected physical corpse',
- 'runtime_regression_passed':True,'whole_project_asset_validation_passed':False,
+ 'player_corpse_regression_passed':True,'whole_project_asset_validation_passed':False,
  'file_audit':files,'engine_changed_asset_loads':len(engine['loaded_changed']),'engine_load_failures':engine['load_failures'],
  'blueprint_compile':compile_summary,'missing_hard_reference_candidates':missing,'rig_migration':rig,
  'automation':{'passed':23,'with_warnings':automation['succeededWithWarnings'],'tests':[{'path':t['fullTestPath'],'state':t['state']} for t in automation['tests']]},
@@ -56,5 +58,22 @@ result={'incoming_branch':'KKH/ShipAI','incoming_commit':git('rev-parse','origin
  'playground':playground,'screenshots':images,
  'untested':['dedicated server','mass corpse performance','water and sinking','cook and packaging','all LOD/morph/custom material combinations'],
  'limitations':['transient solver limit excess persists','cloth/hair/skin/bag penetration not eliminated','initial idle MM warmup includes 1 male and 2 female invalid frames; subsequent active phases valid']}
+final_report=OUT/'FinalAutomation/index.json'
+if final_report.exists():
+    final=json.loads(final_report.read_text(encoding='utf-8-sig'))
+    failed=[t for t in final['tests'] if t['state']=='Fail']
+    assert {t['fullTestPath'] for t in failed}=={'ArtisticSW.Enemy.Ship.Anchor.Integration','ArtisticSW.Enemy.Ship.Navigation.DeterministicAvoidance'}
+    assert final['notRun']==0
+    result['final_automation']={'passed':final['succeeded']+final['succeededWithWarnings'],'with_warnings':final['succeededWithWarnings'],
+        'failed':final['failed'],'all_passed':False,'failure_details':failed,
+        'tests':[{'path':t['fullTestPath'],'state':t['state']} for t in final['tests']]}
+    result['extended_regression_all_passed']=False
+input_audit=OUT/'input_audit.json'
+if input_audit.exists():
+    result['input_audit']=json.loads(input_audit.read_text(encoding='utf8'));assert not result['input_audit']['conflicts']
+isolated=OUT/'ShipFailuresOnly/index.json'
+if isolated.exists():
+    isolated_data=json.loads(isolated.read_text(encoding='utf-8-sig'))
+    result['isolated_ship_test_failures']={'failed':isolated_data['failed'],'tests':[t for t in isolated_data['tests'] if t['state']=='Fail']}
 dest=ROOT/'docs/validation/ShipAI_Corpse_Integration_20261031.json';dest.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf8')
 print(json.dumps({'runtime_passed':True,'asset_global_passed':False,'corpse_frames':result['corpse']['frames'],'motion_frames':sum(c['frames'] for c in motion['cases']),'images':images,'report':str(dest)},ensure_ascii=False,indent=2))

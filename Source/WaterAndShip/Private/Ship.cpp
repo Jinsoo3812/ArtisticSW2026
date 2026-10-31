@@ -124,6 +124,7 @@ bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 		AttributeSet->InitHealth(State.Health);
 	}
 	bIsSinking = State.bSinking;
+	ClearPlayerRamNavigationStop();
  if (bIsSinking) if (AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>()) Mode->NotifyPlayerShipSinking(this);
 	bIsAnchorDropped = State.bAnchorDropped;
 	AnchorOriginXY = State.AnchorOriginXY;
@@ -703,6 +704,7 @@ void AShip::BeginPlay()
 
 void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ClearPlayerRamNavigationStop();
 	if (HasAuthority() && SharedUpgradeState)
 	{
 		SharedUpgradeState->UnregisterPlayerShip(this);
@@ -1132,8 +1134,10 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->ServerPhysicsStepSeconds = ServerPhysicsStepSeconds;
 				AsyncInput->NetworkPhysicsTickOffset = NetworkPhysicsTickOffset;
 				AsyncInput->bNetworkPhysicsTickOffsetAssigned = bNetworkPhysicsTickOffsetAssigned;
-				AsyncInput->bIsAnchorDropped = bIsAnchorDropped;
-				AsyncInput->AnchorOriginXY = AnchorOriginXY;
+				// Feed the temporary brake through the existing rewindable anchor input.
+				// A real anchor keeps its own origin and is never raised by the ram timer.
+				AsyncInput->bIsAnchorDropped = bIsAnchorDropped || bPlayerRamNavigationStopped;
+				AsyncInput->AnchorOriginXY = bIsAnchorDropped ? AnchorOriginXY : PlayerRamStopOriginXY;
 				AsyncInput->AnchorStiffness = AnchorStiffness;
 				AsyncInput->AnchorDamping = AnchorDamping;
 				AsyncInput->AnchorSlackRadius = AnchorSlackRadius;
@@ -1159,6 +1163,7 @@ void AShip::Tick(float DeltaTime)
 
 void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 {
+	if (!bEnabled) ClearPlayerRamNavigationStop();
 	if (!BuoyancyRoot || (bShipRuntimePhysicsEnabled == bEnabled && BuoyancyRoot->IsSimulatingPhysics() == bEnabled))
 	{
 		return;
@@ -1212,6 +1217,7 @@ bool AShip::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDo
 
 void AShip::ResetFreshEncounterControlState()
 {
+	ClearPlayerRamNavigationStop();
 	CurrentMoveInput = CurrentTurnInput = 0.0f;
 	AISafetyControl = FShipAISafetyControl();
 	bIsAnchorDropped = false;
@@ -1380,7 +1386,7 @@ void AShip::SetAIControlInput(
 
 	const float PreviousPropulsionScale = CurrentAIPropulsionScale;
 	const float PreviousTurnScale = CurrentAITurnScale;
-	if (IsPropulsionSuppressed() || bIsAnchorDropped)
+	if (IsPropulsionSuppressed() || bIsAnchorDropped || bPlayerRamNavigationStopped)
 	{
 		CurrentMoveInput = 0.0f;
 		CurrentTurnInput = 0.0f;
@@ -1507,6 +1513,7 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	DOREPLIFETIME(AShip, CurrentAITurnScale);
 	DOREPLIFETIME(AShip, bIsAnchorDropped);
 	DOREPLIFETIME(AShip, AnchorOriginXY);
+	DOREPLIFETIME(AShip, bPlayerRamNavigationStopped);
 }
 
 void AShip::Board(APawn* PlayerPawn)
@@ -1903,6 +1910,7 @@ void AShip::StartSinking(float DestroyDelaySeconds)
 	}
 
 	bIsSinking = true;
+	ClearPlayerRamNavigationStop();
 	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
 	for (UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
 	{
@@ -2920,6 +2928,36 @@ UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+void AShip::StartPlayerRamNavigationStop()
+{
+	if (!HasAuthority() || !IsEnemyShipForEffects() || bIsSinking || !GetWorld()
+		|| !FMath::IsFinite(PlayerRamNavigationStopDuration) || PlayerRamNavigationStopDuration <= 0.0f)
+	{
+		return;
+	}
+
+	bPlayerRamNavigationStopped = true;
+	const FVector Location = BuoyancyRoot ? BuoyancyRoot->GetComponentLocation() : GetActorLocation();
+	PlayerRamStopOriginXY = FVector2D(Location.X, Location.Y);
+	AISafetyControl = FShipAISafetyControl();
+	SetAIControlInput(0.0f, 0.0f);
+	// Reusing the handle restarts the full interval after each accepted ram.
+	GetWorldTimerManager().SetTimer(PlayerRamNavigationStopTimerHandle,
+		this, &AShip::ClearPlayerRamNavigationStop, PlayerRamNavigationStopDuration, false);
+	ForceNetUpdate();
+}
+
+void AShip::ClearPlayerRamNavigationStop()
+{
+	if (GetWorld()) GetWorldTimerManager().ClearTimer(PlayerRamNavigationStopTimerHandle);
+	PlayerRamStopOriginXY = FVector2D::ZeroVector;
+	if (bPlayerRamNavigationStopped)
+	{
+		bPlayerRamNavigationStopped = false;
+		if (HasAuthority()) ForceNetUpdate();
+	}
+}
+
 void AShip::HandlePlayerShipCollisionTelemetry(
 	UPrimitiveComponent* HitComponent,
 	AActor* OtherActor,
@@ -3003,6 +3041,7 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
 		TargetSpec, this, this, OtherShip, &Hit, PlayerVelocity);
 		TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+	OtherShip->StartPlayerRamNavigationStop();
 		SpawnRamImpactNiagaraForAll(
 			PlayerRamImpactEffect,
 			Hit.ImpactPoint,

@@ -691,6 +691,12 @@ public:
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
 
+	/** Temporary navigation brake after an accepted player-ship ram. */
+	bool IsPlayerRamNavigationStopped() const { return bPlayerRamNavigationStopped; }
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "s"))
+	float PlayerRamNavigationStopDuration = 2.0f;
+
 	/** Minimum horizontal player approach speed required for a ram to deal damage. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "m/s"))
 	float PlayerRamMinimumApproachSpeed = 8.0f;
@@ -1211,6 +1217,14 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_IsAnchorDropped)
 	bool bIsAnchorDropped = false;
+
+	UPROPERTY(Replicated)
+	bool bPlayerRamNavigationStopped = false;
+
+	FVector2D PlayerRamStopOriginXY = FVector2D::ZeroVector;
+	FTimerHandle PlayerRamNavigationStopTimerHandle;
+	void StartPlayerRamNavigationStop();
+	void ClearPlayerRamNavigationStop();
 
 	UPROPERTY(Replicated)
 	FVector2D AnchorOriginXY = FVector2D::ZeroVector;

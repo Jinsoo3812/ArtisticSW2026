@@ -1,10 +1,15 @@
 {
   "incoming_branch": "KKH/ShipAI",
-  "incoming_commit": "180f2036702623bb34ced58837e7c61fe4a159d7",
+  "incoming_commit": "2a4fe193edbf30e201151ebc66151ea5d8d5623d",
   "destination_branch": "JYU_merge",
   "before_merge_commit": "1c41c6e09d56a07e5fb9a77875a5c627b4f9fdf5",
+  "test_keys": {
+    "death": "Ctrl+Alt+Shift+F10",
+    "gender": "Ctrl+Alt+Shift+F11"
+  },
+  "runtime_content_validation_base": "180f2036; final ShipAI update 2a4fe193 changes only ship/enemy C++ and is checked by the final extended automation run",
   "policy": "ShipAI wins conflicts; preserve montage and based movement until DeathFinished; then corrected physical corpse",
-  "runtime_regression_passed": true,
+  "player_corpse_regression_passed": true,
   "whole_project_asset_validation_passed": false,
   "file_audit": {
     "packages": 11458,
@@ -2699,7 +2704,7 @@
       {
         "event": "respawn",
         "character": "Man",
-        "seconds": 10.001174502074718,
+        "seconds": 10.000868000090122,
         "snapshot": {
           "actor": "BP_Player_Man_C_1",
           "visible": true,
@@ -2715,7 +2720,7 @@
       {
         "event": "respawn",
         "character": "Woman",
-        "seconds": 10.000055100768805,
+        "seconds": 10.000095397233963,
         "snapshot": {
           "actor": "BP_Player_Woman_C_1",
           "visible": true,
@@ -2745,5 +2750,451 @@
     "transient solver limit excess persists",
     "cloth/hair/skin/bag penetration not eliminated",
     "initial idle MM warmup includes 1 male and 2 female invalid frames; subsequent active phases valid"
-  ]
+  ],
+  "final_automation": {
+    "passed": 60,
+    "with_warnings": 13,
+    "failed": 2,
+    "all_passed": false,
+    "failure_details": [
+      {
+        "testDisplayName": "Integration",
+        "fullTestPath": "ArtisticSW.Enemy.Ship.Anchor.Integration",
+        "tags": [],
+        "state": "Fail",
+        "deviceInstance": [
+          "E516955F4829D180A5DA778872988C1D"
+        ],
+        "duration": 0.10759229958057404,
+        "dateTime": "2026.10.31-14.49.28",
+        "entries": [
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Move input applied after anchor raised' to be 1.000000, but it was 0.000000 and outside tolerance 0.000100.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 545,
+            "timestamp": "2026.10.31-14.49.28"
+          },
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Turn input applied after anchor raised' to be 0.500000, but it was 0.000000 and outside tolerance 0.000100.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 547,
+            "timestamp": "2026.10.31-14.49.28"
+          }
+        ],
+        "warnings": 0,
+        "errors": 2,
+        "artifacts": []
+      },
+      {
+        "testDisplayName": "DeterministicAvoidance",
+        "fullTestPath": "ArtisticSW.Enemy.Ship.Navigation.DeterministicAvoidance",
+        "tags": [],
+        "state": "Fail",
+        "deviceInstance": [
+          "E516955F4829D180A5DA778872988C1D"
+        ],
+        "duration": 0.011943802237510681,
+        "dateTime": "2026.10.31-14.49.28",
+        "entries": [
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Yielding ship applies reverse thrust' to be true.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 444,
+            "timestamp": "2026.10.31-14.49.28"
+          },
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Returning ship disables avoidance maneuvers' to be false.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 490,
+            "timestamp": "2026.10.31-14.49.28"
+          }
+        ],
+        "warnings": 0,
+        "errors": 2,
+        "artifacts": []
+      }
+    ],
+    "tests": [
+      {
+        "path": "ArtisticSW.Animation.FootPlacement.PlayerGraphContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.FootPlacement.ShipContext",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.AuthoredBlendStackContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.AuthoredChooserContinuity",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.DirectionStability",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.EngineWarpingBoundary",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.PlaybackContinuity",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.RapidDirectionPolicy",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.JumpAir.WarpingRuntimePolicy",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Animation.Stop.CapturedGait",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Cannon.Operator.UncookedGameGraphLoads",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Development.TestInput.Assets",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Development.TestInput.ContextIsolation",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Development.TestInput.KeyChords",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.CombatEffectContextDirection",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.DirectionAwayFromSource",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.NormalEnemyDefaults",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.ReplicationContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.DeathRagdoll.ShipDeckCollision",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.CannonAimModel",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.CannonBallisticEllipse",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.ChargeAndTorpedoIntegration",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.ChargeApproachDamageMath",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.ChargeEndpointAndTelegraph",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.ObstacleActorContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.ObstacleCannonSweepByTeam",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.ObstacleTrajectoryAndTarget",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.TimeStopActorContract",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.TorpedoHorizontalWaterDrag",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Ability.TorpedoStraightLineTarget",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Anchor.CrewIndependent",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Anchor.Integration",
+        "state": "Fail"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Authoring.ChestSpawnPointSettings",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Authoring.EnemyFleetAssets",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Authoring.ThreeStageAssets",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Controller.TargetRouting",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Data.ArchetypeAssembly",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.DebugTeleport.RequesterAndValidation",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Navigation.CounterClockwiseOrbit",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Navigation.DeterministicAvoidance",
+        "state": "Fail"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Navigation.OverridePriorityAndScale",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Navigation.PlayerRamStop",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Navigation.SquadOrbitDistance",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Navigation.StateModel",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.Pool.TotalBundleBudget",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.SkillRuntime.OneShot",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.CannonRegistryAndControlPolicy",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Enemy.Ship.CrewDefeatedIncomingDamage",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.GameMode.PlayerCorpseLifecycle",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.CameraFallback",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.LifeOwnership",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Player.Death.RagdollPresentation",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.AimInterruptionLifecycle",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.IndependentFlight",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.PlayerBow.ShipPointVelocity",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Ship.Authoring.AnchorIntegration",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Ship.Authoring.Components",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Ship.Authoring.HelmBoardingAndCannonIntegration",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Ship.Authoring.PlayerShipTierStats",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Ship.NetworkPhysicsAnchorInputValidation",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Ship.NetworkPhysicsBuoyancyInput",
+        "state": "Success"
+      },
+      {
+        "path": "ArtisticSW.Ship.NetworkPhysicsDeepWaterBuoyancy",
+        "state": "Success"
+      }
+    ]
+  },
+  "extended_regression_all_passed": false,
+  "input_audit": {
+    "contexts": 14,
+    "conflicts": [],
+    "keys": [
+      "Ctrl+Alt+Shift+F10",
+      "Ctrl+Alt+Shift+F11"
+    ]
+  },
+  "isolated_ship_test_failures": {
+    "failed": 2,
+    "tests": [
+      {
+        "testDisplayName": "Integration",
+        "fullTestPath": "ArtisticSW.Enemy.Ship.Anchor.Integration",
+        "tags": [],
+        "state": "Fail",
+        "deviceInstance": [
+          "0F0BDFF045EC0D369B053F8B825F7078"
+        ],
+        "duration": 0.05822940170764923,
+        "dateTime": "2026.10.31-14.51.55",
+        "entries": [
+          {
+            "event": {
+              "type": "Info",
+              "message": "LogStreaming: FlushAsyncLoading(379): 1 QueuedPackages, 0 AsyncPackages",
+              "context": "log",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "",
+            "lineNumber": -1,
+            "timestamp": "2026.10.31-14.51.55"
+          },
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Move input applied after anchor raised' to be 1.000000, but it was 0.000000 and outside tolerance 0.000100.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 545,
+            "timestamp": "2026.10.31-14.51.55"
+          },
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Turn input applied after anchor raised' to be 0.500000, but it was 0.000000 and outside tolerance 0.000100.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 547,
+            "timestamp": "2026.10.31-14.51.55"
+          }
+        ],
+        "warnings": 0,
+        "errors": 2,
+        "artifacts": []
+      },
+      {
+        "testDisplayName": "DeterministicAvoidance",
+        "fullTestPath": "ArtisticSW.Enemy.Ship.Navigation.DeterministicAvoidance",
+        "tags": [],
+        "state": "Fail",
+        "deviceInstance": [
+          "0F0BDFF045EC0D369B053F8B825F7078"
+        ],
+        "duration": 0.011250000447034836,
+        "dateTime": "2026.10.31-14.51.55",
+        "entries": [
+          {
+            "event": {
+              "type": "Info",
+              "message": "LogStreaming: FlushAsyncLoading(383): 1 QueuedPackages, 0 AsyncPackages",
+              "context": "log",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "",
+            "lineNumber": -1,
+            "timestamp": "2026.10.31-14.51.55"
+          },
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Yielding ship applies reverse thrust' to be true.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 444,
+            "timestamp": "2026.10.31-14.51.55"
+          },
+          {
+            "event": {
+              "type": "Error",
+              "message": "Expected 'Returning ship disables avoidance maneuvers' to be false.",
+              "context": "",
+              "artifact": "00000000000000000000000000000000"
+            },
+            "filename": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Source\\Enemy\\Private\\Tests\\EnemyShipInfrastructureTests.cpp",
+            "lineNumber": 490,
+            "timestamp": "2026.10.31-14.51.55"
+          }
+        ],
+        "warnings": 0,
+        "errors": 2,
+        "artifacts": []
+      }
+    ]
+  }
 }

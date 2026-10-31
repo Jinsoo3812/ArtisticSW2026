@@ -124,6 +124,11 @@ void UEnemyShipNavigationComponent::TickComponent(
 	}
 	AEnemyShip* Ship = OwnerShip.Get();
 	if (!Ship) return;
+	if (Ship->HasAuthority() && Ship->IsPlayerRamNavigationStopped())
+	{
+		StopOwnerShip();
+		return;
+	}
 	const double CombatTickStart = IsCombatSafetyLogEnabled() ? FPlatformTime::Seconds() : 0.0;
 	ON_SCOPE_EXIT
 	{
