@@ -12,6 +12,7 @@ class AArrowProjectile;
 class UBowComponent;
 class UAbilityTask_PlayMontageAndWait;
 class UAnimMontage;
+class UAbilityTask;
 struct FWeaponAnimationEntry;
 
 /**
@@ -39,6 +40,10 @@ public:
 		bool bWasCancelled) override;
 
 protected:
+	friend class FPlayerBowInterruptionLifecycleTest;
+	void StopBowMontage(float BlendOutTime = 0.1f);
+	bool IsAimSessionActive() const;
+	void SetAttackTag(bool bEnabled);
 	UFUNCTION()
 	void OnLeftClickPressed(FGameplayEventData Payload);
 
@@ -68,8 +73,8 @@ protected:
 	void StopDrawMontage(float BlendOutTime);
 	void BeginRelease(const FGameplayEventData& ReleaseInput);
 	void QueueReleaseShot();
-	EProjectileShotCommit CommitReleaseShot();
-	void OnShotCommitted(bool bSucceeded);
+	EProjectileShotCommit CommitReleaseShot(FGuid ShotId);
+	void OnShotCommitted(bool bSucceeded, FGuid ShotId);
 	void CancelPendingShot();
 	bool IsAimPathObstructed() const;
 	void FinishShot();
@@ -140,6 +145,12 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UBowComponent> CachedBowComponent;
 
+	UPROPERTY()
+	TObjectPtr<UAbilityTask_PlayMontageAndWait> BowMontageTask;
+	UPROPERTY()
+	TArray<TObjectPtr<UAbilityTask>> AimInputTasks;
+	bool bEndingAim = true;
+	bool bOwnsAimTag = false;
 	FTimerHandle ChargeTimerHandle;
 	/** Immutable for this release; independent of the animation-facing DrawAlpha. */
 	float PendingReleaseFireSpeed = 0.f;

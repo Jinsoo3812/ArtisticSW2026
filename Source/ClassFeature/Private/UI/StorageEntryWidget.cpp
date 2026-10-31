@@ -2,6 +2,7 @@
 
 
 #include "UI/StorageEntryWidget.h"
+#include "UI/ItemIconLibrary.h"
 #include "BasePlayerController.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -20,7 +21,7 @@ void UStorageEntryWidget::NativeConstruct()
 	BuildWidgetTree();
 }
 
-void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, AStorageChest* InStorageChest)
+void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, AStorageChest* InStorageChest, FGameplayTag InItemTag)
 {
 	BuildWidgetTree();
 
@@ -39,7 +40,7 @@ void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, 
 
 	if (ItemIconImage)
 	{
-		ItemIconImage->SetBrushFromTexture(InIcon, true);
+		UItemIconLibrary::SetItemIcon(ItemIconImage, InIcon, InItemTag);
 		ItemIconImage->SetVisibility(InIcon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 

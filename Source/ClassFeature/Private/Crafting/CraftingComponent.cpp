@@ -212,12 +212,13 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 		}
 	}
 	OutDetails.MaxCraftableCount = MaxCraftable;
- if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree))
- {
-  OutDetails.RequiredRecipeItem.bEnough = true;
-  for (FCraftingIngredientView& View : OutDetails.Ingredients) View.bEnough = true;
-  OutDetails.MaxCraftableCount = MaxCraftCountPerRequest;
- }
+	if (SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::CraftingFree))
+	{
+		OutDetails.RequiredRecipeItem.bEnough = true;
+		for (FCraftingIngredientView& View : OutDetails.Ingredients)
+			View.bEnough = true;
+		OutDetails.MaxCraftableCount = MaxCraftCountPerRequest;
+	}
 	return true;
 }
 

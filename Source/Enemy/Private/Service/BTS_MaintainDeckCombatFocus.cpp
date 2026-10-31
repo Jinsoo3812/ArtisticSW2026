@@ -20,6 +20,7 @@ void UBTS_MaintainDeckCombatFocus::OnBecomeRelevant(UBehaviorTreeComponent& Owne
 	ADeckEnemy* Enemy = OwnerComp.GetAIOwner() ? Cast<ADeckEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr;
 	Combat = Enemy ? Enemy->GetDeckCombatComponent() : nullptr;
 	if (Combat.IsValid()) Combat->AcquireFocus();
+	if (auto* AI = Cast<ABaseAIController>(OwnerComp.GetAIOwner())) AI->RefreshDeckCombatFocus();
 }
 void UBTS_MaintainDeckCombatFocus::OnCeaseRelevant(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
@@ -32,12 +33,13 @@ void UBTS_MaintainDeckCombatFocus::TickNode(UBehaviorTreeComponent& OwnerComp, u
 	if (Combat.IsValid()) Combat->RefreshFocus();
 	ADeckEnemy* Enemy = OwnerComp.GetAIOwner() ? Cast<ADeckEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr;
 	ABaseAIController* AI = Cast<ABaseAIController>(OwnerComp.GetAIOwner());
+	if (AI) AI->RefreshDeckCombatFocus();
 	if (Enemy && AI && Combat.IsValid() && !Combat->HasCommittedAttack()
 		&& Combat->HasStoredRecovery() && !Combat->HasRecovery())
 	{
 		FDeckTargetAnchor Current;
 		if (UDeckCombatTargetResolverComponent::ResolveFor(Enemy, AI->GetCombatTarget(), Current)
-			&& Current.Source == EDeckTargetAnchorSource::SupportedObstacle && Current.HasCurrentEvidence())
+			&& Current.HasCurrentEvidence())
 		{
 			// Expired LOS recovery does not mean an observed player on this ship's rail disappeared.
 			Combat->ClearRecovery();

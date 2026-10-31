@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/Ability/GA_PlayerHitReaction.h"
+#include "Recovery/AbilityTask_MonitorStuckRecovery.h"
 
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
 #include "Animation/AnimMontage.h"
@@ -27,6 +28,7 @@ void UGA_PlayerHitReaction::OnHitReactionActivated(
 	HitReactingPlayer = Player;
 	if (Player)
 	{
+		UAbilityTask_MonitorStuckRecovery::MonitorStuckRecovery(this)->ReadyForActivation();
 		Player->bIsHitReacting = true;
 
 		if (USWCharacterMovementComponent* Movement =

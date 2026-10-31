@@ -1,5 +1,11 @@
 #include "AI/BaseAIController.h"
 #include "BossAI/SamuraiDashRecoveryComponent.h"
+#include "BossAI/GunnerBossEnemy.h"
+#include "BossAI/BossGunCombatComponent.h"
+#include "DeckAI/DeckWaypointMovementInterface.h"
+#include "AbilitySystemComponent.h"
+#include "BaseGameplayTags.h"
+#include "ShipAI/EnemyShip.h"
 
 #include "AI/EnemyBehaviorSet.h"
 #include "AI/EnemyAlarmComponent.h"
@@ -49,6 +55,7 @@ void ABaseAIController::Tick(float DeltaSeconds)
 	}
 
 	ResolveDeferredDeckDecision();
+	RefreshDeckCombatFocus();
 	if (ShouldDeferDeckDecision() && !IsValidPerceptionTarget(GetCombatTarget())) DeferDeckTargetReevaluation();
 	TerritoryCheckRemaining -= DeltaSeconds;
 	if (TerritoryCheckRemaining > 0.0f)
@@ -56,6 +63,12 @@ void ABaseAIController::Tick(float DeltaSeconds)
 		return;
 	}
 	TerritoryCheckRemaining = FMath::Max(0.05f, TerritoryCheckInterval);
+	if (bRetainingDeckTargetWithoutSight && GetEnemyState() == EEnemyAIState::Combat && !ShouldRetainDeckCombatTarget())
+	{
+		if (ShouldDeferDeckDecision()) DeferDeckTargetReevaluation();
+		else if (AActor* Replacement = SelectBestPerceivedTarget()) SetCombatTarget(Replacement);
+		else ClearCombatTarget(true);
+	}
 	if (GetEnemyState() == EEnemyAIState::Investigating)
 	{
 		if (const UEnemyAlarmComponent* Alarm = GetPawn() ? GetPawn()->FindComponentByClass<UEnemyAlarmComponent>() : nullptr)
@@ -278,6 +291,7 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 	if (CachedTargetActor != TargetActor && GetPawn())
 		if (auto* Resolver = GetPawn()->FindComponentByClass<UDeckCombatTargetResolverComponent>()) Resolver->Reset();
 	CachedTargetActor = TargetActor;
+	bRetainingDeckTargetWithoutSight = false;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
 	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
 	{
@@ -292,6 +306,30 @@ AActor* ABaseAIController::GetCombatTarget() const
 {
 	AActor* TargetActor = CachedTargetActor.Get();
 	return IsValid(TargetActor) ? TargetActor : nullptr;
+}
+
+bool ABaseAIController::ShouldRetainDeckCombatTarget() const
+{
+	const auto* DeckMover = Cast<IDeckWaypointMovementInterface>(GetPawn());
+	if (!HasAuthority() || !DeckMover || !IsValid(DeckMover->GetDeckHostShip())
+		|| !IsValidPerceptionTarget(GetCombatTarget())) return false;
+	FDeckTargetAnchor Anchor;
+	return UDeckCombatTargetResolverComponent::ResolveFor(GetPawn(), GetCombatTarget(), Anchor);
+}
+
+bool ABaseAIController::RefreshDeckCombatFocus()
+{
+	auto* Enemy = Cast<ABaseEnemy>(GetPawn());
+	const auto* Mover = Cast<IDeckWaypointMovementInterface>(Enemy);
+	if (!HasAuthority() || !Enemy || !Mover || !IsValid(Mover->GetDeckHostShip())
+		|| GetEnemyState() != EEnemyAIState::Combat || !IsValidPerceptionTarget(GetCombatTarget())
+		|| (Enemy->GetHealthComponent() && Enemy->GetHealthComponent()->IsDead())) return false;
+	const auto* ASC = Enemy->GetAbilitySystemComponent();
+	if (ASC && (ASC->HasMatchingGameplayTag(State_Boss_Dashing) || ASC->HasMatchingGameplayTag(State_Boss_Hidden)
+		|| ASC->HasMatchingGameplayTag(State_Status_Stun) || ASC->HasMatchingGameplayTag(State_Status_Knockback))) return false;
+	if (const auto* Gunner = Cast<AGunnerBossEnemy>(Enemy); Gunner && Gunner->GunCombat->IsAttackLocked()) return false;
+	SetFocus(GetCombatTarget(), EAIFocusPriority::Gameplay);
+	return true;
 }
 
 void ABaseAIController::SetEQSPreviewTarget(AActor* TargetActor)
@@ -310,6 +348,7 @@ void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 	DiscardDeferredDeckDecision();
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor.Reset();
+	bRetainingDeckTargetWithoutSight = false;
 	if (GetPawn())
 		if (auto* Resolver = GetPawn()->FindComponentByClass<UDeckCombatTargetResolverComponent>()) Resolver->Reset();
 	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
@@ -412,6 +451,7 @@ void ABaseAIController::ResolveDeferredDeckDecision()
 	if (Decision == EDeferredDeckDecision::SetTarget && SetCombatTarget(Target)) return;
 	// Perception may have changed repeatedly during the attack. Preserve a re-seen current target.
 	AActor* Current = GetCombatTarget();
+	if (ShouldRetainDeckCombatTarget()) { bRetainingDeckTargetWithoutSight = true; return; }
 	if (IsValidPerceptionTarget(Current) && GetPerceptionComponent()
 		&& GetPerceptionComponent()->HasActiveStimulus(*Current, UAISense::GetSenseID<UAISense_Sight>())) return;
 	if (AActor* Replacement = SelectBestPerceivedTarget()) SetCombatTarget(Replacement);
@@ -486,6 +526,7 @@ void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimul
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
+		if (SensedActor == GetCombatTarget()) bRetainingDeckTargetWithoutSight = false;
 		if (ShouldDeferDeckDecision())
 		{
 			if (SensedActor == GetCombatTarget() || !IsValidPerceptionTarget(GetCombatTarget())) DeferDeckTargetReevaluation();
@@ -508,6 +549,8 @@ void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimul
 	}
 
 	if (ShouldDeferDeckDecision()) { DeferDeckTargetReevaluation(); return; }
+	// Rails, momentary occlusion and self-turning must not erase a player still tracked on our deck.
+	if (ShouldRetainDeckCombatTarget()) { bRetainingDeckTargetWithoutSight = true; RefreshDeckCombatFocus(); return; }
 	if (AActor* ReplacementTarget = SelectBestPerceivedTarget())
 	{
 		SetCombatTarget(ReplacementTarget);

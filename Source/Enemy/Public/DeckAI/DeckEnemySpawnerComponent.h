@@ -47,6 +47,7 @@ struct FSWRoomDeckSpawnerState
 	UPROPERTY(SaveGame) float DeploymentTimerRemaining = 0.f;
 	UPROPERTY(SaveGame) FGuid TriggerShipId;
 	UPROPERTY(SaveGame) TArray<FGuid> EnemyPoolIds;
+	UPROPERTY(SaveGame) TArray<FGuid> SummonReservePoolIds;
 	UPROPERTY(SaveGame) TArray<FGuid> AliveDeployedEnemyIds;
 	UPROPERTY(SaveGame) TArray<FSWRoomDeckPointState> Points;
 	UPROPERTY(SaveGame) FSWRoomDeckDeploymentTicket DeploymentTicket;
@@ -165,6 +166,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")
 	int32 GetPooledEnemyCount() const { return EnemyPool.Num(); }
+	bool IsSummonReserveEnemy(const ADeckEnemy* Enemy) const { return SummonReservePool.Contains(Enemy); }
+	void NotifySummonReserveDeactivated(ADeckEnemy* Enemy);
 
 	/** Number of pooled enemies that have not died, including enemies awaiting deployment. */
 	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")
@@ -210,7 +213,7 @@ public:
 		AActor* InitialTarget,
 		ADeckEnemy*& OutEnemy,
 		TSubclassOf<ADeckEnemy> RequiredClass = nullptr,
-		const FDataTableRowHandle& StatsRow = FDataTableRowHandle());
+		const FDataTableRowHandle& StatsRow = FDataTableRowHandle(), int32 AdditionalSummonCapacity = 0);
 
 protected:
 	virtual void BeginPlay() override;
@@ -280,7 +283,7 @@ private:
 		int32 SlotIndex,
 		FDeckEnemyDeploymentSlot& OutSlot,
 		bool bLogErrors) const;
-	ADeckEnemy* FindInactiveEnemy(TSubclassOf<ADeckEnemy> RequiredClass) const;
+	ADeckEnemy* FindInactiveEnemy(TSubclassOf<ADeckEnemy> RequiredClass, bool bIncludeSummonReserve = false) const;
 	bool ActivateSpecificEnemyAtReservation(
 		ADeckEnemy& Enemy,
 		FDeckPointReservation& Reservation,
@@ -319,6 +322,7 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ADeckEnemy>> EnemyPool;
+	UPROPERTY(Transient) TArray<TObjectPtr<ADeckEnemy>> SummonReservePool;
 	FString AllocatedPlanSignature;
 	TArray<FDeckEnemyDeploymentSlot> QueuedPoolPlan;
 	int32 QueuedPoolIndex = 0;

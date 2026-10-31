@@ -3,6 +3,8 @@
 #include "PlayerLifeTestWorld.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "Components/StaticMeshComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Development/TestInput/SWDevTestInputComponent.h"
 #include "HAL/IConsoleManager.h"
 
@@ -34,8 +36,23 @@ bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Replacement"), Replacement)) return false;
 	TestFalse(TEXT("Another pawn cannot be selected for suicide"), Input->MatchesCurrentLife(Replacement, OriginalGeneration));
 	const float Strength = ASC->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+	AActor* Equipment = Fixture.World->SpawnActor<AActor>();
+	UStaticMeshComponent* EquipmentMesh = NewObject<UStaticMeshComponent>(Equipment);
+	Equipment->SetRootComponent(EquipmentMesh);
+	EquipmentMesh->RegisterComponent();
+	Equipment->AttachToComponent(Life.Player->GetMesh(), FAttachmentTransformRules::KeepWorldTransform);
+	// Exercise DeathStarted separately: an authored death montage may finish later.
+	Life.Player->HandleDeathStarted(OldHealth);
+	TestTrue(TEXT("Player disappears at death start"), Life.Player->IsHidden());
+	TestFalse(TEXT("Hidden player no longer collides"), Life.Player->GetActorEnableCollision());
+	TestTrue(TEXT("Attached equipment disappears with the player"), Equipment->IsHidden());
+	TestFalse(TEXT("Player never enters ragdoll physics"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
+	TestEqual(TEXT("Invisible player cannot keep walking on the ship"), Life.Player->GetCharacterMovement()->MovementMode.GetValue(), MOVE_None);
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 0.0f);
 	TestTrue(TEXT("Existing death pipeline completes"), OldHealth->GetDeathState() == EBaseDeathState::DeathFinished);
+	Life.Player->ApplyLocalDeathRagdoll();
+	TestTrue(TEXT("Legacy ragdoll calls keep the player hidden"), Life.Player->IsHidden());
+	TestFalse(TEXT("Death completion never starts player physics"), Life.Player->GetMesh()->IsAnySimulatingPhysics());
 	TestTrue(TEXT("Death tag remains on persistent ASC until new life"), ASC->HasMatchingGameplayTag(State_Dead));
 	TestNull(TEXT("GameMode releases possession after capture"), Life.Controller->GetPawn());
 	TestFalse(TEXT("Corpse no longer subscribes to shared health"),
@@ -56,6 +73,8 @@ bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 		!Replacement->GetHealthComponent()->IsLifeInitializing() && !Replacement->GetHealthComponent()->IsDead()
 		&& Replacement->GetHealthComponent()->GetHealth() > 0);
 	TestFalse(TEXT("New life clears persistent dead tag"), ASC->HasMatchingGameplayTag(State_Dead));
+	TestFalse(TEXT("Replacement player is visible"), Replacement->IsHidden());
+	TestTrue(TEXT("Replacement mesh remains visible"), Replacement->GetMesh()->IsVisible());
 	TestEqual(TEXT("Respawn preserves strength"), ASC->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute()), Strength);
 	TestEqual(TEXT("Respawn restores a nonempty inventory"), Replacement->GetInventoryComponent()->GetItemCount(Seed.ItemTag), Seed.Count);
 	TestEqual(TEXT("Respawn preserves original material slot"), Replacement->GetInventoryComponent()->GetSlots(EInventoryTab::Material)[Seed.SlotIndex].Count, Seed.Count);

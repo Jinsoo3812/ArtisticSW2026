@@ -10,6 +10,7 @@ class ABasePlayer;
 class AVortexAimLine;
 class ABombardmentPreview;
 class USkeletalMeshComponent;
+class UMaterialParameterCollection;
 
 /** Press the skill key to keep aiming, left mouse to throw, or right mouse to cancel. */
 UCLASS(Blueprintable)
@@ -156,6 +157,6 @@ private:
 	float LastWaterPreviewRadius = 0.0f;
 	bool bWaterPreviewEnabled = false;
 
-  private:
+private:
 	FSWOwnedLooseGameplayTags OwnedStateTags;
 };
