@@ -23,6 +23,8 @@ DECLARE_MULTICAST_DELEGATE(FOnConsumableQuickSlotInputChangedDelegate);
 
 class USWFoleyComponent;
 class USpringArmComponent;
+class USWPlayerCameraZoomComponent;
+class UMeshComponent;
 class UCameraComponent;
 class UInputAction;
 struct FInputActionValue;
@@ -42,6 +44,8 @@ class UPlayerDialogueComponent;
 class UPlayerAimComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
+class UStuckRecoveryComponent;
+class UStuckRecoveryInputComponent;
 struct FSWPlayerProgressSnapshot;
 
 UENUM(BlueprintType)
@@ -80,18 +84,30 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProv
 	friend class ULocomotionAnimStateComponent;
 
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Recovery")
+	TObjectPtr<UStuckRecoveryComponent> StuckRecoveryComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components|Recovery")
+	TObjectPtr<UStuckRecoveryInputComponent> StuckRecoveryInputComponent;
+
 	/** Cosmetic contact audio, inherited by male/female player Blueprints. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio|Foley")
 	TObjectPtr<USWFoleyComponent> FoleyComponent;
 	virtual void OnJumped_Implementation() override;
 	virtual void SetMountedDamageMode(bool bEnabled) override;
 	virtual bool IsMountedForDamage() const override { return bMountedDamageMode; }
+	/** Presentation only: do not use the shared mounted damage flag as an animation mode. */
+	UFUNCTION(BlueprintPure, Category="Cannon|Operator")
+	bool IsOperatingCannon() const;
 	virtual void PrepareForHealthDeath() override;
 	UFUNCTION() void OnRep_MountedDamageMode();
 	UPROPERTY(ReplicatedUsing=OnRep_MountedDamageMode) bool bMountedDamageMode = false;
 	bool bMountedCollisionSaved = false;
 	ECollisionEnabled::Type SavedMountedCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	ECollisionEnabled::Type SavedMountedMeshCollision = ECollisionEnabled::QueryOnly;
+	EVisibilityBasedAnimTickOption SavedMountedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPose;
+	void RefreshMountedEquipmentPresentation();
+	TWeakObjectPtr<ABaseItem> MountedPresentationItem;
+	TMap<TWeakObjectPtr<UMeshComponent>, bool> MountedEquipmentVisibility;
 	bool bInventoryProgressRestored = false;
 	bool bStartingInventoryDecisionMade = false;
 	void FinalizeStartingInventory(bool bFreshInventory);
@@ -134,17 +150,11 @@ private:
 	void RetireLifeAbilityBindings();
 	bool bLifeAbilityBindingsRetired = false;
 
-	UPROPERTY(ReplicatedUsing = OnRep_ShipDeathMovement)
-	bool bShipDeathMovement = false;
-	bool bShipDeathMovementPrepared = false;
-	UFUNCTION()
-	void OnRep_ShipDeathMovement();
-
 public:
 
+	/** Legacy ragdoll entry points now hide the player without starting physics. */
 	virtual void ApplyLocalDeathRagdoll() override;
 	virtual void PrepareDeathMovement() override;
-	virtual bool ShouldKeepCharacterMovementOnDeath() const override { return bShipDeathMovement; }
 	virtual bool IsMoveInputIgnored() const override;
 	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:
@@ -186,7 +196,10 @@ protected:
 	bool bInitialLifeRestoreSuccessful = true;
 	bool RestoreProgressForNewLife(const FSWRoomPlayerProgress& Progress, FString& OutError);
 	bool CanMutateLifeGameplay() const;
-	protected:
+	/** Mouse-input RPC allowlist, independent of gameplay outcome event tags. */
+	static bool IsAllowedRemoteInputEvent(FGameplayTag EventTag);
+
+  protected:
 	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */
@@ -690,10 +703,14 @@ protected:
 	/* --- 카메라 ---*/
 public:
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+	USWPlayerCameraZoomComponent* GetCameraZoom() const { return CameraZoom; }
+	bool CanAdjustManualCameraZoom() const;
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USWPlayerCameraZoomComponent> CameraZoom;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> FollowCamera;

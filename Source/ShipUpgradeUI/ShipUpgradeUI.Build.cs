@@ -18,6 +18,7 @@ public class ShipUpgradeUI : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"ClassFeature",
+			"ArtisticSWCore",
 			"InputCore",
 			"Slate",
 			"SlateCore"

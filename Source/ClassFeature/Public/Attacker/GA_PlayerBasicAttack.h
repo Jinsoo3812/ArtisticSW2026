@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
 #include "GameplayEffectTypes.h"
 #include "GA_PlayerBasicAttack.generated.h"
@@ -62,6 +63,7 @@ protected:
 
 private:
 	friend class FPlayerAttackQueuedSectionTest;
+	friend class FPlayerAttackInterruptionLifecycleTest;
 	int32 ResolveHitWindowSection(FName PlayingSection) const;
 	bool CacheAttackData();
 	bool CacheComboSections(const TArray<FName>& ConfiguredSections);
@@ -71,6 +73,7 @@ private:
 	void StartHitScan();
 	void EndHitScan();
 	void FinishAttack(bool bWasCancelled);
+	void DisconnectAttackTasks();
 	void AddAttackStateTag();
 	void RemoveAttackStateTag();
 
@@ -106,6 +109,11 @@ private:
 	int32 LastOpenedComboIndex = MIN_int32;
 	bool bComboInputBuffered = false;
 	bool bHitScanActive = false;
-	bool bAttackFinished = false;
+	bool bAttackFinished = true;
+	bool bAttackCleanupStarted = false;
+	bool bOwnsAttackState = false;
 	bool bServerCombatPoseRefreshAcquired = false;
+
+  private:
+	FSWOwnedLooseGameplayTags OwnedStateTags;
 };

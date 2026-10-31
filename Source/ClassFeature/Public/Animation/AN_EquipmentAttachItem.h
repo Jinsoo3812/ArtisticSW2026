@@ -10,6 +10,7 @@ class CLASSFEATURE_API UAN_EquipmentAttachItem : public UAnimNotify
 	GENERATED_BODY()
 
 public:
+	UAN_EquipmentAttachItem();
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 	virtual FString GetNotifyName_Implementation() const override;
 };

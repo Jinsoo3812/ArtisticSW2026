@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "GameplayTagContainer.h"
 #include "StorageEntryWidget.generated.h"
 
 class AStorageChest;
@@ -19,7 +20,7 @@ class CLASSFEATURE_API UStorageEntryWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	void SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, AStorageChest* InStorageChest);
+	void SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, AStorageChest* InStorageChest, FGameplayTag InItemTag = FGameplayTag());
 	void SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStorageChest);
 	void SetupAsSearching(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InSearchIcon);
 	void SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InUnrevealedOverlayTexture);

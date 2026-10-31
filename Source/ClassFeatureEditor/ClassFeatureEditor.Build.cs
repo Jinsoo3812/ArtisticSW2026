@@ -7,6 +7,10 @@ public class ClassFeatureEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AssetTools",
+			"Niagara",
+			"BehaviorTreeEditor",
+			"AIGraph",
+			"AIModule",
 			"AudioEditor",
 			"RenderCore",
 			"RHI",
@@ -20,6 +24,7 @@ public class ClassFeatureEditor : ModuleRules
 			"EnhancedInput",
 			"InputCore",
 			"GameplayTags",
+			"GameplayAbilities",
 			"UnrealEd",
 			"Kismet",
 			"BlueprintGraph",
@@ -44,6 +49,7 @@ public class ClassFeatureEditor : ModuleRules
 			"Landscape",
 			"GeometryCore",
 			"MeshConversion",
+			"MeshDescription",
 			"AssetRegistry",
 			"PropertyEditor",
 			"ImageCore",

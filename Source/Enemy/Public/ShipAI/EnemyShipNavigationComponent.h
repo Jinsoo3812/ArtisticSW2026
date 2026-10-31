@@ -8,6 +8,9 @@
 class AEnemyShip;
 class AShip;
 
+enum class EEnemyShipLocalSafetyState : uint8 { Normal, Waiting, Escaping };
+enum class EEnemyShipEscapeAction : uint8 { Forward, ForwardRight, ForwardLeft, Reverse };
+
 USTRUCT()
 struct FEnemyShipHomeAlignment
 {
@@ -78,7 +81,9 @@ public:
 	FEnemyShipNavigationOutput GetLastNavigationOutput() const { return LastNavigationOutput; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation|Avoidance")
-	bool IsAvoidanceManeuverActive() const { return bAvoidanceManeuverActive; }
+	bool IsAvoidanceManeuverActive() const { return SafetyState != EEnemyShipLocalSafetyState::Normal; }
+	void ResetLocalSafety();
+	void NotifyChargeTerrainStall();
 
 	FEnemyShipNavigationOverrideHandle AcquireOverride(
 		UObject* Requester,
@@ -118,7 +123,15 @@ private:
 	FEnemyShipNavigationContext BuildContext() const;
 	void RemoveInvalidOverrides();
 	const FRuntimeOverride* FindWinningOverride() const;
-	void ApplyControl(const FEnemyShipNavigationOutput& BaseOutput);
+	using FRequestedControl = FEnemyShipNavigationOverrideRequest;
+	FRequestedControl ResolveRequestedControl(const FEnemyShipNavigationOutput& BaseOutput) const;
+	void ApplyControl(const FEnemyShipNavigationOutput& BaseOutput, float DeltaTime);
+	void EnterSafetyWait(const TCHAR* Reason = TEXT("Unspecified"));
+	FRequestedControl EscapeControl(EEnemyShipEscapeAction Action) const;
+	bool IsHomePathSafe(const FTransform& Start, const FTransform& End) const;
+	bool IsCombatSafetyLogEnabled() const;
+	void LogCombatSafety(const TCHAR* Event, const TCHAR* Reason, const FString& Details = FString(), bool bSnapshot = false);
+	void TickCombatSafetyDiagnostics(float DeltaTime);
 	void UpdateAvoidance(float DeltaTime);
 	void UpdateTerrainAvoidance(float DeltaTime);
 	void ResetTerrainAvoidance();
@@ -140,6 +153,39 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentState)
 	ENavalCombatState CurrentState = ENavalCombatState::Idle;
 	FEnemyShipNavigationOutput LastNavigationOutput;
+	EEnemyShipLocalSafetyState SafetyState = EEnemyShipLocalSafetyState::Normal;
+	EEnemyShipEscapeAction EscapeAction = EEnemyShipEscapeAction::Forward;
+	FRandomStream SafetyRandom;
+	float RetryRemaining = 0.0f;
+	float SafeResumeElapsed = 0.0f;
+	float ForwardResumeElapsed = 0.0f;
+	float SafetyEvaluationAccumulator = 0.0f;
+	float EscapeReconsiderAccumulator = 0.0f;
+	float ProgressElapsed = 0.0f;
+	float EscapeElapsed = 0.0f;
+	FVector ProgressStart = FVector::ZeroVector;
+	float EscapeLastYaw = 0.0f;
+	float EscapeTurned = 0.0f;
+	bool bPreferLeftEscape = false;
+	bool bPendingHomeAlignmentSafety = false;
+	double CombatLastTickWall = 0.0;
+	double CombatLastSnapshotWall = 0.0;
+	double CombatLogWindowStart = 0.0;
+	float CombatWallGapMs = 0.0f;
+	float CombatLastTickMs = 0.0f;
+	float CombatDeltaTimeMs = 0.0f;
+	float CombatQueryBuildMs = 0.0f;
+	float CombatChecksMs = 0.0f;
+	int32 CombatCheckCount = 0;
+	int32 CombatLogLines = 0;
+	uint64 CombatSuppressedLines = 0;
+	const TCHAR* CombatLastCheckReason = TEXT("NotChecked");
+	const TCHAR* CombatLastResumeReason = TEXT("NotChecked");
+	TWeakObjectPtr<AActor> CombatLastBlocker;
+	bool bCombatAppliedControlValid = false;
+	float CombatAppliedMove = 0.0f;
+	float CombatAppliedTurn = 0.0f;
+	uint8 CombatAppliedMode = 0;
 	float LostTargetElapsed = 0.0f;
 	float AvoidanceEvaluationAccumulator = 0.0f;
 	float AvoidanceMinimumTimeRemaining = 0.0f;

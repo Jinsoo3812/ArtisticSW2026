@@ -53,4 +53,12 @@ protected:
 	// Hitscan 처리를 서버로 전송하기 위한 함수 (GAS Target Data 시스템 사용)
 	UFUNCTION()
 	void OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
+
+	friend class FSnipingServerValidationTest;
+	bool ValidateReportedHit(AActor* Source, const FHitResult& Reported, FHitResult& Verified) const;
+	FDelegateHandle TargetDataSubscription;
+	TWeakObjectPtr<UAbilitySystemComponent> TargetDataASC;
+	TWeakObjectPtr<class USkeletalMeshComponent> HiddenMesh;
+	bool SavedOwnerNoSee = false;
+	double LastServerShotTime = -DBL_MAX;
 };

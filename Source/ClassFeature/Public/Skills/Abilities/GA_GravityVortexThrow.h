@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "Skills/PlayerSkillGameplayAbility.h"
 #include "GA_GravityVortexThrow.generated.h"
 
@@ -148,4 +149,5 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ABombardmentPreview> RangePreviewActor;
 
+	FSWOwnedLooseGameplayTags OwnedStateTags;
 };

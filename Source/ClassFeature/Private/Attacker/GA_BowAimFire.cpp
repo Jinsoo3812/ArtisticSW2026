@@ -25,6 +25,7 @@ UGA_BowAimFire::UGA_BowAimFire()
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_Weapon_AimCycle);
+	AssetTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(AssetTags);
 }
 
@@ -34,7 +35,9 @@ void UGA_BowAimFire::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	bEndingAim = false;
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+	if (!IsAimSessionActive()) return;
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
@@ -42,6 +45,7 @@ void UGA_BowAimFire::ActivateAbility(
 		return;
 	}
 
+	if (!IsAimSessionActive()) return;
 	if (!CacheBowFromAvatar())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::ActivateAbility : Equipped item is not a valid bow."));
@@ -51,9 +55,11 @@ void UGA_BowAimFire::ActivateAbility(
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->AddLooseGameplayTag(State_Aiming);
+		bOwnsAimTag = true;
+		OwnedStateTags.Set(ASC, State_Aiming, true);
 	}
 
+	if (!IsAimSessionActive()) return;
 	RemoveBowStateTags();
 	CachedBowComponent->SetAiming(true);
 	CachedBowComponent->SetDrawAlpha(0.0f);
@@ -68,35 +74,45 @@ void UGA_BowAimFire::ActivateAbility(
 	if (WaitRightReleaseTask)
 	{
 		WaitRightReleaseTask->OnRelease.AddDynamic(this, &UGA_BowAimFire::OnRightClickReleased);
+		AimInputTasks.Add(WaitRightReleaseTask);
 		WaitRightReleaseTask->ReadyForActivation();
+		if (!IsAimSessionActive()) return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitLeftPressedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick, nullptr, false, true);
 	if (WaitLeftPressedTask)
 	{
 		WaitLeftPressedTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnLeftClickPressed);
+		AimInputTasks.Add(WaitLeftPressedTask);
 		WaitLeftPressedTask->ReadyForActivation();
+		if (!IsAimSessionActive()) return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitLeftReleasedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick_Released, nullptr, false, true);
 	if (WaitLeftReleasedTask)
 	{
 		WaitLeftReleasedTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnLeftClickReleased);
+		AimInputTasks.Add(WaitLeftReleasedTask);
 		WaitLeftReleasedTask->ReadyForActivation();
+		if (!IsAimSessionActive()) return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitFireArrowTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Montage_FireArrow, nullptr, false, true);
 	if (WaitFireArrowTask)
 	{
 		WaitFireArrowTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnReleaseFireEvent);
+		AimInputTasks.Add(WaitFireArrowTask);
 		WaitFireArrowTask->ReadyForActivation();
+		if (!IsAimSessionActive()) return;
 	}
 
 	UAbilityTask_WaitGameplayEvent* WaitNockArrowTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Montage_NockArrow, nullptr, false, true);
 	if (WaitNockArrowTask)
 	{
 		WaitNockArrowTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnNockArrowEvent);
+		AimInputTasks.Add(WaitNockArrowTask);
 		WaitNockArrowTask->ReadyForActivation();
+		if (!IsAimSessionActive()) return;
 	}
 }
 
@@ -107,23 +123,38 @@ void UGA_BowAimFire::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
-	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
-		if (Player->GetAimComponent()) Player->GetAimComponent()->SetObstructionQuery(FPlayerAimObstructionQuery());
-	ResetBowState();
-
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	if (bEndingAim || !IsEndAbilityValid(Handle, ActorInfo)) return;
+	if (ScopeLockCount > 0)
 	{
-		ASC->RemoveLooseGameplayTag(State_Aiming);
-		ASC->RemoveLooseGameplayTag(State_Attacking);
+		WaitingToExecute.Add(FPostLockDelegate::CreateUObject(this, &UGA_BowAimFire::EndAbility,
+			Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled));
+		return;
 	}
-	RemoveBowStateTags();
-
+	bEndingAim = true;
+	for (UAbilityTask* Task : AimInputTasks)
+	{
+		if (auto* Event = Cast<UAbilityTask_WaitGameplayEvent>(Task)) Event->EventReceived.RemoveAll(this);
+		if (auto* Release = Cast<UAbilityTask_WaitInputRelease>(Task)) Release->OnRelease.RemoveAll(this);
+		if (Task) Task->EndTask();
+	}
+	AimInputTasks.Reset();
+	if (bOwnsAimTag)
+	{
+		if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+			if (Player->GetAimComponent()) Player->GetAimComponent()->SetObstructionQuery(FPlayerAimObstructionQuery());
+	}
+	ResetBowState();
+	bOwnsAimTag = false;
+	OwnedStateTags.Reset();
+	CachedBow = nullptr;
+	CachedBowComponent = nullptr;
+	ShotComponent.Reset();
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 {
-	if (!IsActive() || !CachedBowComponent || bIsDrawing || bIsFullyDrawn)
+	if (!IsAimSessionActive() || bFinishingShot || !CachedBowComponent || bIsDrawing || bIsFullyDrawn)
 	{
 		return;
 	}
@@ -164,10 +195,8 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 	CachedBowComponent->SetDrawAlpha(0.0f);
 	CachedBowComponent->SetArrowNocked(false);
 
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-	{
-		ASC->AddLooseGameplayTag(State_Attacking);
-	}
+	SetAttackTag(true);
+	if (!IsAimSessionActive()) return;
 	SetBowDrawTagState(true, false, false);
 
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
@@ -184,6 +213,7 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 		PlayDrawMontage();
 	}
 
+	if (!IsAimSessionActive() || bFinishingShot) return;
 	GetWorld()->GetTimerManager().SetTimer(
 		ChargeTimerHandle,
 		this,
@@ -194,7 +224,7 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 
 void UGA_BowAimFire::OnLeftClickReleased(FGameplayEventData Payload)
 {
-	if (!IsActive() || !CachedBowComponent || bIsReleaseInProgress)
+	if (!IsAimSessionActive() || !CachedBowComponent || bIsReleaseInProgress)
 	{
 		return;
 	}
@@ -213,7 +243,7 @@ void UGA_BowAimFire::OnLeftClickReleased(FGameplayEventData Payload)
 
 void UGA_BowAimFire::OnRightClickReleased(float TimeHeld)
 {
-	if (IsActive())
+	if (IsAimSessionActive())
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 	}
@@ -221,7 +251,7 @@ void UGA_BowAimFire::OnRightClickReleased(float TimeHeld)
 
 void UGA_BowAimFire::UpdateDrawAlpha()
 {
-	if (!CachedBowComponent)
+	if (!IsAimSessionActive() || bFinishingShot || !CachedBowComponent || !bIsDrawing)
 	{
 		return;
 	}
@@ -247,7 +277,8 @@ void UGA_BowAimFire::UpdateDrawAlpha()
 
 	if (DrawAlpha >= FullDrawAlphaToRelease)
 	{
-		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+		if (GetWorld())
+			GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 		CachedBowComponent->SetDrawAlpha(1.0f);
 
 		// Make the full-draw pose available before the draw montage starts blending
@@ -273,38 +304,26 @@ void UGA_BowAimFire::PlayAimCycleMontage()
 		return;
 	}
 
-	UAbilityTask_PlayMontageAndWait* AimCycleTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+	BowMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
 		NAME_None,
 		AimCycleMontage,
 		Entry->AimCyclePlayRate,
 		Entry->AimCycleDrawSectionName,
-		true);
+		true, 1.f, 0.f, true);
 
-	if (AimCycleTask)
+	if (BowMontageTask)
 	{
-		AimCycleTask->OnCompleted.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageCompleted);
-		AimCycleTask->OnInterrupted.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
-		AimCycleTask->OnCancelled.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
-		AimCycleTask->ReadyForActivation();
+		BowMontageTask->OnCompleted.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageCompleted);
+		BowMontageTask->OnInterrupted.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
+		BowMontageTask->OnCancelled.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
+		BowMontageTask->ReadyForActivation();
 	}
 }
 
 void UGA_BowAimFire::StopAimCycleMontage(float BlendOutTime)
 {
-	UAnimMontage* AimCycleMontage = GetAimCycleMontage();
-	if (!AimCycleMontage || !CurrentActorInfo)
-	{
-		return;
-	}
-
-	if (UAnimInstance* AnimInstance = CurrentActorInfo->GetAnimInstance())
-	{
-		if (AnimInstance->Montage_IsPlaying(AimCycleMontage))
-		{
-			AnimInstance->Montage_Stop(FMath::Max(0.f, BlendOutTime), AimCycleMontage);
-		}
-	}
+	StopBowMontage(BlendOutTime);
 }
 
 void UGA_BowAimFire::JumpAimCycleToSection(FName SectionName)
@@ -325,39 +344,30 @@ void UGA_BowAimFire::PlayDrawMontage()
 		return;
 	}
 
-	UAbilityTask_PlayMontageAndWait* DrawMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+	BowMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
 		NAME_None,
 		DrawMontage,
 		DrawMontagePlayRate,
 		NAME_None,
-		true);
+		true, 1.f, 0.f, true);
 
-	if (DrawMontageTask)
+	if (BowMontageTask)
 	{
-		DrawMontageTask->ReadyForActivation();
+		BowMontageTask->OnInterrupted.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
+		BowMontageTask->OnCancelled.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
+		BowMontageTask->ReadyForActivation();
 	}
 }
 
 void UGA_BowAimFire::StopDrawMontage(float BlendOutTime)
 {
-	if (!DrawMontage || !CurrentActorInfo)
-	{
-		return;
-	}
-
-	if (UAnimInstance* AnimInstance = CurrentActorInfo->GetAnimInstance())
-	{
-		if (AnimInstance->Montage_IsPlaying(DrawMontage))
-		{
-			AnimInstance->Montage_Stop(FMath::Max(0.f, BlendOutTime), DrawMontage);
-		}
-	}
+	StopBowMontage(BlendOutTime);
 }
 
 void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 {
-	if (!IsActive() || !CachedBowComponent || bIsReleaseInProgress || bHasFiredCurrentShot)
+	if (!IsAimSessionActive() || !CachedBowComponent || bIsReleaseInProgress || bHasFiredCurrentShot)
 	{
 		return;
 	}
@@ -388,7 +398,8 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 		PendingReleaseFireSpeed = CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha());
 	}
 
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	bIsDrawing = false;
 	bIsFullyDrawn = true;
 	bIsReleaseInProgress = true;
@@ -414,7 +425,7 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 
 	if (ReleaseMontage)
 	{
-		UAbilityTask_PlayMontageAndWait* ReleaseMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		BowMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 			this,
 			NAME_None,
 			ReleaseMontage,
@@ -422,12 +433,13 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 			NAME_None,
 			true, 1.f, 0.f, true);
 
-		if (ReleaseMontageTask)
+		if (BowMontageTask)
 		{
-			ReleaseMontageTask->OnCompleted.AddDynamic(this, &UGA_BowAimFire::OnReleaseMontageCompleted);
-			ReleaseMontageTask->OnInterrupted.AddDynamic(this, &UGA_BowAimFire::OnReleaseMontageInterrupted);
-			ReleaseMontageTask->OnCancelled.AddDynamic(this, &UGA_BowAimFire::OnReleaseMontageInterrupted);
-			ReleaseMontageTask->ReadyForActivation();
+			BowMontageTask->OnCompleted.AddDynamic(this, &UGA_BowAimFire::OnReleaseMontageCompleted);
+			BowMontageTask->OnInterrupted.AddDynamic(this, &UGA_BowAimFire::OnReleaseMontageInterrupted);
+			BowMontageTask->OnCancelled.AddDynamic(this, &UGA_BowAimFire::OnReleaseMontageInterrupted);
+			BowMontageTask->ReadyForActivation();
+			if (!IsAimSessionActive()) return;
 
 			if (!bRequireReleaseNotifyToFire)
 			{
@@ -443,7 +455,7 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 
 void UGA_BowAimFire::OnReleaseFireEvent(FGameplayEventData /*TimingPayload*/)
 {
-	if (!IsActive() || !bIsReleaseInProgress || !bIsFullyDrawn || bHasFiredCurrentShot)
+	if (!IsAimSessionActive() || !bIsReleaseInProgress || !bIsFullyDrawn || bHasFiredCurrentShot)
 	{
 		return;
 	}
@@ -460,7 +472,7 @@ void UGA_BowAimFire::OnReleaseFireEvent(FGameplayEventData /*TimingPayload*/)
 
 void UGA_BowAimFire::OnNockArrowEvent(FGameplayEventData Payload)
 {
-	if (!IsActive() || !CachedBowComponent || bIsReleaseInProgress
+	if (!IsAimSessionActive() || !CachedBowComponent || bIsReleaseInProgress
 		|| (!bIsDrawing && !bIsFullyDrawn))
 	{
 		return;
@@ -472,7 +484,7 @@ void UGA_BowAimFire::OnNockArrowEvent(FGameplayEventData Payload)
 
 void UGA_BowAimFire::OnReleaseMontageCompleted()
 {
-	if (!IsActive())
+	if (!IsAimSessionActive())
 	{
 		return;
 	}
@@ -483,17 +495,12 @@ void UGA_BowAimFire::OnReleaseMontageCompleted()
 
 void UGA_BowAimFire::OnReleaseMontageInterrupted()
 {
-	if (!IsActive())
-	{
-		return;
-	}
-
-	FinishShot();
+	if (IsAimSessionActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
 void UGA_BowAimFire::OnAimCycleMontageCompleted()
 {
-	if (IsActive())
+	if (IsAimSessionActive())
 	{
 		OnReleaseMontageCompleted();
 	}
@@ -501,16 +508,13 @@ void UGA_BowAimFire::OnAimCycleMontageCompleted()
 
 void UGA_BowAimFire::OnAimCycleMontageInterrupted()
 {
-	if (IsActive())
-	{
-		FinishShot();
-	}
+	if (IsAimSessionActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
 bool UGA_BowAimFire::IsAimPathObstructed() const
 {
 	const ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (!IsActive() || !Player || !IsValid(CachedBow) || !CachedBowComponent
+	if (!IsAimSessionActive() || !Player || !IsValid(CachedBow) || !CachedBowComponent
 		|| !Player->GetAimComponent() || Player->EquippedItem != CachedBow) return false;
 	const UClass* SpawnClass = CachedBow->GetSpawnClass();
 	if (!SpawnClass || !SpawnClass->IsChildOf(APlayerArrowProjectile::StaticClass())) return false;
@@ -532,20 +536,21 @@ bool UGA_BowAimFire::IsAimPathObstructed() const
 
 void UGA_BowAimFire::QueueReleaseShot()
 {
-	if (!IsActive() || !bIsReleaseInProgress || bHasFiredCurrentShot || bReleaseQueued || !PendingShotId.IsValid()) return;
+	if (!IsAimSessionActive() || !bIsReleaseInProgress || bHasFiredCurrentShot || bReleaseQueued || !PendingShotId.IsValid()) return;
 	ShotComponent = UProjectileShotComponent::FindOrAdd(GetAvatarActorFromActorInfo());
 	if (!ShotComponent.IsValid()) { FinishShot(); return; }
 	bReleaseQueued = ShotComponent->Queue(this, PendingShotId,
-		FProjectileShotCommitDelegate::CreateUObject(this, &UGA_BowAimFire::CommitReleaseShot),
-		FProjectileShotFinishedDelegate::CreateUObject(this, &UGA_BowAimFire::OnShotCommitted),
+		FProjectileShotCommitDelegate::CreateUObject(this, &UGA_BowAimFire::CommitReleaseShot, PendingShotId),
+		FProjectileShotFinishedDelegate::CreateUObject(this, &UGA_BowAimFire::OnShotCommitted, PendingShotId),
 		GetAvatarActorFromActorInfo()->HasAuthority() ? 1.0f : 2.0f);
 	if (!bReleaseQueued) FinishShot();
 }
 
-EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
+EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot(FGuid ShotId)
 {
+	if (!ShotId.IsValid() || ShotId != PendingShotId) return EProjectileShotCommit::Rejected;
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (!IsActive() || bHasFiredCurrentShot || !bIsReleaseInProgress || !bIsFullyDrawn
+	if (!IsAimSessionActive() || bHasFiredCurrentShot || !bIsReleaseInProgress || !bIsFullyDrawn
 		|| !Player || !IsValid(CachedBow) || !CachedBowComponent
 		|| Player->EquippedItem != CachedBow || GetSourceWeapon() != CachedBow) return EProjectileShotCommit::Rejected;
 	if (!bHasReceivedNockNotify)
@@ -637,8 +642,9 @@ EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
 	return EProjectileShotCommit::Succeeded;
 }
 
-void UGA_BowAimFire::OnShotCommitted(bool bSucceeded)
+void UGA_BowAimFire::OnShotCommitted(bool bSucceeded, FGuid ShotId)
 {
+	if (!IsAimSessionActive() || bFinishingShot || !ShotId.IsValid() || ShotId != PendingShotId) return;
 	bReleaseQueued = false;
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
 	{
@@ -672,12 +678,11 @@ void UGA_BowAimFire::FinishShot()
 	if (bFinishingShot) return;
 	TGuardValue<bool> FinishingGuard(bFinishingShot, true);
 	CancelPendingShot();
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
-	StopDrawMontage(DrawMontageBlendOutTime);
-	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
-	{
-		StopAimCycleMontage(Entry->AimCycleBlendOutTime);
-	}
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	const FWeaponAnimationEntry* Entry = GetBowAnimationEntry();
+	StopBowMontage(Entry ? Entry->AimCycleBlendOutTime : DrawMontageBlendOutTime);
+	RemoveBowStateTags();
 
 	bIsDrawing = false;
 	bIsFullyDrawn = false;
@@ -694,42 +699,14 @@ void UGA_BowAimFire::FinishShot()
 		CachedBowComponent->SetArrowNocked(false);
 	}
 
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-	{
-		ASC->RemoveLooseGameplayTag(State_Attacking);
-	}
-	RemoveBowStateTags();
+	SetAttackTag(false);
 	ReleaseServerPoseRefresh();
 }
 
 void UGA_BowAimFire::ResetBowState()
 {
-	if (bFinishingShot) return;
-	TGuardValue<bool> FinishingGuard(bFinishingShot, true);
-	CancelPendingShot();
-	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
-	StopDrawMontage(DrawMontageBlendOutTime);
-	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
-	{
-		StopAimCycleMontage(Entry->AimCycleBlendOutTime);
-	}
-	bIsDrawing = false;
-	bIsFullyDrawn = false;
-	bIsReleaseInProgress = false;
-	bHasFiredCurrentShot = false;
-	bHasReceivedNockNotify = false;
-	PendingReleaseFireSpeed = 0.f;
-	PendingShotId.Invalidate();
-	ServerReleaseDrawAlpha = 0.f;
-
-	if (CachedBowComponent)
-	{
-		CachedBowComponent->SetDrawAlpha(0.0f);
-		CachedBowComponent->SetAiming(false);
-		CachedBowComponent->SetArrowNocked(false);
-	}
-	RemoveBowStateTags();
-	ReleaseServerPoseRefresh();
+	FinishShot();
+	if (CachedBowComponent) CachedBowComponent->SetAiming(false);
 }
 
 void UGA_BowAimFire::AcquireServerPoseRefresh()
@@ -799,17 +776,11 @@ void UGA_BowAimFire::AddBowStateTags()
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		if (bIsDrawing)
-		{
-			ASC->AddLooseGameplayTag(State_Bow_Drawing);
-		}
+			OwnedStateTags.Set(ASC, State_Bow_Drawing, true);
 		if (bIsFullyDrawn)
-		{
-			ASC->AddLooseGameplayTag(State_Bow_FullyDrawn);
-		}
+			OwnedStateTags.Set(ASC, State_Bow_FullyDrawn, true);
 		if (bIsReleaseInProgress)
-		{
-			ASC->AddLooseGameplayTag(State_Bow_Releasing);
-		}
+			OwnedStateTags.Set(ASC, State_Bow_Releasing, true);
 	}
 }
 
@@ -817,9 +788,9 @@ void UGA_BowAimFire::RemoveBowStateTags()
 {
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Bow_Drawing);
-		ASC->RemoveLooseGameplayTag(State_Bow_FullyDrawn);
-		ASC->RemoveLooseGameplayTag(State_Bow_Releasing);
+		OwnedStateTags.Set(ASC, State_Bow_Drawing, false);
+		OwnedStateTags.Set(ASC, State_Bow_FullyDrawn, false);
+		OwnedStateTags.Set(ASC, State_Bow_Releasing, false);
 	}
 }
 
@@ -832,4 +803,31 @@ void UGA_BowAimFire::SetBowDrawTagState(bool bDrawing, bool bFullyDrawn, bool bR
 	bIsReleaseInProgress = bReleasing;
 
 	AddBowStateTags();
+}
+
+bool UGA_BowAimFire::IsAimSessionActive() const
+{
+	return IsActive() && !bEndingAim;
+}
+
+void UGA_BowAimFire::SetAttackTag(bool bEnabled)
+{
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		OwnedStateTags.Set(ASC, State_Attacking, bEnabled);
+	}
+}
+
+void UGA_BowAimFire::StopBowMontage(float BlendOutTime)
+{
+	if (!BowMontageTask) return;
+	UAbilityTask_PlayMontageAndWait* Task = BowMontageTask;
+	BowMontageTask = nullptr;
+	Task->OnCompleted.RemoveAll(this);
+	Task->OnInterrupted.RemoveAll(this);
+	Task->OnCancelled.RemoveAll(this);
+	// Stop only our montage; a hit-reaction montage may already own the ASC.
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+		if (ASC->GetAnimatingAbility() == this) ASC->CurrentMontageStop(FMath::Max(0.f, BlendOutTime));
+	Task->EndTask();
 }

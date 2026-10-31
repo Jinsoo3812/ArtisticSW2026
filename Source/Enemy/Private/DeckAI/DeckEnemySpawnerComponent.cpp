@@ -324,7 +324,11 @@ void UDeckEnemySpawnerComponent::CaptureRoomState(FSWRoomDeckSpawnerState& OutSt
 		if (IsValid(Enemy))
 		{
 			const FGuid Id = GetId(Enemy);
-			if (Id.IsValid()) OutState.EnemyPoolIds.Add(Id);
+			if (Id.IsValid())
+			{
+				OutState.EnemyPoolIds.Add(Id);
+				if (SummonReservePool.Contains(Enemy)) OutState.SummonReservePoolIds.Add(Id);
+			}
 			else
 			{
 				FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
@@ -407,7 +411,7 @@ bool UDeckEnemySpawnerComponent::RestoreRoomState(const FSWRoomDeckSpawnerState&
 	PendingSightExpiry = Now + State.PendingSightRemaining;
 	ReadinessExpiry = Now + State.ReadinessTimeoutRemaining;
 	TargetWaitExpiry = State.TargetWaitRemaining > 0.f ? Now + State.TargetWaitRemaining : 0.;
-	EnemyPool.Reset(); AliveDeployedEnemies.Reset(); PointRuntimeStates.Reset(); DeploymentQueue.Reset();
+	EnemyPool.Reset(); SummonReservePool.Reset(); AliveDeployedEnemies.Reset(); PointRuntimeStates.Reset(); DeploymentQueue.Reset();
 	DeploymentState = static_cast<EDeckEnemyDeploymentState>(State.DeploymentState);
 	SpawnRequestState = static_cast<EDeckEnemySpawnRequestState>(State.RequestState);
 	EncounterGeneration = State.EncounterGeneration; RequestId = State.RequestId;
@@ -445,6 +449,12 @@ bool UDeckEnemySpawnerComponent::FinalizeRoomState(const TMap<FGuid, AActor*>& R
 		ADeckEnemy* Enemy = Cast<ADeckEnemy>(Find(Id));
 		if (!Enemy || !EnemyPool.Contains(Enemy) || Enemy->IsPoolDeathHandled()) { OutError = TEXT("Invalid live deck pool reference"); return false; }
 		AliveDeployedEnemies.Add(Enemy);
+	}
+	for (const FGuid& Id : PendingRoomState.SummonReservePoolIds)
+	{
+		auto* Enemy = Cast<ADeckEnemy>(Find(Id));
+		if (!Enemy || !EnemyPool.Contains(Enemy)) { OutError = TEXT("Missing restored summon reserve actor"); return false; }
+		SummonReservePool.AddUnique(Enemy);
 	}
 	for (ADeckEnemy* Enemy : EnemyPool)
 	{
@@ -805,9 +815,11 @@ bool UDeckEnemySpawnerComponent::AuditBundleCrew(bool bRequireCompletePool, FStr
 	const bool bPlanValid = !bEnabled || BuildDeploymentPlan(Plan, false);
 	int32 ClassMismatches = 0;
 	int32 StatsMismatches = 0;
-	for (int32 Index = 0; Index < EnemyPool.Num(); ++Index)
+	int32 RegularCount = 0;
+	for (ADeckEnemy* Enemy : EnemyPool)
 	{
-		ADeckEnemy* Enemy = EnemyPool[Index];
+		if (SummonReservePool.Contains(Enemy)) continue;
+		const int32 Index = RegularCount++;
 		const bool bClassMatch = IsValid(Enemy) && Plan.IsValidIndex(Index) && Enemy->GetClass() == Plan[Index].EnemyClass;
 		if (!bClassMatch) ++ClassMismatches;
 		const FDataTableRowHandle ActualRow = IsValid(Enemy) ? Enemy->GetEffectiveSpawnStatsRow() : FDataTableRowHandle();
@@ -824,7 +836,7 @@ bool UDeckEnemySpawnerComponent::AuditBundleCrew(bool bRequireCompletePool, FStr
 			*GetPathNameSafe(ActualRow.DataTable), *ActualRow.RowName.ToString(),
 			Plan.IsValidIndex(Index) ? Plan[Index].SpawnPointId : INDEX_NONE, bClassMatch, bStatsMatch); */
 	}
-	const bool bComplete = bPlanValid && EnemyPool.Num() == Plan.Num() && ClassMismatches == 0 && StatsMismatches == 0;
+	const bool bComplete = bPlanValid && RegularCount == Plan.Num() && ClassMismatches == 0 && StatsMismatches == 0;
 	/* UE_LOG(LogTemp, Display, TEXT("[EnemyShipPool] Event=CrewReady Actor=%s Enabled=%d Planned=%d Actual=%d PlanValid=%d ClassMismatches=%d StatsMismatches=%d Complete=%d RequireComplete=%d"),
 		*GetNameSafe(GetHostShip()), bEnabled, Plan.Num(), EnemyPool.Num(), bPlanValid, ClassMismatches, StatsMismatches, bComplete, bRequireCompletePool); */
 	if (bRequireCompletePool && !bComplete) { Error = TEXT("Enemy ship crew pool does not match the assigned spawn plan"); return false; }
@@ -853,6 +865,7 @@ bool UDeckEnemySpawnerComponent::StepClearPoolForIdle()
 	if (!EnemyPool.IsEmpty())
 	{
 		ADeckEnemy* Enemy = EnemyPool.Pop(EAllowShrinking::No);
+		SummonReservePool.Remove(Enemy);
 		if (IsValid(Enemy))
 		{
 			Host->UnregisterCrewEnemy(Enemy);
@@ -870,6 +883,7 @@ bool UDeckEnemySpawnerComponent::StepClearPoolForIdle()
 		return false;
 	}
 	EnemyPool.Reset();
+	SummonReservePool.Reset();
 	PointRuntimeStates.Reset();
 	AllocatedPlanSignature.Reset();
 	ResetForNewEncounter();
@@ -896,6 +910,7 @@ void UDeckEnemySpawnerComponent::Shutdown()
 		}
 	}
 	EnemyPool.Reset();
+	SummonReservePool.Reset();
 	AliveDeployedEnemies.Reset();
 	PointRuntimeStates.Reset();
 	DeploymentState = EDeckEnemyDeploymentState::Idle;
@@ -1007,11 +1022,12 @@ bool UDeckEnemySpawnerComponent::CreateDeploymentTicket(float DelaySeconds)
 }
 
 ADeckEnemy* UDeckEnemySpawnerComponent::FindInactiveEnemy(
-	TSubclassOf<ADeckEnemy> RequiredClass) const
+	TSubclassOf<ADeckEnemy> RequiredClass, bool bIncludeSummonReserve) const
 {
 	for (ADeckEnemy* Enemy : EnemyPool)
 	{
 		if (IsValid(Enemy) && !Enemy->IsPoolActive()
+			&& (bIncludeSummonReserve || !SummonReservePool.Contains(Enemy))
 			&& (!RequiredClass || Enemy->GetClass() == RequiredClass.Get()))
 		{
 			return Enemy;
@@ -1144,11 +1160,17 @@ int32 UDeckEnemySpawnerComponent::GetLivingPooledEnemyCount() const
 	{
 		if (IsValid(Enemy))
 		{
+			if (SummonReservePool.Contains(Enemy) && !Enemy->IsPoolActive()) continue;
 			const UBaseHealthComponent* Health = Enemy->GetHealthComponent();
 			LivingCount += (!Health || !Health->IsDead()) ? 1 : 0;
 		}
 	}
 	return LivingCount;
+}
+
+void UDeckEnemySpawnerComponent::NotifySummonReserveDeactivated(ADeckEnemy* Enemy)
+{
+	if (SummonReservePool.Contains(Enemy)) AliveDeployedEnemies.Remove(Enemy);
 }
 
 void UDeckEnemySpawnerComponent::NotifyEnemyDefeated(ADeckEnemy* Enemy)
@@ -1525,7 +1547,7 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtReservation(
 	AActor* InitialTarget,
 	ADeckEnemy*& OutEnemy,
 	TSubclassOf<ADeckEnemy> RequiredClass,
-	const FDataTableRowHandle& StatsRow)
+	const FDataTableRowHandle& StatsRow, int32 AdditionalSummonCapacity)
 {
 	OutEnemy = nullptr;
 	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated() || Host->IsStoryGateDormant()) return false;
@@ -1533,7 +1555,38 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtReservation(
 	{
 		InitializePool();
 	}
-	ADeckEnemy* Enemy = FindInactiveEnemy(RequiredClass);
+	ADeckEnemy* Enemy = FindInactiveEnemy(RequiredClass, AdditionalSummonCapacity > 0);
+	if (!Enemy && RequiredClass && AdditionalSummonCapacity > 0)
+	{
+		SummonReservePool.RemoveAll([](const auto& Entry) { return !IsValid(Entry); });
+		auto* Host = GetHostShip();
+		auto* Point = GetWaypoint(Reservation.PointId);
+		const auto* CDO = RequiredClass->GetDefaultObject<ADeckEnemy>();
+		FTransform Transform;
+		if (Host && Host->CanDeployDeckEnemies() && Point && CDO
+			&& SummonReservePool.Num() < FMath::Clamp(AdditionalSummonCapacity, 0, 8)
+			&& ResolveEnemySpawnTransform(Point, *CDO, Transform))
+		{
+			const uint32 Epoch = ExecutionEpoch, Generation = EncounterGeneration;
+			auto* Created = GetWorld()->SpawnActorDeferred<ADeckEnemy>(RequiredClass, Transform, Host, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+			if (Created)
+			{
+				Created->PrepareForPool();
+				const bool bBalanced = Created->ConfigureSpawnBalance(StatsRow);
+				Created->FinishSpawning(Transform);
+				if (IsValid(Created) && bBalanced && Epoch == ExecutionEpoch && Generation == EncounterGeneration && Host->CanDeployDeckEnemies())
+				{
+					Created->SetHostShip(Host);
+					Created->DeactivateToPool();
+					EnemyPool.Add(Created);
+					SummonReservePool.Add(Created);
+					Host->RegisterCrewEnemy(Created);
+					Enemy = Created;
+				}
+				else if (IsValid(Created)) Created->Destroy();
+			}
+		}
+	}
 	if (!Enemy)
 	{
 		ReleasePointReservation(Reservation);

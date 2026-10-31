@@ -1,7 +1,7 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "CrafterComponent.h"
+#include "BasePlayerController.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GameFramework/Pawn.h"
@@ -58,14 +58,40 @@ void UCrafterComponent::BeginPlay()
 
 void UCrafterComponent::SetupCrafterSystem()
 {
-	GrantCrafterAbilities();
-
 	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
-	if (Player && Player->GetAbilitySystemComponent())
-	{
-		// 서버 측 이벤트 바인딩
-		Player->GetAbilitySystemComponent()->GenericGameplayEventCallbacks.FindOrAdd(Interaction_Craft).AddUObject(this, &UCrafterComponent::HandleCraftEvent);
-	}
+	UAbilitySystemComponent* ASC = Player ? Player->GetAbilitySystemComponent() : nullptr;
+	if (!Player || !Player->HasAuthority() || !ASC ||
+	    (BoundCraftingASC.Get() == ASC && CraftEventSubscription.IsValid()))
+		return;
+	if (UAbilitySystemComponent* Old = BoundCraftingASC.Get())
+		Old->GenericGameplayEventCallbacks.FindOrAdd(Interaction_Craft).Remove(CraftEventSubscription);
+	RoleTags.Reset();
+	BoundCraftingASC = ASC;
+	GrantCrafterAbilities();
+	CraftEventSubscription = ASC->GenericGameplayEventCallbacks.FindOrAdd(Interaction_Craft)
+	                             .AddUObject(this, &UCrafterComponent::HandleCraftEvent);
+}
+
+void UCrafterComponent::EndPlay(const EEndPlayReason::Type Reason)
+{
+	EndCrafting();
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()))
+		Player->OnAbilitySystemInitialized.RemoveAll(this);
+	if (UAbilitySystemComponent* ASC = BoundCraftingASC.Get())
+		ASC->GenericGameplayEventCallbacks.FindOrAdd(Interaction_Craft).Remove(CraftEventSubscription);
+	CraftEventSubscription.Reset();
+	BoundCraftingASC.Reset();
+	RoleTags.Reset();
+	Super::EndPlay(Reason);
+}
+
+bool UCrafterComponent::IsCraftingTableInReach(AWorkTable* Table) const
+{
+	const ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+	return IsValid(Player) && Player->CanMutateLifeGameplay() && IsValid(Table) && Table->GetWorld() == GetWorld() &&
+	       FMath::IsFinite(MaxCraftingDistance) && MaxCraftingDistance >= 0.f &&
+	       FVector::DistSquared(Player->GetActorLocation(), Table->GetActorLocation()) <=
+	           FMath::Square(MaxCraftingDistance);
 }
 
 void UCrafterComponent::AddCrafterMappingContext()
@@ -145,7 +171,7 @@ void UCrafterComponent::GrantCrafterAbilities()
 	// ASC에 Crafter 역할 태그 부여
 	if (UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent())
 	{
-		ASC->AddLooseGameplayTag(Class_Crafter);
+		RoleTags.Set(ASC, Class_Crafter, true);
 	}
 
 	// 설정용 Map을 순회하면서 Player의 Grant 함수를 호출
@@ -161,10 +187,16 @@ void UCrafterComponent::RemoveCrafterAbilities()
 
 	if (!Player || !Player->HasAuthority()) return;
 
+	EndCrafting();
+	if (UAbilitySystemComponent* ASC = BoundCraftingASC.Get())
+		ASC->GenericGameplayEventCallbacks.FindOrAdd(Interaction_Craft).Remove(CraftEventSubscription);
+	CraftEventSubscription.Reset();
+	BoundCraftingASC.Reset();
+
 	// ASC에 Crafter 역할 태그 해제
 	if (UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent())
 	{
-		ASC->RemoveLooseGameplayTag(Class_Crafter);
+		RoleTags.Reset();
 	}
 
 	// 설정용 Map을 순회하면서 해당 태그의 어빌리티만 지워달라고 요청
@@ -181,11 +213,13 @@ void UCrafterComponent::HandleCraftEvent(const FGameplayEventData* Payload)
 	AActor* TargetActor = const_cast<AActor*>(Cast<AActor>(Payload->Target));
 	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
 
-	if (!TargetActor || !Player) return;
+	if (!Player || !IsCraftingTableInReach(Cast<AWorkTable>(TargetActor)))
+		return;
 
 	// [서버]에서 이벤트를 받았다면 클라이언트에게 UI를 띄우라고 RPC 전송
 	if (Player->HasAuthority())
 	{
+		CurrentInteractingTable = Cast<AWorkTable>(TargetActor);
 		ClientRPC_OpenCraftingUI(TargetActor);
 	}
 	// [클라이언트]에서 직접 이벤트를 받았다면 (로컬 예측 등) 바로 UI 띄움
@@ -204,10 +238,10 @@ void UCrafterComponent::ClientRPC_OpenCraftingUI_Implementation(AActor* TargetAc
 void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
-	if (!Player) return;
-
-	CurrentInteractingTable = Cast<AWorkTable>(TargetActor);
-	UInteractableComponent* InteractComp = CurrentInteractingTable->FindComponentByClass<UInteractableComponent>();
+	if (!Player || !Player->IsLocallyControlled() || !IsValid(Cast<AWorkTable>(TargetActor)))
+		return;
+	AWorkTable* Table = Cast<AWorkTable>(TargetActor);
+	UInteractableComponent* InteractComp = Table->FindComponentByClass<UInteractableComponent>();
 	if (!InteractComp || !InteractComp->InteractPopupUIClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UCrafterComponent::HandleCraftEvent : Can't find InteractableComponent or UI Class is not assigned."));
@@ -215,6 +249,11 @@ void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
 	}
 
 	if (APlayerController* PC = Cast<APlayerController>(Player->GetController())) {
+		if (DisplayedCraftingTable.Get() == Table && ActiveCraftingUI)
+			return;
+		if (ActiveCraftingUI)
+			EndCrafting();
+		CurrentInteractingTable = Table;
 		// 기존에 띄워진 UI가 있다면 제거하여 중복 생성 방지
 		if (ActiveCraftingUI)
 		{
@@ -236,10 +275,13 @@ void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
 			// 화면에 위젯 추가
 			ActiveCraftingUI->AddToViewport();
 
+			DisplayedCraftingTable = Table;
+			CraftingController = PC;
+			bPreviousCursor = PC->bShowMouseCursor;
 			// 상태 태그 부여
 			if (UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent())
 			{
-				ASC->AddLooseGameplayTag(State_Crafting);
+				CraftingTags.Set(ASC, State_Crafting, true);
 			}
 
 			// 입력 모드 변경 (UI와 게임 뷰포트 모두 입력 허용)
@@ -271,46 +313,41 @@ void UCrafterComponent::HandleStarforceAttempt(float ErrorMargin, float BarLengt
 
 void UCrafterComponent::EndCrafting()
 {
-	UE_LOG(LogTemp, Log, TEXT("UCrafterComponent::EndCrafting called."));
-	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
-	if (!Player) return;
-
-	if (APlayerController* PC = Cast<APlayerController>(Player->GetController()))
+	AWorkTable* Closed = DisplayedCraftingTable.Get();
+	if (ActiveCraftingUI)
 	{
-		// [로컬/클라] UI 제거 및 입력 모드 복구
-		if (PC->IsLocalPlayerController())
+		if (UStarForceWidget* Star = Cast<UStarForceWidget>(ActiveCraftingUI))
+			Star->OnStarforceAttempted.RemoveDynamic(this, &UCrafterComponent::HandleStarforceAttempt);
+		ActiveCraftingUI->RemoveFromParent();
+		ActiveCraftingUI = nullptr;
+	}
+	CraftingTags.Reset();
+	CurrentInteractingTable.Reset();
+	DisplayedCraftingTable.Reset();
+	bIsPlayingStarforce = false;
+	if (APlayerController* PC = CraftingController.Get(); PC && PC->IsLocalPlayerController())
+	{
+		if (auto* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+			if (WorkTableIMC)
+				Subsystem->RemoveMappingContext(WorkTableIMC);
+		const ABasePlayerController* BasePC = Cast<ABasePlayerController>(PC);
+		if (!BasePC || !BasePC->IsGameplayInputBlockedByUI())
 		{
-			// 화면에 띄워진 UI 제거 및 포인터 초기화
-			if (ActiveCraftingUI)
-			{
-				ActiveCraftingUI->RemoveFromParent();
-				ActiveCraftingUI = nullptr;
-			}
-
-			// WorkTableIMC 제거
-			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-			{
-				if (WorkTableIMC)
-				{
-					Subsystem->RemoveMappingContext(WorkTableIMC);
-				}
-			}
-
-			// 입력 모드를 게임 전용으로 복구 및 마우스 커서 비활성화
-			FInputModeGameOnly InputMode;
-			PC->SetInputMode(InputMode);
-			PC->bShowMouseCursor = false;
-
-			// 상태 태그 해제
-			if (UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent())
-			{
-				ASC->RemoveLooseGameplayTag(State_Crafting);
-			}
-
-			// 스타포스 플레이 플래그 초기화
-			bIsPlayingStarforce = false;
+			PC->SetInputMode(FInputModeGameOnly());
+			PC->bShowMouseCursor = bPreviousCursor;
 		}
 	}
+	CraftingController.Reset();
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+	    Player && Player->IsLocallyControlled() && !Player->HasAuthority() && Closed)
+		Server_EndCrafting(Closed);
+}
+
+void UCrafterComponent::Server_EndCrafting_Implementation(AWorkTable* ClosedTable)
+{
+	// A delayed close of table A must not close a newly opened table B.
+	if (CurrentInteractingTable.Get() == ClosedTable)
+		CurrentInteractingTable.Reset();
 }
 
 void UCrafterComponent::SpaceBarAction()
@@ -341,7 +378,10 @@ void UCrafterComponent::Server_AttemptCrafting_Implementation(AWorkTable* Target
 	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
 
 	// [서버]에서 스타포스 성공 여부 판정
-	if (!Player || !Player->HasAuthority() || !TargetTable) return;
+	if (!Player || !Player->HasAuthority() || !IsCraftingTableInReach(TargetTable) ||
+	    CurrentInteractingTable.Get() != TargetTable || !FMath::IsFinite(ErrorMargin) || ErrorMargin < 0.f ||
+	    !FMath::IsFinite(BarLength) || BarLength <= 0.f)
+		return;
 
 	float AllowedMargin = (BarLength > 0.f) ? (BarLength * 0.5f) : 15.0f;
 	bool bIsSuccess = ErrorMargin <= AllowedMargin;
@@ -379,8 +419,8 @@ void UCrafterComponent::Server_AttemptCrafting_Implementation(AWorkTable* Target
 					{
 						if (bHasEmptySlot)
 						{
-							InventoryComponent->AddItem(CraftedTag, 1);
-							SpawnedItem->Destroy();
+							if (InventoryComponent->AddItem(CraftedTag, 1) == 1)
+								SpawnedItem->Destroy();
 							UE_LOG(LogTemp, Log, TEXT("CrafterComponent: Successfully crafted and equipped: %s"), *CraftedTag.ToString());
 						}
 						else

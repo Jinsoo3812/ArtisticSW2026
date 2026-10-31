@@ -1,0 +1,512 @@
+{
+  "source": "Saved\\AudioIntegration\\Live\\8456",
+  "contact_side_and_articulated_spine_passed": true,
+  "metrics": {
+    "0:BP_Player_Woman_C_0": {
+      "minimum_shoulder_shift_toward_grips_cm": 11.131078809455587,
+      "spine_curvature_change_deg": 29.232125664000744,
+      "max_foot_error_cm": 5.788687433163993e-08,
+      "max_limb_length_ratio": 1.0000000000027578,
+      "max_spine_segment_length_ratio": 1.000000000009963,
+      "max_hand_error_cm": 2.0517840820863678e-06,
+      "phases": {
+        "0": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 2.051770603775979e-06
+        },
+        "1": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.051765605930897e-06
+        },
+        "2": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517766375494176e-06
+        },
+        "3": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517671176218497e-06
+        },
+        "4": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517770009110157e-06
+        },
+        "5": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.051775301648103e-06
+        },
+        "6": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517793899109e-06
+        },
+        "7": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 2.051770016079852e-06
+        },
+        "8": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 2.0517622807086396e-06
+        },
+        "9": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517782796217104e-06
+        },
+        "10": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517707826403286e-06
+        },
+        "11": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 2.05176804152971e-06
+        },
+        "12": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.05177687838855e-06
+        },
+        "13": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517799700807603e-06
+        },
+        "14": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517840820863678e-06
+        },
+        "15": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 2.051765443895304e-06
+        }
+      }
+    },
+    "0:BP_Player_Man_C_0": {
+      "minimum_shoulder_shift_toward_grips_cm": 15.427681485503356,
+      "spine_curvature_change_deg": 25.10126703500178,
+      "max_foot_error_cm": 3.1627130538798216e-05,
+      "max_limb_length_ratio": 1.0000000000019733,
+      "max_spine_segment_length_ratio": 1.0000000000094416,
+      "max_hand_error_cm": 1.2029107442406496e-06,
+      "phases": {
+        "0": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 1.2028943386182828e-06
+        },
+        "1": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2028959833868587e-06
+        },
+        "2": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2029107442406496e-06
+        },
+        "3": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2029066134910188e-06
+        },
+        "4": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.202907962557079e-06
+        },
+        "5": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2029055322443261e-06
+        },
+        "6": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2028972334976257e-06
+        },
+        "7": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 1.2028931357982582e-06
+        },
+        "8": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 1.202897796550511e-06
+        },
+        "9": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2029034012588729e-06
+        },
+        "10": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2029019970681107e-06
+        },
+        "11": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2028925505268005e-06
+        },
+        "12": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2028941066131788e-06
+        },
+        "13": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.202901499139087e-06
+        },
+        "14": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2029015923653476e-06
+        },
+        "15": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 1.2028926151438937e-06
+        }
+      }
+    },
+    "1:BP_Player_Man_C_0": {
+      "minimum_shoulder_shift_toward_grips_cm": 15.427681485500724,
+      "spine_curvature_change_deg": 25.101267035002014,
+      "max_foot_error_cm": 3.162713007888001e-05,
+      "max_limb_length_ratio": 1.0000000000019418,
+      "max_spine_segment_length_ratio": 1.0000000000103197,
+      "max_hand_error_cm": 1.2029159527850289e-06,
+      "phases": {
+        "0": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 1.2028938626477383e-06
+        },
+        "1": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2029159527850289e-06
+        },
+        "2": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2029157404629622e-06
+        },
+        "3": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2028942257144033e-06
+        },
+        "4": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2029045722807413e-06
+        },
+        "5": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.20290543802351e-06
+        },
+        "6": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2029092300158643e-06
+        },
+        "7": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 1.20289929316042e-06
+        },
+        "8": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 1.2028952729070973e-06
+        },
+        "9": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.202911117115035e-06
+        },
+        "10": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2028998890909856e-06
+        },
+        "11": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2029011599373038e-06
+        },
+        "12": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 1.2029110125454362e-06
+        },
+        "13": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 1.202911562064962e-06
+        },
+        "14": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 1.2029136810787511e-06
+        },
+        "15": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 1.2029002092483157e-06
+        }
+      }
+    },
+    "1:BP_Player_Woman_C_0": {
+      "minimum_shoulder_shift_toward_grips_cm": 10.85091195559545,
+      "spine_curvature_change_deg": 29.232125678074,
+      "max_foot_error_cm": 5.788779626189184e-08,
+      "max_limb_length_ratio": 1.0000000000027844,
+      "max_spine_segment_length_ratio": 1.0000000000101434,
+      "max_hand_error_cm": 2.051781562941406e-06,
+      "phases": {
+        "0": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 2.051766063598375e-06
+        },
+        "1": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517663981574e-06
+        },
+        "2": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517703851639907e-06
+        },
+        "3": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 2.051770483564344e-06
+        },
+        "4": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517641554992866e-06
+        },
+        "5": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.051781562941406e-06
+        },
+        "6": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517764393714415e-06
+        },
+        "7": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 2.0517689705180296e-06
+        },
+        "8": {
+          "yaw": 0,
+          "pitch": 0,
+          "max_hand_error_cm": 2.051764922174651e-06
+        },
+        "9": {
+          "yaw": -60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.051769065647189e-06
+        },
+        "10": {
+          "yaw": -60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517648539348875e-06
+        },
+        "11": {
+          "yaw": 0,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517658972181256e-06
+        },
+        "12": {
+          "yaw": 60,
+          "pitch": 45,
+          "max_hand_error_cm": 2.0517674138442647e-06
+        },
+        "13": {
+          "yaw": 60,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517776817357995e-06
+        },
+        "14": {
+          "yaw": 0,
+          "pitch": -15,
+          "max_hand_error_cm": 2.0517766147885606e-06
+        },
+        "15": {
+          "yaw": 60,
+          "pitch": 0,
+          "max_hand_error_cm": 2.051760059686252e-06
+        }
+      }
+    }
+  },
+  "exit_max_bone_step_cm": {
+    "pelvis": 3.78955952500005,
+    "head": 6.789405821929168,
+    "calf_l": 3.581371065098594,
+    "calf_r": 3.312660746003641,
+    "foot_l": 1.983327592600441,
+    "foot_r": 2.492651158494943
+  },
+  "exit_state_restored": true,
+  "all_hands_within_1cm": true,
+  "native_tests_passed": 28,
+  "build_log": "Saved/CannonOperatorValidation/ContactSpine_FinalBuild.log",
+  "automation_log": "Saved/CannonOperatorValidation/ContactSpine_Acceptance.log",
+  "multiplayer_mode": "2-player listen server PIE, both sexes, both worlds",
+  "swim_summary": {
+    "0": {
+      "1_cabin_walk": {
+        "swimming_seen": false,
+        "underwater_seen": true,
+        "last_swimming": false,
+        "last_movement": "<MovementMode.MOVE_WALKING: 1>",
+        "local": true
+      },
+      "1_surface_forward": {
+        "swimming_seen": true,
+        "underwater_seen": false,
+        "last_swimming": true,
+        "last_movement": "<MovementMode.MOVE_CUSTOM: 6>",
+        "local": true
+      },
+      "1_underwater_forward": {
+        "swimming_seen": true,
+        "underwater_seen": true,
+        "last_swimming": true,
+        "last_movement": "<MovementMode.MOVE_CUSTOM: 6>",
+        "local": true
+      },
+      "1_return_to_cabin": {
+        "swimming_seen": false,
+        "underwater_seen": false,
+        "last_swimming": false,
+        "last_movement": "<MovementMode.MOVE_WALKING: 1>",
+        "local": true
+      }
+    },
+    "1": {
+      "1_cabin_walk": {
+        "swimming_seen": false,
+        "underwater_seen": false,
+        "last_swimming": false,
+        "last_movement": "<MovementMode.MOVE_WALKING: 1>",
+        "local": true
+      },
+      "1_surface_forward": {
+        "swimming_seen": true,
+        "underwater_seen": false,
+        "last_swimming": true,
+        "last_movement": "<MovementMode.MOVE_CUSTOM: 6>",
+        "local": true
+      },
+      "1_underwater_forward": {
+        "swimming_seen": true,
+        "underwater_seen": true,
+        "last_swimming": true,
+        "last_movement": "<MovementMode.MOVE_CUSTOM: 6>",
+        "local": true
+      },
+      "1_return_to_cabin": {
+        "swimming_seen": false,
+        "underwater_seen": false,
+        "last_swimming": false,
+        "last_movement": "<MovementMode.MOVE_WALKING: 1>",
+        "local": true
+      }
+    }
+  },
+  "swim_scope": "Actual 2-player walk/surface swim/dive/ascend/return, same final C++ build; recorded before visual blend-out speed was lowered from 2.5 to 1.5.",
+  "untested": [
+    "Dedicated server",
+    "High latency/packet loss",
+    "Death/reconnect while mounted",
+    "All arbitrary user-edited socket locations"
+  ],
+  "extreme_visual_capture": {
+    "yaw": 60,
+    "pitch": 45,
+    "contacts": [
+      {
+        "player": "BP_Player_Woman_C_0",
+        "hand_errors": [
+          1.0844816142344913e-06,
+          2.0517402542183264e-06
+        ],
+        "foot_errors": [
+          4.316378780499852e-09,
+          5.787859249145786e-08
+        ]
+      },
+      {
+        "player": "BP_Player_Man_C_0",
+        "hand_errors": [
+          1.202885572326922e-06,
+          1.0346597329154695e-06
+        ],
+        "foot_errors": [
+          2.1711289786378362e-07,
+          3.162712048717826e-05
+        ]
+      },
+      {
+        "player": "BP_Player_Man_C_0",
+        "hand_errors": [
+          1.202883755766868e-06,
+          1.0346912966509285e-06
+        ],
+        "foot_errors": [
+          2.171090081314216e-07,
+          3.1627122103985716e-05
+        ]
+      },
+      {
+        "player": "BP_Player_Woman_C_0",
+        "hand_errors": [
+          1.0845112382949187e-06,
+          2.051742566732014e-06
+        ],
+        "foot_errors": [
+          4.315333056443588e-09,
+          5.788166845937313e-08
+        ]
+      }
+    ]
+  },
+  "editor_settings_restored": true,
+  "persistence_audit": {
+    "fresh_editor_persisted_barrel_sockets": true,
+    "legacy_carriage_sockets_absent": true,
+    "tags": {
+      "OperatorBarrelVisual": [
+        "CannonOperatorContact"
+      ],
+      "OperatorCarriageVisual": []
+    },
+    "affected_asset_editors_closed": true
+  },
+  "editor_clean_exit": true
+}

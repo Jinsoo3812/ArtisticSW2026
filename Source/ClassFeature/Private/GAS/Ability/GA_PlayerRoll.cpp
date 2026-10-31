@@ -1,4 +1,5 @@
 #include "GAS/Ability/GA_PlayerRoll.h"
+#include "Recovery/AbilityTask_MonitorStuckRecovery.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
@@ -79,6 +80,7 @@ void UGA_PlayerRoll::ActivateAbility(
 	}
 
 	CurrentRollIntent = BuildRollIntent();
+	UAbilityTask_MonitorStuckRecovery::MonitorStuckRecovery(this)->ReadyForActivation();
 	K2_OnRollIntentResolved(CurrentRollIntent);
 	StartRollEventListeners();
 
