@@ -3,10 +3,12 @@
 
 #include "BasePlayerController.h"
 #include "Development/TestInput/SWDevTestInputComponent.h"
+#include "Camera/SWCameraRevealComponent.h"
 
 ABasePlayerController::ABasePlayerController()
 {
  DevTestInput = CreateDefaultSubobject<USWDevTestInputComponent>(TEXT("DevTestInput"));
+ CameraReveal = CreateDefaultSubobject<USWCameraRevealComponent>(TEXT("CameraReveal"));
 }
 #include "UI/SWDeathFlowWidget.h"
 #include "Room/SWRoomReadyState.h"
@@ -1960,6 +1962,7 @@ void ABasePlayerController::UpdateCameraManager(float DeltaSeconds)
 	UpdateObservedCamera(DeltaSeconds);
 	LogObservedCameraDiagnostics(FPlatformTime::Seconds());
 	Super::UpdateCameraManager(DeltaSeconds);
+	if (CameraReveal) CameraReveal->UpdateView(DeltaSeconds);
 	if (!IsLocalController() || !GetWorld() || !PlayerCameraManager || !IsLifeCharacterAlive())
 	{
 		return;
