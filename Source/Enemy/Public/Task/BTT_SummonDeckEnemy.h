@@ -13,4 +13,8 @@ class ENEMY_API UBTT_SummonDeckEnemy : public UBTTaskNode
 public:
 	UBTT_SummonDeckEnemy();
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+	virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
+	UPROPERTY(EditAnywhere, Category="Boss|Summon") bool bWaitForBossIdle = false;
+private:
+	EBTNodeResult::Type TryExecute(UBehaviorTreeComponent& OwnerComp);
 };

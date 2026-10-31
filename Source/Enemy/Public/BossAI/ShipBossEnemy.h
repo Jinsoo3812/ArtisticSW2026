@@ -57,9 +57,12 @@ public:
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance", meta = (RowType = "/Script/Enemy.EnemyEncounterBalanceRow"))
 	FDataTableRowHandle EncounterBalanceRow;
-	/** Exact ranged BP class already allocated by the host's SpawnPlan. */
+	/** Exact BP class to reuse from crew or allocate in the opt-in summon reserve. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance")
 	TSubclassOf<ADeckEnemy> SummonedEnemyClass;
+	/** Opt-in reserve capacity beyond ordinary crew; zero preserves existing bosses. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Boss|Summon", meta=(ClampMin="0", ClampMax="8"))
+	int32 AdditionalSummonPoolCapacity = 0;
 	float GetBalancedBossAttackCoefficient(float Fallback, bool bMajorAttack) const;
 	float GetBalancedTelegraphDuration(float Fallback) const
 	{

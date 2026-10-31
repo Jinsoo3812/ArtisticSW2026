@@ -3,6 +3,7 @@
 #include "BossAI/BossGunCombatComponent.h"
 #include "BossAI/BossGunMovementComponent.h"
 #include "GAS/Ability/Boss/GA_BossGunAttack.h"
+#include "GAS/Ability/Boss/GA_BossBasicAttack.h"
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "AbilitySystemComponent.h"
@@ -14,10 +15,10 @@ AGunnerBossEnemy::AGunnerBossEnemy(const FObjectInitializer& ObjectInitializer) 
 	GunMovement = CreateDefaultSubobject<UBossGunMovementComponent>(TEXT("GunMovement"));
 	StartingAbilities.RemoveAll([](const TSubclassOf<UGameplayAbility>& Class)
 	{
-		return Class && Class->IsChildOf(UBossGameplayAbility::StaticClass());
+		return Class && (Class->IsChildOf(UBossGameplayAbility::StaticClass())
+			|| Class->IsChildOf(UGA_BossBasicAttack::StaticClass()));
 	});
 	StartingAbilities.Add(UGA_BossGunAttack::StaticClass());
-	StartingAbilities.Add(UGA_BossGunBurst::StaticClass());
 	// Existing weapon registry/attachment/replication owns the gun's visible actor.
 	// Gun abilities are pawn-owned; the registry gun entry must not grant a second copy.
 	bEquipWeaponOnSpawn = true;

@@ -53,7 +53,7 @@ void UBTT_GunnerBossCombat::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* N
 	if (Position != EBossGunMovementResult::Ready || DecisionRemaining > 0.f) return;
 	DecisionRemaining = FMath::Max(AttackDecisionInterval, KINDA_SMALL_NUMBER);
 	if (!Boss->GunCombat->CanStart(Target)) return;
-	if (!ActivateTagged(*ASC, GunnerBossTags::Burst)) ActivateTagged(*ASC, GunnerBossTags::Shot);
+	ActivateTagged(*ASC, GunnerBossTags::Shot);
 }
 
 EBTNodeResult::Type UBTT_GunnerBossCombat::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)

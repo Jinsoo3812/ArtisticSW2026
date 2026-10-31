@@ -1832,6 +1832,10 @@ int32 AEnemyShip::GetLivingCrewCount() const
 	{
 		if (IsValid(Crew))
 		{
+			// Spare periodic summons are storage, not combatants blocking capture.
+			const auto* DeckCrew = Cast<ADeckEnemy>(Crew);
+			if (DeckCrew && !DeckCrew->IsPoolActive() && DeckEnemySpawnerComponent
+				&& DeckEnemySpawnerComponent->IsSummonReserveEnemy(DeckCrew)) continue;
 			if (const UBaseHealthComponent* Health = Crew->GetHealthComponent())
 			{
 				if (!Health->IsDead())
@@ -1887,6 +1891,8 @@ void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
 void AEnemyShip::NotifyCrewEnemyDeactivated(ABaseEnemy* CrewEnemy)
 {
 	if (!HasAuthority() || !CrewEnemy) return;
+	if (DeckEnemySpawnerComponent)
+		DeckEnemySpawnerComponent->NotifySummonReserveDeactivated(Cast<ADeckEnemy>(CrewEnemy));
 	TInlineComponentArray<UChildActorComponent*> Components(this);
 	for (UChildActorComponent* Component : Components)
 	{
@@ -1907,6 +1913,9 @@ bool AEnemyShip::RegisterBossEnemy(AShipBossEnemy* BossEnemy)
 	if (!HasAuthority() || !IsValid(BossEnemy) || BossEnemy->GetHostShip() != this
 		|| (IsValid(RegisteredBoss) && RegisteredBoss != BossEnemy)) return false;
 	RegisteredBoss = BossEnemy;
+	// A periodic summoner keeps its encounter alive after the original guards die.
+	// The existing crew death binding evaluates capture after its summons are released.
+	if (BossEnemy->AdditionalSummonPoolCapacity > 0) RegisterCrewEnemy(BossEnemy);
 	if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
 	{
 		Weakening->RegisterMember(this, BossEnemy);

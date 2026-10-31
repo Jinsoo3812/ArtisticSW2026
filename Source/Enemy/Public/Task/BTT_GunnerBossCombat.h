@@ -3,7 +3,7 @@
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTT_GunnerBossCombat.generated.h"
 
-/** Compact combat subtree entry: positioning, burst priority, single shot, bounded retry. */
+/** Basic-shot-only combat; periodic summons run in the BT background. */
 UCLASS()
 class ENEMY_API UBTT_GunnerBossCombat : public UBTTaskNode
 {
