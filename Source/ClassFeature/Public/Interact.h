@@ -13,8 +13,15 @@ UCLASS()
 class CLASSFEATURE_API UInteract : public UBaseGameplayAbility
 {
 	GENERATED_BODY()
-	
-protected:
+	friend class FInteractionDataLifetimeTest;
+	friend class FInteractionTargetValidationTest;
+
+  public:
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	                        const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility,
+	                        bool bWasCancelled) override;
+
+  protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
@@ -37,4 +44,16 @@ protected:
 	// 상호작용 탐색 구체(Sphere)의 반경
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Interaction")
 	float InteractTraceRadius = 50.0f;
+	bool ValidateServerTarget(AActor* Caster, class UPrimitiveComponent* Component) const;
+	static FGameplayAbilityTargetDataHandle CopyAndConsumeTargetData(UAbilitySystemComponent* ASC,
+	                                                                 FGameplayAbilitySpecHandle Handle,
+	                                                                 FPredictionKey Key,
+	                                                                 const FGameplayAbilityTargetDataHandle& Data);
+	void OnTargetDataTimeout();
+	FDelegateHandle TargetDataSubscription;
+	TWeakObjectPtr<UAbilitySystemComponent> TargetDataASC;
+	FTimerHandle TargetDataTimeout;
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction", meta = (ClampMin = "0.1"))
+	float TargetDataTimeoutSeconds = 5.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction", meta = (ClampMin = "0")) float ServerReachTolerance = 75.f;
 };

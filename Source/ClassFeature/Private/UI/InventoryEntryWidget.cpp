@@ -2,6 +2,7 @@
 
 
 #include "InventoryEntryWidget.h"
+#include "UI/ItemIconLibrary.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
@@ -36,7 +37,7 @@ void UInventoryEntryWidget::SetupFromData(const FText& InItemName, int32 InCount
 
 	if (ItemIconImage)
 	{
-		ItemIconImage->SetBrushFromTexture(InIcon, true);
+		UItemIconLibrary::SetItemIcon(ItemIconImage, InIcon, InItemTag);
 		ItemIconImage->SetVisibility(InIcon ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 	}
 }
@@ -189,8 +190,9 @@ void UInventoryEntryWidget::NativeOnDragDetected(const FGeometry& InGeometry, co
 	if (DisplayedIcon)
 	{
 		UImage* DragIcon = NewObject<UImage>(Operation);
-		DragIcon->SetBrushFromTexture(DisplayedIcon, true);
-		DragIcon->SetDesiredSizeOverride(FVector2D(64.f));
+		// Keep the drag brush independent of the source texture resolution.
+		DragIcon->SetBrushFromTexture(DisplayedIcon, false);
+		DragIcon->SetBrushSize(FVector2D(64.f, 64.f));
 		Operation->DefaultDragVisual = DragIcon;
 	}
 	UE_LOG(LogTemp, Display, TEXT("[QuickSlotDrag] Event=DragStarted Item=%s Slot=%d"),

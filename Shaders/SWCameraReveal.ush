@@ -1,0 +1,24 @@
+#ifndef SW_CAMERA_REVEAL_USH
+#define SW_CAMERA_REVEAL_USH
+
+float SWCameraRevealCoverage(float2 UV, float SurfaceDepth, float4 Circle, float4 Fade, float4 Depth)
+{
+    if (Circle.z <= 0.0 || Fade.y <= 0.0 || Fade.z <= 0.0) return 1.0;
+    float2 Offset = UV - Circle.xy;
+    Offset.x *= Circle.w;
+    float Distance = length(Offset);
+    float Feather = Circle.z * saturate(Fade.w);
+    float Area = Feather > 0.000001
+        ? 1.0 - smoothstep(Circle.z - Feather, Circle.z, Distance)
+        : (Distance < Circle.z ? 1.0 : 0.0);
+    float Front = 1.0;
+    if (Depth.y > 0.5)
+    {
+        Front = Depth.x > 0.000001
+            ? 1.0 - smoothstep(Fade.x - Depth.x, Fade.x, SurfaceDepth)
+            : (SurfaceDepth < Fade.x ? 1.0 : 0.0);
+    }
+    return saturate(1.0 - Area * Front * saturate(Fade.y) * saturate(Fade.z));
+}
+
+#endif

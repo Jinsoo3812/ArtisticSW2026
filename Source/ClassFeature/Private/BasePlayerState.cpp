@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayerState.h"
@@ -24,6 +24,8 @@ ABasePlayerState::ABasePlayerState()
 
 	// Basic Attribute Set 생성
 	BasicAttributes = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("BasicAttributeSet"));
+	BasicAttributes->InitMaxHealth(1000.f);
+	BasicAttributes->InitHealth(1000.f);
 
 	ShipUpgradeComponent = CreateDefaultSubobject<UShipUpgradeComponent>(TEXT("ShipUpgradeComponent"));
 	PlayerSkillComponent = CreateDefaultSubobject<UPlayerSkillComponent>(TEXT("PlayerSkillComponent"));

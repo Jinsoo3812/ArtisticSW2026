@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/QuickSlotEntryWidget.h"
+#include "UI/ItemIconLibrary.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
@@ -8,7 +9,7 @@
 #include "BasePlayer.h"
 #include "UI/InventoryItemDragDropOperation.h"
 
-void UQuickSlotEntryWidget::SetupFromData(const FGameplayTag& InSlotTag, UTexture2D* InIcon, bool bEquipped, int32 InCount)
+void UQuickSlotEntryWidget::SetupFromData(const FGameplayTag& InSlotTag, UTexture2D* InIcon, bool bEquipped, int32 InCount, FGameplayTag InItemTag)
 {
 	// 퀵슬롯 칸 자체는 아이템 유무와 관계없이 항상 표시합니다.
 	SetVisibility(ESlateVisibility::Visible);
@@ -50,7 +51,7 @@ void UQuickSlotEntryWidget::SetupFromData(const FGameplayTag& InSlotTag, UTextur
 
 		if (InIcon)
 		{
-			ItemIconImage->SetBrushFromTexture(InIcon, true);
+			UItemIconLibrary::SetItemIcon(ItemIconImage, InIcon, InItemTag);
 			ItemIconImage->SetColorAndOpacity(FLinearColor::White);
 		}
 		else

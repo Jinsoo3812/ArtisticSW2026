@@ -1,4 +1,5 @@
 #include "UI/Crafting/CraftingIngredientEntryWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
@@ -26,7 +27,7 @@ void UCraftingIngredientEntryWidget::SetupFromIngredient(const FCraftingIngredie
 	if (IngredientIconImage)
 	{
 		UTexture2D* Icon = InIngredient.Icon.LoadSynchronous();
-		IngredientIconImage->SetBrushFromTexture(Icon, true);
+		UItemIconLibrary::SetItemIcon(IngredientIconImage, Icon, InIngredient.ItemTag);
 		IngredientIconImage->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 }

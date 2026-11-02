@@ -25,6 +25,7 @@ class CLASSFEATURE_API UInventoryPanelWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	void InitializeForPlayer(ABasePlayer* InPlayer);
 	void InitializeForStorage(ABasePlayer* InPlayer, AStorageChest* InChest);

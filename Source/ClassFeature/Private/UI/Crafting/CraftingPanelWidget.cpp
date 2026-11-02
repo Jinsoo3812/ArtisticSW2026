@@ -1,4 +1,5 @@
 #include "UI/Crafting/CraftingPanelWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -214,7 +215,7 @@ void UCraftingPanelWidget::ApplyRecipeDetails(const FCraftingDetailsView& Detail
 	if (ResultIconImage)
 	{
 		UTexture2D* Icon = Details.Header.Icon.LoadSynchronous();
-		ResultIconImage->SetBrushFromTexture(Icon, true);
+		UItemIconLibrary::SetItemIconWithRarity(ResultIconImage, Icon, Details.Header.RarityTag);
 		ResultIconImage->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 	if (MissingRecipeText)

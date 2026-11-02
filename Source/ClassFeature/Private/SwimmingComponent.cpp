@@ -360,6 +360,8 @@ void USwimmingComponent::BeginPlay()
 	{
 		CharacterMovement = OwnerCharacter->GetCharacterMovement();
 		CapsuleComponent = OwnerCharacter->GetCapsuleComponent();
+		OwnerCharacter->MovementModeChangedDelegate.AddUniqueDynamic(this,
+		                                                             &USwimmingComponent::HandleMovementModeChanged);
 
 		if (CapsuleComponent)
 		{
@@ -385,12 +387,37 @@ void USwimmingComponent::BeginPlay()
 
 void USwimmingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (OwnerCharacter)
+		OwnerCharacter->MovementModeChangedDelegate.RemoveDynamic(this, &USwimmingComponent::HandleMovementModeChanged);
 	ApplySwimmingGameplayState(false);
 	Super::EndPlay(EndPlayReason);
 }
 
+void USwimmingComponent::HandleMovementModeChanged(ACharacter* Character, EMovementMode PreviousMode,
+                                                   uint8 PreviousCustomMode)
+{
+	if (Character != OwnerCharacter || PreviousMode != MOVE_Custom ||
+	    PreviousCustomMode != uint8(ECustomMovementMode::CMOVE_Swimming) || IsCustomSwimming())
+		return;
+
+	// Movement mode owns locomotion. A ship's dry-deck teleport can change it
+	// directly, so cleanup must not depend on entering the swimming exit branch
+	// of the next water query (which already sees Walking/Falling by then).
+	bIsInShallowWater = false;
+	bIsUnderwater = false;
+	WaterQueryFailureElapsed = 0.f;
+	LastActiveWaterBody.Reset();
+	ResetSwimMovementState();
+	ApplySwimmingGameplayState(false);
+}
+
 void USwimmingComponent::ApplySwimmingGameplayState(bool bEntering)
 {
+	if (!bEntering)
+	{
+		SwimmingStateTags.Reset();
+		return;
+	}
 	if (!OwnerCharacter)
 	{
 		OwnerCharacter = Cast<ACharacter>(GetOwner());
@@ -408,10 +435,7 @@ void USwimmingComponent::ApplySwimmingGameplayState(bool bEntering)
 
 	if (bEntering)
 	{
-		if (!ASC->HasMatchingGameplayTag(State_Swimming))
-		{
-			ASC->AddLooseGameplayTag(State_Swimming);
-		}
+		SwimmingStateTags.Set(ASC, State_Swimming, true);
 
 		// Cancel ongoing offensive, skill, and roll abilities upon entering swimming
 		FGameplayTagContainer CancelTags;
@@ -424,23 +448,11 @@ void USwimmingComponent::ApplySwimmingGameplayState(bool bEntering)
 		CancelTags.AddTag(GameplayAbility_Player_Roll);
 		ASC->CancelAbilities(&CancelTags);
 
-		// Clean up aim-related loose tags if present
-		ASC->RemoveLooseGameplayTag(State_Aiming);
-		ASC->RemoveLooseGameplayTag(State_Sniping);
-		ASC->RemoveLooseGameplayTag(State_Bow_Drawing);
-		ASC->RemoveLooseGameplayTag(State_Bow_FullyDrawn);
-		ASC->RemoveLooseGameplayTag(State_Bow_Releasing);
+		// Canceled abilities release their own tags. Do not decrement another owner's state.
 
 		if (ABasePlayer* Player = Cast<ABasePlayer>(OwnerCharacter))
 		{
 			Player->StopSprint();
-		}
-	}
-	else
-	{
-		if (ASC->HasMatchingGameplayTag(State_Swimming))
-		{
-			ASC->RemoveLooseGameplayTag(State_Swimming);
 		}
 	}
 }

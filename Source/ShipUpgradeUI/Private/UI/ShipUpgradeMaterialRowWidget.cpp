@@ -1,4 +1,5 @@
 #include "UI/ShipUpgradeMaterialRowWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
@@ -57,7 +58,7 @@ void UShipUpgradeMaterialRowWidget::RequestIconLoad()
 
 	if (UTexture2D* LoadedTexture = MaterialView.Icon.Get())
 	{
-		Image_ItemIcon->SetBrushFromTexture(LoadedTexture, true);
+		UItemIconLibrary::SetItemIcon(Image_ItemIcon, LoadedTexture, MaterialView.ItemTag);
 		Image_ItemIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
 		return;
 	}
@@ -75,7 +76,7 @@ void UShipUpgradeMaterialRowWidget::RequestIconLoad()
 			}
 			if (UTexture2D* LoadedTexture = Cast<UTexture2D>(RequestedPath.ResolveObject()))
 			{
-				Widget->Image_ItemIcon->SetBrushFromTexture(LoadedTexture, true);
+				UItemIconLibrary::SetItemIcon(Widget->Image_ItemIcon, LoadedTexture, Widget->MaterialView.ItemTag);
 				Widget->Image_ItemIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
 			}
 		}));

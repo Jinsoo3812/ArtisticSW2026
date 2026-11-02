@@ -33,6 +33,7 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	bAttackFinished = false;
+	bAttackCleanupStarted = false;
 	bHitScanActive = false;
 	LastOpenedComboIndex = MIN_int32;
 	bComboInputBuffered = false;
@@ -59,7 +60,9 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 		return;
 	}
 
+	if (bAttackFinished || !IsActive()) return;
 	AddAttackStateTag();
+	if (bAttackFinished || !IsActive()) return;
 
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
 	{
@@ -86,6 +89,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanStartEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanStartEvent);
 		HitScanStartEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	HitScanTickEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -98,6 +103,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanTickEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanTickEvent);
 		HitScanTickEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	HitScanEndEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -110,6 +117,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanEndEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanEndEvent);
 		HitScanEndEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	ComboCommitEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -122,6 +131,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		ComboCommitEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnComboCommitEvent);
 		ComboCommitEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	ComboInputEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -134,6 +145,8 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		ComboInputEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnComboInputEvent);
 		ComboInputEventTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	if (!PlayAttackMontage())
@@ -149,6 +162,19 @@ void UGA_PlayerBasicAttack::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (bAttackCleanupStarted || !IsEndAbilityValid(Handle, ActorInfo)) return;
+	if (ScopeLockCount > 0)
+	{
+		WaitingToExecute.Add(FPostLockDelegate::CreateUObject(this, &UGA_PlayerBasicAttack::EndAbility,
+			Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled));
+		return;
+	}
+
+	// Cancellation can enter here directly, without going through FinishAttack.
+	// Detach callbacks before stopping tasks/montages can re-enter game code.
+	bAttackCleanupStarted = true;
+	bAttackFinished = true;
+	DisconnectAttackTasks();
 	EndHitScan();
 
 	if (bServerCombatPoseRefreshAcquired)
@@ -160,12 +186,17 @@ void UGA_PlayerBasicAttack::EndAbility(
 		bServerCombatPoseRefreshAcquired = false;
 	}
 
-	RemoveAttackStateTag();
-
-	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+	// A rejected activation must not remove another action's state.
+	if (bOwnsAttackState)
 	{
-		Player->bIsAttacking = false;
+		RemoveAttackStateTag();
+		if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+		{
+			Player->bIsAttacking = false;
+		}
 	}
+
+	OwnedStateTags.Reset();
 
 	CachedSword = nullptr;
 	CachedAttackMontage = nullptr;
@@ -180,7 +211,7 @@ void UGA_PlayerBasicAttack::EndAbility(
 	ComboInputEventTask = nullptr;
 	CurrentComboIndex = INDEX_NONE;
 	bComboInputBuffered = false;
-	bAttackFinished = false;
+	LastOpenedComboIndex = MIN_int32;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -196,7 +227,8 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 	CachedSword = Cast<ASwordItem>(GetSourceWeapon());
 	UPlayerEquipmentComponent* EquipmentComponent = Player->GetEquipmentComponent();
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	if (!CachedSword || !EquipmentComponent || !SourceASC)
+	if (!IsValid(CachedSword) || !CachedSword->GetWeaponDefinition()
+		|| !CachedSword->GetWeaponDefinition()->CombatData || !EquipmentComponent || !SourceASC)
 	{
 		return false;
 	}
@@ -275,7 +307,10 @@ bool UGA_PlayerBasicAttack::PlayAttackMontage()
 		CachedAttackMontage,
 		FMath::Max(CachedAttackMontagePlayRate, KINDA_SMALL_NUMBER),
 		CachedComboSections.IsEmpty() ? NAME_None : CachedComboSections[0],
-		true);
+		/* bStopWhenAbilityEnds */ true,
+		/* AnimRootMotionTranslationScale */ 1.0f,
+		/* StartTimeSeconds */ 0.0f,
+		/* bAllowInterruptAfterBlendOut */ true);
 
 	if (!AttackMontageTask)
 	{
@@ -286,7 +321,9 @@ bool UGA_PlayerBasicAttack::PlayAttackMontage()
 	AttackMontageTask->OnBlendOut.AddDynamic(this, &UGA_PlayerBasicAttack::OnAttackMontageBlendOut);
 	AttackMontageTask->OnInterrupted.AddDynamic(this, &UGA_PlayerBasicAttack::OnAttackMontageInterrupted);
 	AttackMontageTask->OnCancelled.AddDynamic(this, &UGA_PlayerBasicAttack::OnAttackMontageCancelled);
+	// ReadyForActivation may synchronously cancel/end this ability on playback failure.
 	AttackMontageTask->ReadyForActivation();
+	if (bAttackFinished || !IsActive()) return false;
 
 	if (!CachedComboSections.IsEmpty())
 	{
@@ -302,7 +339,7 @@ bool UGA_PlayerBasicAttack::PlayAttackMontage()
 
 void UGA_PlayerBasicAttack::CommitBufferedCombo()
 {
-	if (bAttackFinished || !CachedComboSections.IsValidIndex(CurrentComboIndex))
+	if (bAttackFinished || !IsActive() || !CachedComboSections.IsValidIndex(CurrentComboIndex))
 	{
 		return;
 	}
@@ -384,7 +421,7 @@ void UGA_PlayerBasicAttack::OnHitScanStartEvent(FGameplayEventData Payload)
 void UGA_PlayerBasicAttack::OnHitScanTickEvent(FGameplayEventData Payload)
 {
 	AActor* Avatar = GetAvatarActorFromActorInfo();
-	if (Avatar && Avatar->HasAuthority() && bHitScanActive && CachedSword)
+	if (!bAttackFinished && IsActive() && Avatar && Avatar->HasAuthority() && bHitScanActive && IsValid(CachedSword))
 	{
 		CachedSword->SampleHitScan();
 	}
@@ -392,7 +429,7 @@ void UGA_PlayerBasicAttack::OnHitScanTickEvent(FGameplayEventData Payload)
 
 void UGA_PlayerBasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 {
-	EndHitScan();
+	if (!bAttackFinished && IsActive()) EndHitScan();
 }
 
 void UGA_PlayerBasicAttack::OnComboCommitEvent(FGameplayEventData Payload)
@@ -405,7 +442,7 @@ void UGA_PlayerBasicAttack::OnComboInputEvent(FGameplayEventData Payload)
 	// The input router marks the activation click as 0 and presses made while
 	// this input's ability was already active as 1.
 	const bool bIsRepeatInput = Payload.EventMagnitude > 0.5f;
-	if (bIsRepeatInput && !bAttackFinished && CachedComboSections.IsValidIndex(CurrentComboIndex + 1))
+	if (bIsRepeatInput && IsActive() && !bAttackFinished && CachedComboSections.IsValidIndex(CurrentComboIndex + 1))
 	{
 		bComboInputBuffered = true;
 	}
@@ -447,7 +484,7 @@ void UGA_PlayerBasicAttack::StartHitScan()
 void UGA_PlayerBasicAttack::EndHitScan()
 {
 	AActor* Avatar = GetAvatarActorFromActorInfo();
-	if (Avatar && Avatar->HasAuthority() && CachedSword)
+	if (Avatar && Avatar->HasAuthority() && IsValid(CachedSword))
 	{
 		CachedSword->HitScanEnd();
 	}
@@ -473,14 +510,43 @@ void UGA_PlayerBasicAttack::AddAttackStateTag()
 {
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->AddLooseGameplayTag(State_Attacking);
+		if (!bOwnsAttackState)
+		{
+			// Mark ownership first: tag callbacks can synchronously cancel the ability.
+			bOwnsAttackState = true;
+			OwnedStateTags.Set(ASC, State_Attacking, true);
+		}
 	}
 }
 
 void UGA_PlayerBasicAttack::RemoveAttackStateTag()
 {
+	if (!bOwnsAttackState) return;
+	bOwnsAttackState = false;
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		ASC->RemoveLooseGameplayTag(State_Attacking);
+		OwnedStateTags.Set(ASC, State_Attacking, false);
 	}
+}
+
+void UGA_PlayerBasicAttack::DisconnectAttackTasks()
+{
+	if (AttackMontageTask)
+	{
+		AttackMontageTask->OnCompleted.RemoveAll(this);
+		AttackMontageTask->OnBlendOut.RemoveAll(this);
+		AttackMontageTask->OnInterrupted.RemoveAll(this);
+		AttackMontageTask->OnCancelled.RemoveAll(this);
+	}
+	for (UAbilityTask_WaitGameplayEvent* Task : { HitScanStartEventTask.Get(), HitScanTickEventTask.Get(),
+		HitScanEndEventTask.Get(), ComboCommitEventTask.Get(), ComboInputEventTask.Get() })
+	{
+		if (Task)
+		{
+			Task->EventReceived.RemoveAll(this);
+			Task->EndTask();
+		}
+	}
+	// Super::EndAbility destroys the montage task with OwnerFinished=true, which
+	// stops only the montage owned by this ability. Do not EndTask it early.
 }

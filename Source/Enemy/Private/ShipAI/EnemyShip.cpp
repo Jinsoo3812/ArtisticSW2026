@@ -33,6 +33,10 @@
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/LocalLightComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "CollisionChannels.h"
 #include "PhysicsEngine/BodyInstance.h"
 #include "Engine/StaticMesh.h"
@@ -117,6 +121,7 @@ void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 
 bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 {
+	if (NavigationComponent) NavigationComponent->ResetLocalSafety();
 	if (Part.Domain == ESWRoomDomain::Ship) return AShip::RestoreRoomDomain(Part, OutError);
 	FSWRoomEnemyShipState State;
 	if (Part.Domain != ESWRoomDomain::Enemy || (Part.Version != 2 && Part.Version != 3 && Part.Version != 4)
@@ -481,6 +486,7 @@ void AEnemyShip::BeginPlay()
 	ApplyEffectiveDormancyState();
 	ApplyStoryGatePresentation();
 	ApplyStoryGateToSpawnedChests();
+	InitializeCabinLighting();
 	if (bMeasureInit)
 	{
 		InitialBeginPlayMs = (FPlatformTime::Seconds() - Start) * 1000.;
@@ -494,9 +500,64 @@ void AEnemyShip::BeginPlay()
 
 }
 
+void AEnemyShip::InitializeCabinLighting()
+{
+	if (GetNetMode() == NM_DedicatedServer) return;
+	TInlineComponentArray<ULocalLightComponent*> Lights(this);
+	for (ULocalLightComponent* Light : Lights)
+	{
+		if (IsValid(Light) && Light->IsVisible() && !Light->bHiddenInGame
+			&& (Light->IsA<UPointLightComponent>() || Light->IsA<USpotLightComponent>()))
+		{
+			CabinLights.Add(Light);
+			Light->SetHiddenInGame(true);
+		}
+	}
+	if (CabinLights.IsEmpty()) return;
+	UpdateCabinLighting();
+	GetWorldTimerManager().SetTimer(CabinLightingTimer, this, &AEnemyShip::UpdateCabinLighting, 0.5f, true);
+}
+
+void AEnemyShip::UpdateCabinLighting()
+{
+	if (GetNetMode() == NM_DedicatedServer || !HasActorBegunPlay() || bEndingPlay) return;
+	const bool bCanIlluminate = !bEffectiveDormancyApplied && !bBundlePoolIdle && IsBundlePresentationReady()
+		&& !IsStoryGateDormant() && !IsSinking() && !bDeathHandled && !IsHidden();
+	bool bShouldEnable = false;
+	if (bCanIlluminate)
+	{
+		const float EnableDistance = FMath::IsFinite(CabinLightEnableDistance)
+			? FMath::Max(0.0f, CabinLightEnableDistance) : 3000.0f;
+		const float DisableDistance = FMath::IsFinite(CabinLightDisableDistance)
+			? FMath::Max(EnableDistance, CabinLightDisableDistance) : FMath::Max(EnableDistance, 4000.0f);
+		const float DistanceSquared = FMath::Square(bCabinLightsEnabled ? DisableDistance : EnableDistance);
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			const APlayerController* LocalController = It->Get();
+			if (!IsValid(LocalController) || !LocalController->IsLocalController() || !LocalController->PlayerCameraManager) continue;
+			FVector ViewLocation;
+			FRotator ViewRotation;
+			LocalController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+			if (!ViewLocation.ContainsNaN() && FVector::DistSquared(ViewLocation, GetActorLocation()) <= DistanceSquared)
+			{
+				bShouldEnable = true;
+				break;
+			}
+		}
+	}
+	bCabinLightsEnabled = bShouldEnable;
+	for (const TWeakObjectPtr<ULocalLightComponent>& WeakLight : CabinLights)
+	{
+		if (ULocalLightComponent* Light = WeakLight.Get(); Light && Light->bHiddenInGame != !bShouldEnable)
+			Light->SetHiddenInGame(!bShouldEnable);
+	}
+}
+
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEndingPlay = true;
+	GetWorldTimerManager().ClearTimer(CabinLightingTimer);
+	CabinLights.Reset();
 	PublishRuntimeState();
 	if (auto* Room = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>())
 		Room->OnRestoreCompleted.Remove(RoomRestoreCompletedHandle);
@@ -911,7 +972,7 @@ void AEnemyShip::SetSquadAssignedIdealDistance(float IdealDistance)
 	NavigationComponent->SetNavigationProfile(Profile);
 }
 
-void AEnemyShip::ResetAfterReturnToSpawn()
+void AEnemyShip::ResetAfterReturnToSpawn(bool bRestoreHomeTransform)
 {
 	if (!HasAuthority() || bDeathHandled || IsSinking())
 	{
@@ -920,7 +981,7 @@ void AEnemyShip::ResetAfterReturnToSpawn()
 
 	SetAIControlInput(0.0f, 0.0f);
 	FTransform SpawnTransform;
-	if (NavigationComponent && NavigationComponent->GetSpawnHomeTransform(SpawnTransform))
+	if (bRestoreHomeTransform && NavigationComponent && NavigationComponent->GetSpawnHomeTransform(SpawnTransform))
 	{
 		SetActorLocationAndRotation(
 			SpawnTransform.GetLocation(),
@@ -1640,6 +1701,28 @@ void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
+	// Hide the crew as soon as the hull dies. Keep the existing sinking,
+	// encounter, reward and eventual host-destruction cleanup paths intact.
+	TArray<ABaseEnemy*> CrewToHide;
+	for (ABaseEnemy* Crew : RegisteredCrewEnemies) CrewToHide.AddUnique(Crew);
+	CrewToHide.AddUnique(RegisteredBoss);
+	for (ABaseEnemy* Crew : CrewToHide)
+	{
+		if (!IsValid(Crew)) continue;
+		Crew->FlushNetDormancy();
+		Crew->SetActorHiddenInGame(true);
+		Crew->SetActorEnableCollision(false);
+		TArray<AActor*> Equipment;
+		Crew->GetAttachedActors(Equipment, true, true);
+		for (AActor* Actor : Equipment)
+		{
+			Actor->FlushNetDormancy();
+			Actor->SetActorHiddenInGame(true);
+			Actor->SetActorEnableCollision(false);
+			Actor->ForceNetUpdate();
+		}
+		Crew->ForceNetUpdate();
+	}
 	if (IsFinalBossSquadShip() && EnemyShipArchetype
 		&& EnemyShipArchetype->GetPathName() == FinalBossShipArchetypePath)
 	{
@@ -1810,6 +1893,10 @@ int32 AEnemyShip::GetLivingCrewCount() const
 	{
 		if (IsValid(Crew))
 		{
+			// Spare periodic summons are storage, not combatants blocking capture.
+			const auto* DeckCrew = Cast<ADeckEnemy>(Crew);
+			if (DeckCrew && !DeckCrew->IsPoolActive() && DeckEnemySpawnerComponent
+				&& DeckEnemySpawnerComponent->IsSummonReserveEnemy(DeckCrew)) continue;
 			if (const UBaseHealthComponent* Health = Crew->GetHealthComponent())
 			{
 				if (!Health->IsDead())
@@ -1865,6 +1952,8 @@ void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
 void AEnemyShip::NotifyCrewEnemyDeactivated(ABaseEnemy* CrewEnemy)
 {
 	if (!HasAuthority() || !CrewEnemy) return;
+	if (DeckEnemySpawnerComponent)
+		DeckEnemySpawnerComponent->NotifySummonReserveDeactivated(Cast<ADeckEnemy>(CrewEnemy));
 	TInlineComponentArray<UChildActorComponent*> Components(this);
 	for (UChildActorComponent* Component : Components)
 	{
@@ -1885,6 +1974,9 @@ bool AEnemyShip::RegisterBossEnemy(AShipBossEnemy* BossEnemy)
 	if (!HasAuthority() || !IsValid(BossEnemy) || BossEnemy->GetHostShip() != this
 		|| (IsValid(RegisteredBoss) && RegisteredBoss != BossEnemy)) return false;
 	RegisteredBoss = BossEnemy;
+	// A periodic summoner keeps its encounter alive after the original guards die.
+	// The existing crew death binding evaluates capture after its summons are released.
+	if (BossEnemy->AdditionalSummonPoolCapacity > 0) RegisterCrewEnemy(BossEnemy);
 	if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
 	{
 		Weakening->RegisterMember(this, BossEnemy);

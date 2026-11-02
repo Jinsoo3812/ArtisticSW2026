@@ -28,8 +28,9 @@ class CLASSFEATURE_API USWDevelopmentSettings : public UDeveloperSettings
  GENERATED_BODY()
 public:
  virtual FName GetCategoryName() const override { return TEXT("Game"); }
- UPROPERTY(Config, EditAnywhere, Category="Editor Starting Inventory")
+ /** Applies on authority to fresh inventories in editor and packaged games. Restored inventories are preserved. */
+ UPROPERTY(Config, EditAnywhere, Category="Starting Inventory")
  bool bGiveStartingItems = false;
- UPROPERTY(Config, EditAnywhere, Category="Editor Starting Inventory", meta=(EditCondition="bGiveStartingItems", TitleProperty="ItemTag"))
+ UPROPERTY(Config, EditAnywhere, Category="Starting Inventory", meta=(EditCondition="bGiveStartingItems", TitleProperty="ItemTag"))
  TArray<FStartingInventoryItemForTest> StartingItems;
 };

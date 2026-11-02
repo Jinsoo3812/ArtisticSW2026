@@ -1,4 +1,6 @@
 #include "Attacker/GA_Sniping.h"
+#include "Engine/World.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "BasePlayer.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputPress.h"
@@ -19,6 +21,10 @@ UGA_Sniping::UGA_Sniping()
 	
 	// State_Sniping 태그를 부여하여 BasePlayer에서 카메라 줌인 등을 처리
 	ActivationOwnedTags.AddTag(State_Sniping);
+	FGameplayTagContainer Tags;
+	Tags.AddTag(GameplayAbility_Weapon_AimCycle);
+	Tags.AddTag(GameplayAbility_InterruptibleByHit);
+	SetAssetTags(Tags);
 }
 
 void UGA_Sniping::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
@@ -29,6 +35,7 @@ void UGA_Sniping::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 		return;
 	}
 
+	LastServerShotTime = -DBL_MAX;
 	bIsSnipingActive = true;
 	bIsRecoiling = false;
 
@@ -36,6 +43,8 @@ void UGA_Sniping::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (Player && Player->IsLocallyControlled())
 	{
+		SavedOwnerNoSee = Player->GetMesh()->bOwnerNoSee;
+		HiddenMesh = Player->GetMesh();
 		Player->GetMesh()->SetOwnerNoSee(true);
 	}
 
@@ -61,7 +70,11 @@ void UGA_Sniping::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 		UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 		if (ASC)
 		{
-			ASC->AbilityTargetDataSetDelegate(Handle, ActivationInfo.GetActivationPredictionKey()).AddUObject(this, &UGA_Sniping::OnTargetDataReceived);
+			TargetDataASC = ASC;
+			TargetDataSubscription =
+			    ASC->AbilityTargetDataSetDelegate(Handle, ActivationInfo.GetActivationPredictionKey())
+			        .AddUObject(this, &UGA_Sniping::OnTargetDataReceived);
+			ASC->CallReplicatedTargetDataDelegatesIfSet(Handle, ActivationInfo.GetActivationPredictionKey());
 		}
 	}
 
@@ -76,7 +89,7 @@ void UGA_Sniping::OnRightClick(float TimeWaited)
 
 void UGA_Sniping::OnShoot(FGameplayEventData Payload)
 {
-	if (bIsRecoiling)
+	if (!IsActive() || bIsRecoiling)
 	{
 		return;
 	}
@@ -153,50 +166,54 @@ void UGA_Sniping::OnShoot(FGameplayEventData Payload)
 	}
 }
 
+bool UGA_Sniping::ValidateReportedHit(AActor* Source, const FHitResult& Reported, FHitResult& Verified) const
+{
+	if (!IsValid(Source) || !IsValid(Reported.GetActor()) || Source == Reported.GetActor() ||
+	    Source->GetWorld() != Reported.GetActor()->GetWorld() || Reported.ImpactPoint.ContainsNaN() ||
+	    !FMath::IsFinite(TraceDistance) || TraceDistance <= 0.f)
+		return false;
+	FVector Start;
+	FRotator Rotation;
+	Source->GetActorEyesViewPoint(Start, Rotation);
+	const FVector To = Reported.ImpactPoint - Start;
+	if (To.SizeSquared() > FMath::Square(TraceDistance) || To.IsNearlyZero())
+		return false;
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(SnipingServerValidation), true, Source);
+	return Source->GetWorld()->LineTraceSingleByChannel(
+	           Verified, Start, Reported.ImpactPoint + To.GetSafeNormal() * 20.f, ECC_Pawn, Query) &&
+	       Verified.GetActor() == Reported.GetActor();
+}
+
 void UGA_Sniping::OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag)
 {
+	if (!IsActive() || !GetCurrentActorInfo() || !GetCurrentActorInfo()->IsNetAuthority())
+		return;
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!ASC) return;
-
-	// 수신한 Target Data 소비 (재수신 가능하도록)
-	ASC->ConsumeClientReplicatedTargetData(GetCurrentAbilitySpecHandle(), GetCurrentActivationInfo().GetActivationPredictionKey());
-
-	if (GetCurrentActorInfo()->IsNetAuthority() && DamageEffectClass)
-	{
-		for (const TSharedPtr<FGameplayAbilityTargetData>& TargetData : Data.Data)
-		{
-			if (TargetData.IsValid())
-			{
-				const FHitResult* HitResult = TargetData->GetHitResult();
-				if (HitResult && HitResult->GetActor())
-				{
-					// ASC는 PlayerState에 존재하므로 FindComponentByClass가 아닌
-					// IAbilitySystemInterface를 통해 가져와야 함
-					UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitResult->GetActor());
-					if (TargetASC)
-					{
-						AActor* SourceActor = GetAvatarActorFromActorInfo();
-						FGameplayEffectContextHandle ContextHandle =
-							USWCombatEffectContextLibrary::MakeCombatEffectContext(
-								ASC, SourceActor, SourceActor, HitResult->GetActor(), true, *HitResult);
-						USWCombatEffectContextLibrary::SetDamageDeliveryType(
-							ContextHandle, ESWDamageDeliveryType::DirectHit);
-						
-						FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
-						if (SpecHandle.IsValid())
-						{
-							ASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
-							UE_LOG(LogTemp, Log, TEXT("UGA_Sniping: Hit Success -> Applied damage to %s"), *HitResult->GetActor()->GetName());
-						}
-					}
-					else
-					{
-						UE_LOG(LogTemp, Warning, TEXT("UGA_Sniping: Hit %s but no ASC found (not a GAS actor)"), *HitResult->GetActor()->GetName());
-					}
-				}
-			}
-		}
-	}
+	if (!ASC || !GetWorld())
+		return;
+	const FGameplayAbilityTargetDataHandle Stable = Data;
+	ASC->ConsumeClientReplicatedTargetData(GetCurrentAbilitySpecHandle(),
+	                                       GetCurrentActivationInfo().GetActivationPredictionKey());
+	const double Now = GetWorld()->GetTimeSeconds();
+	const float Interval = FMath::Max(.01f, RecoilAscentTime + RecoilRecoveryTime);
+	if (!DamageEffectClass || Stable.Num() != 1 || !Stable.Data[0].IsValid() || !FMath::IsFinite(Interval) ||
+	    Now - LastServerShotTime < Interval)
+		return;
+	const FHitResult* Reported = Stable.Data[0]->GetHitResult();
+	FHitResult Verified;
+	if (!Reported || !ValidateReportedHit(GetAvatarActorFromActorInfo(), *Reported, Verified))
+		return;
+	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Verified.GetActor());
+	if (!TargetASC)
+		return;
+	LastServerShotTime = Now;
+	AActor* Source = GetAvatarActorFromActorInfo();
+	FGameplayEffectContextHandle Context = USWCombatEffectContextLibrary::MakeCombatEffectContext(
+	    ASC, Source, Source, Verified.GetActor(), true, Verified);
+	USWCombatEffectContextLibrary::SetDamageDeliveryType(Context, ESWDamageDeliveryType::DirectHit);
+	FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(DamageEffectClass, 1.f, Context);
+	if (Spec.IsValid())
+		ASC->ApplyGameplayEffectSpecToTarget(*Spec.Data.Get(), TargetASC);
 }
 
 void UGA_Sniping::OnRecoilFinished()
@@ -209,12 +226,17 @@ void UGA_Sniping::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGam
 	bIsSnipingActive = false;
 	bIsRecoiling = false;
 
-	// 로컬 메시 다시 보이게
-	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (Player && Player->IsLocallyControlled())
+	if (USkeletalMeshComponent* Mesh = HiddenMesh.Get())
+		Mesh->SetOwnerNoSee(SavedOwnerNoSee);
+	HiddenMesh.Reset();
+	if (UAbilitySystemComponent* ASC = TargetDataASC.Get())
 	{
-		Player->GetMesh()->SetOwnerNoSee(false);
+		ASC->AbilityTargetDataSetDelegate(Handle, ActivationInfo.GetActivationPredictionKey())
+		    .Remove(TargetDataSubscription);
+		ASC->ConsumeClientReplicatedTargetData(Handle, ActivationInfo.GetActivationPredictionKey());
 	}
+	TargetDataSubscription.Reset();
+	TargetDataASC.Reset();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

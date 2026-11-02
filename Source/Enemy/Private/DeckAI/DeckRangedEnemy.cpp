@@ -564,10 +564,18 @@ void ADeckEnemy::ApplyPoolPresentationState()
 	const auto* Host = GetDeckHostShip();
 	const bool bHostDormant = Host && (Host->GetRuntimeStateSnapshot().Phase == EEnemyShipRuntimePhase::Dormant
 		|| Host->GetRuntimeStateSnapshot().Phase == EEnemyShipRuntimePhase::Restoring);
-	const bool bPresent = bPoolActive && bHostReady && !bHostDormant && !(Room && Room->IsRestoringSnapshot());
+	const bool bHostDestroyed = Host && (Host->IsDeathHandled() || Host->IsSinking()
+		|| Host->GetRuntimeStateSnapshot().Phase == EEnemyShipRuntimePhase::Terminal);
+	const bool bPresent = bPoolActive && bHostReady && !bHostDormant && !bHostDestroyed && !(Room && Room->IsRestoringSnapshot());
 	SetActorHiddenInGame(!bPresent);
 	SetActorEnableCollision(bPresent);
 	SetActorTickEnabled(bPresent);
+	if (bHostDestroyed)
+	{
+		TArray<AActor*> Equipment;
+		GetAttachedActors(Equipment, true, true);
+		for (AActor* Actor : Equipment) Actor->SetActorHiddenInGame(true);
+	}
 
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{

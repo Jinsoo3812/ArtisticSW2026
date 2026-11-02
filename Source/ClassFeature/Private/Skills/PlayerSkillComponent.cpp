@@ -94,6 +94,7 @@ bool UPlayerSkillComponent::IsSkillUnlocked(FGameplayTag SkillTag) const
 
 bool UPlayerSkillComponent::IsSkillUnlockConditionMet(FGameplayTag SkillTag) const
 {
+	if (FindSkillDefinition(SkillTag) && SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::SkillFree)) return true;
 	EStoryNode RequiredNode;
 	if (GetSkillStoryNode(SkillTag, RequiredNode))
 		if (const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)

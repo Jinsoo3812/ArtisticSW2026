@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "GA_ThrowGrenade.generated.h"
 
@@ -36,56 +37,58 @@ public:
 
 	/* --- 수류탄 투척 관련 --- */
 protected:
-	// 수류탄 데미지 이펙트 (GE)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
+  friend class FGrenadePhaseLifecycleTest;
+  FSWOwnedLooseGameplayTags OwnedStateTags;
+  bool bReleaseRequested = false;
+  bool bProjectileCommitted = false;
+  // 수류탄 데미지 이펙트 (GE)
+  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade")
+  TSubclassOf<UGameplayEffect> DamageEffectClass;
 
-	// 투척 힘 (초기 속도)
-	UPROPERTY(EditDefaultsOnly, Category = "Throw")
-	float ThrowSpeed = 1500.f;
+  // 투척 힘 (초기 속도)
+  UPROPERTY(EditDefaultsOnly, Category = "Throw")
+  float ThrowSpeed = 1500.f;
 
-	// 직선으로 던지지 않도록 살짝 들어올림
-	UPROPERTY(EditDefaultsOnly, Category = "Throw")
-	float Upper = 0.15f;
+  // 직선으로 던지지 않도록 살짝 들어올림
+  UPROPERTY(EditDefaultsOnly, Category = "Throw")
+  float Upper = 0.15f;
 
-	// 발사 궤적 업데이트 빈도
-	UPROPERTY(EditDefaultsOnly, Category = "Throw")
-	float TrajectoryFrequency = 0.03f;
+  // 발사 궤적 업데이트 빈도
+  UPROPERTY(EditDefaultsOnly, Category = "Throw")
+  float TrajectoryFrequency = 0.03f;
 
-	// 궤적 타이머 핸들
-	FTimerHandle TrajectoryTimerHandle;
+  // 궤적 타이머 핸들
+  FTimerHandle TrajectoryTimerHandle;
 
-	// 궤적을 그리는 함수
-	UFUNCTION()
-	virtual void DrawTrajectory();
+  // 궤적을 그리는 함수
+  UFUNCTION()
+  virtual void DrawTrajectory();
 
-	// 입력 해제(좌클릭 뗌) 시 호출될 함수
-	UFUNCTION()
-	void OnInputReleased(float TimeHeld);
+  // 입력 해제(좌클릭 뗌) 시 호출될 함수
+  UFUNCTION()
+  void OnInputReleased(float TimeHeld);
 
-	// 취소 이벤트(우클릭) 수신 시 호출될 함수
-	UFUNCTION()
-	void OnRightClickCancelled(FGameplayEventData Payload);
+  // 취소 이벤트(우클릭) 수신 시 호출될 함수
+  UFUNCTION()
+  void OnRightClickCancelled(FGameplayEventData Payload);
 
+  // 투척 애니메이션 몽타주
+  UPROPERTY(EditDefaultsOnly, Category = "Animation")
+  UAnimMontage* ThrowMontage;
 
+  // 애니메이션 노티파이에서 기다릴 이벤트 태그
+  UPROPERTY(EditDefaultsOnly, Category = "Animation")
+  FGameplayTag ThrowEventTag;
 
-	// 투척 애니메이션 몽타주
-	UPROPERTY(EditDefaultsOnly, Category = "Animation")
-	UAnimMontage* ThrowMontage;
+  // 노티파이(이벤트)를 받았을 때 실행될 함수 (실제 수류탄 스폰)
+  UFUNCTION()
+  virtual void OnThrowEventReceived(FGameplayEventData Payload);
 
-	// 애니메이션 노티파이에서 기다릴 이벤트 태그
-	UPROPERTY(EditDefaultsOnly, Category = "Animation")
-	FGameplayTag ThrowEventTag;
+  // 몽타주 재생이 완료되거나 끊겼을 때 실행될 함수
+  UFUNCTION()
+  void OnMontageCompleted();
 
-	// 노티파이(이벤트)를 받았을 때 실행될 함수 (실제 수류탄 스폰)
-	UFUNCTION()
-	virtual void OnThrowEventReceived(FGameplayEventData Payload);
-
-	// 몽타주 재생이 완료되거나 끊겼을 때 실행될 함수
-	UFUNCTION()
-	void OnMontageCompleted();
-
-	// 클릭을 뗐을 때 점프할 몽타주 섹션의 이름
-	UPROPERTY(EditDefaultsOnly, Category = "Animation")
-	FName ThrowSectionName = FName("Throw");
+  // 클릭을 뗐을 때 점프할 몽타주 섹션의 이름
+  UPROPERTY(EditDefaultsOnly, Category = "Animation")
+  FName ThrowSectionName = FName("Throw");
 };

@@ -54,6 +54,7 @@ class CLASSFEATURE_API UPlayerEquipmentComponent : public UActorComponent
 {
 	GENERATED_BODY()
 	friend class FWeaponEquipmentLifecycleTest;
+	friend class FEquipmentNotifyLifecycleTest;
 
 public:
 	UPlayerEquipmentComponent();
@@ -70,7 +71,7 @@ public:
 	bool RestoreRoomEquippedItem(FGameplayTag ItemTag);
 	void UnequipCurrentItem();
 	void UseEquippedItem(bool bDestroy = true);
-	void HandleEquipmentAttachNotify();
+	void HandleEquipmentAttachNotify(UAnimSequenceBase* SourceAnimation = nullptr);
 	void OnRepOwnerEquippedItem();
 	void OnEquippedItemInitialized(ABaseItem* Item);
 
@@ -193,11 +194,16 @@ protected:
 	void RemoveEquippedItemAbility(ABaseItem* Item);
 	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target);
 	bool CompleteItemAttachment(ABaseItem* Item, EEquipmentAttachmentTarget Target, bool bAttached);
-	void ClearBowArrowAnchor(ABowItem* ExpectedBow = nullptr);
+	/** Clears only the specified bow; nullptr is a no-op and another bow's binding is preserved. */
+	void ClearBowArrowAnchor(ABowItem* ExpectedBow);
+	/** Clears the tracked binding when replacing the attachment or resetting replicated presentation. */
+	void ClearCurrentBowArrowAnchor();
 	bool StoreCurrentEquippedItem(bool bRemoveStats = true);
 	bool CanChangeEquipment() const;
 	double LastEquipmentRequestTime = -1.0;
 	void StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag);
+	void ReleaseEquipmentPoseRefresh();
+	bool bOwnsEquipmentPoseRefresh = false;
 	void FinalizePendingEquip();
 	void CancelPendingEquip();
 	void PlayEquipmentMontage(ABaseItem* Item, UAnimMontage* Montage, float PlayRate);

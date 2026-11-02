@@ -16,6 +16,12 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "UI/ItemQuickSlotWidget.h"
+#include "GameFramework/WorldSettings.h"
+#include "Engine/SkeletalMesh.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Item/BaseItem.h"
+#include "Equipment/PlayerEquipmentComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FItemQuickSlotWidgetAssetTest,
@@ -148,13 +154,15 @@ bool FConsumableQuickSlotUseTest::RunTest(const FString& Parameters)
 		GEngine->DestroyWorldContext(World);
 		return false;
 	}
-	// Isolate routing/consumption from designer-authored healing effects.
+	// Use a valid recovery request to test F routing; full-health recovery is rejected.
 	const FGameplayTag ItemTag = Item_Id_Consumables_Heal_Medicine;
 	const FItemDefinition* Existing = Data->ItemDefinitions.Find(ItemTag);
 	const TOptional<FItemDefinition> Original = Existing ? TOptional<FItemDefinition>(*Existing) : TOptional<FItemDefinition>();
 	FItemDefinition& Definition = Data->ItemDefinitions.FindOrAdd(ItemTag);
 	Definition.CategoryTag = Item_Category_Consumable;
-	Definition.GrantedAbilityClass = UBaseGameplayAbility::StaticClass();
+	Definition.Consumable.Effect = EConsumableEffect::InstantHeal;
+	Definition.Consumable.Healing = 25.f;
+	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 100.f);
 	UInventoryComponent* Inventory = Player->GetInventoryComponent();
 	TestEqual(TEXT("Two fixture consumables added"), Inventory->AddItem(ItemTag, 2), 2);
 	Player->QuickSlots.SetNum(5);
@@ -176,6 +184,49 @@ bool FConsumableQuickSlotUseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("F returns to interaction after deselection"), ASC->FindAbilitySpecFromHandle(InteractionHandle)->InputPressed);
 	if (Original.IsSet()) Data->ItemDefinitions.Add(ItemTag, Original.GetValue());
 	else Data->ItemDefinitions.Remove(ItemTag);
+	World->DestroyWorld(false);
+	GEngine->DestroyWorldContext(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRepairQuickSlotPresentationTest,
+	"ArtisticSW.UI.ItemQuickSlot.RepairHeldMesh",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FRepairQuickSlotPresentationTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+	World->InitializeActorsForPlay(FURL());
+	World->GetWorldSettings()->NotifyBeginPlay();
+	ABasePlayerState* State = World->SpawnActor<ABasePlayerState>();
+	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
+	ABasePlayerController* Controller = World->SpawnActor<ABasePlayerController>();
+	State->GetAbilitySystemComponent()->AddAttributeSetSubobject(State->GetAttributeSet());
+	Player->GetMesh()->SetSkeletalMesh(LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/jiwon/Characters/SKM_Player_Woman.SKM_Player_Woman")));
+	Player->SetPlayerState(State);
+	Controller->PlayerState = State;
+	Controller->Possess(Player);
+	Player->QuickSlots.SetNum(5);
+	const TArray<FGameplayTag> Tags = {Item_Id_Material_ShipMaterials_WoodenPlank, Item_Id_Material_ShipMaterials_GoodWoodenPlank,
+		Item_Id_Material_ShipMaterials_IronPlate, Item_Id_Material_ShipMaterials_GoodIronPlate};
+	for (int32 Index = 0; Index < Tags.Num(); ++Index)
+	{
+		World->Tick(LEVELTICK_All, 0.2f);
+		const int32 Slot = 2 + Index % 3;
+		Player->GetInventoryComponent()->AddItem(Tags[Index], 1);
+		Player->QuickSlots[Slot].SlotType = EQuickSlotType::Consumable;
+		Player->QuickSlots[Slot].ItemTag = Tags[Index];
+		Player->BeginConsumableQuickSlotInput(Slot);
+		ABaseItem* Item = Player->EquippedItem;
+		if (!TestNotNull(Tags[Index].ToString() + TEXT(" is held after selecting 3/4/5"), Item)) continue;
+		TestEqual(TEXT("Held tag matches selection"), Item->ItemTag, Tags[Index]);
+		UStaticMeshComponent* Mesh = Item->FindComponentByClass<UStaticMeshComponent>();
+		TestTrue(TEXT("Held mesh exists and is visible"), Mesh && Mesh->GetStaticMesh() && Mesh->IsVisible() && !Mesh->bHiddenInGame && !Item->IsHidden());
+		TestEqual(TEXT("Held item attaches to player skeletal mesh"), Item->GetRootComponent()->GetAttachParent(), static_cast<USceneComponent*>(Player->GetMesh()));
+		const FName Socket = Item->GetRootComponent()->GetAttachSocketName();
+		TestTrue(TEXT("Configured hand socket exists"), Player->GetMesh()->DoesSocketExist(Socket));
+		TestTrue(TEXT("Held item is at configured hand socket"), Item->GetActorLocation().Equals(Player->GetMesh()->GetSocketLocation(Socket), 0.1f));
+	}
 	World->DestroyWorld(false);
 	GEngine->DestroyWorldContext(World);
 	return true;

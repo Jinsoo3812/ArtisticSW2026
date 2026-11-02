@@ -66,6 +66,8 @@ void UGA_PlayerAreaSlow::ActivateAbility(
 		ConfirmCancelTask->OnConfirm.AddDynamic(this, &UGA_PlayerAreaSlow::OnConfirmReceived);
 		ConfirmCancelTask->OnCancel.AddDynamic(this, &UGA_PlayerAreaSlow::OnCancelReceived);
 		ConfirmCancelTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	UAbilityTask_WaitInputRelease* ReleaseTask =
@@ -74,6 +76,8 @@ void UGA_PlayerAreaSlow::ActivateAbility(
 	{
 		ReleaseTask->OnRelease.AddDynamic(this, &UGA_PlayerAreaSlow::OnActivationInputReleased);
 		ReleaseTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	if (ActorInfo && ActorInfo->IsLocallyControlled())

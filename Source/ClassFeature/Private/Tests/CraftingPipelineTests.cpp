@@ -90,6 +90,34 @@ bool FCraftingPipelineTest::RunTest(const FString& Parameters)
 	const TArray<FCraftingListEntry> List = Crafting->GetCraftableList(Query);
 	TestEqual(TEXT("All enabled recipes are listed"), List.Num(), 2);
 
+	// UI affordability must use the same aggregated costs as the server transaction.
+	FCraftingRecipeRow Duplicate = BasicRecipe;
+	Duplicate.Ingredients[0].Quantity = 2;
+	const FCraftingItemStack DuplicateCost = Duplicate.Ingredients[0];
+	Duplicate.Ingredients.Add(DuplicateCost);
+	ItemSubsystem->AddCraftingRecipeForTesting(TEXT("Test_DuplicateCost"), Duplicate);
+	FCraftingDetailsView DuplicateDetails;
+	TestTrue(TEXT("Duplicate ingredient details resolve"),
+	         Crafting->GetCraftingDetails(TEXT("Test_DuplicateCost"), 2, DuplicateDetails));
+	TestEqual(TEXT("Repeated ingredient rows cannot advertise an unaffordable batch"), DuplicateDetails.Availability,
+	          ECraftingAvailability::MissingIngredients);
+	TestEqual(TEXT("Maximum count aggregates repeated ingredients"), DuplicateDetails.MaxCraftableCount, 1);
+	FCraftingRecipeRow Overlap = BasicRecipe;
+	Overlap.Ingredients[0].Quantity = 5;
+	Overlap.RequiredRecipeItemTag = WoodCost.ItemTag;
+	Overlap.bConsumeRecipeItem = true;
+	ItemSubsystem->AddCraftingRecipeForTesting(TEXT("Test_SharedRecipeCost"), Overlap);
+	FCraftingDetailsView SharedDetails;
+	TestTrue(TEXT("Recipe item also used as ingredient resolves"),
+	         Crafting->GetCraftingDetails(TEXT("Test_SharedRecipeCost"), 1, SharedDetails));
+	TestEqual(TEXT("Consumed recipe item and ingredient share a combined budget"), SharedDetails.Availability,
+	          ECraftingAvailability::MissingIngredients);
+	TestEqual(TEXT("Shared recipe cost cannot advertise a free extra item"), SharedDetails.MaxCraftableCount, 0);
+	// Keep the original fixture catalog for subsequent menu/transaction assertions.
+	ItemSubsystem->ClearCraftingRecipesForTesting();
+	ItemSubsystem->AddCraftingRecipeForTesting(TEXT("Test_Medicine"), BasicRecipe);
+	ItemSubsystem->AddCraftingRecipeForTesting(TEXT("Test_LockedSword"), LockedRecipe);
+
 	FCraftingDetailsView BasicDetails;
 	TestTrue(TEXT("Unlocked recipe details resolve"), Crafting->GetCraftingDetails(TEXT("Test_Medicine"), 1, BasicDetails));
 	TestTrue(TEXT("Unlocked ingredients are visible"), BasicDetails.bIngredientsVisible);

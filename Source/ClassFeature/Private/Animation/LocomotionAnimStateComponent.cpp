@@ -702,6 +702,15 @@ void ULocomotionAnimStateComponent::UpdateCombatMovementState()
 
 void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
 {
+    if (CachedBasePlayer && CachedBasePlayer->IsOperatingCannon())
+    {
+        bTurnInPlacePhaseActive=false;
+        TurnInPlacePhaseElapsed=0.f;
+        bShouldTurnInPlace=false;
+        bIsTurningInPlace=false;
+        TurnInPlaceRootYawDelta=0.f;
+        return;
+    }
     // This deliberately mirrors Project_J's derived locomotion phase rather
     // than using Artistic's legacy ELocomotionState::TurnInPlace transition.
     // The latter is a transient state and immediately returns to Idle; a TIP

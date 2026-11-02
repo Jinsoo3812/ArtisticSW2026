@@ -152,6 +152,8 @@ bool FSharedCombatResolverTest::RunTest(const FString& Parameters)
 	TargetASC->RemoveLooseGameplayTag(State_Invulnerable);
 	TargetASC->AddLooseGameplayTag(Team_Player);
 	TestFalse(TEXT("Friendly target rejects hit"), Resolver->ResolveHit(TargetASC, FHitResult()));
+	SourceASC->ApplyGameplayEffectSpecToTarget(*NextSpec.Data.Get(), TargetASC);
+	TestEqual(TEXT("Friendly damage also rejected when bypassing hit resolver"), TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), 55.f);
 	TargetASC->RemoveLooseGameplayTag(Team_Player);
 	Causer->SetRole(ROLE_SimulatedProxy);
 	TestFalse(TEXT("Client-only collision cannot apply damage"), Resolver->ResolveHit(TargetASC, FHitResult()));

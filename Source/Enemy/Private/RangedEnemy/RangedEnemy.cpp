@@ -555,9 +555,6 @@ bool ARangedEnemy::HasClearRangedLaunch(const AActor* TargetActor, const FProjec
 			*Shot.Input.ShotId.ToString(), *GetName(), *GetNameSafe(TargetActor), *Start.ToString(),
 			*Shot.Input.AimPoint.ToString(), bClear, *GetNameSafe(Hit.GetActor()), *GetNameSafe(Component),
 			Component ? *Component->GetCollisionProfileName().ToString() : TEXT("None"), Hit.Time, Hit.bStartPenetrating);
-		DrawDebugLine(GetWorld(), Start, Shot.Input.AimPoint, FColor::White, false, 3.0f);
-		DrawDebugPoint(GetWorld(), Shot.Input.AimPoint, 12.0f, FColor::White, false, 3.0f);
-		if (!bClear && Hit.bBlockingHit) DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 14.0f, FColor::Red, false, 3.0f);
 	}
 	return bClear;
 }

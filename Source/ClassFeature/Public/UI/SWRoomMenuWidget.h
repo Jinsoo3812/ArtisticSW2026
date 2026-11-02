@@ -21,8 +21,12 @@ private:
 	UFUNCTION() void HandleSaveAndExitClicked();
 	UFUNCTION() void HandleCloseClicked();
 	UFUNCTION() void HandleCopyRoomCodeClicked();
-	UPROPERTY(Transient) TObjectPtr<UButton> SaveButton;
-	UPROPERTY(Transient) TObjectPtr<UButton> SaveAndExitButton;
-	UPROPERTY(Transient) TObjectPtr<UTextBlock> StatusText;
+	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> PlayerNameText;
+	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> RoomCodeText;
+	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> CopyRoomCodeButton;
+	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> CloseButton;
+	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> SaveButton;
+	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> SaveAndExitButton;
+	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> StatusText;
 	FString RoomCode;
 };

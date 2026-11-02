@@ -75,6 +75,11 @@
 			"LoadingPhase": "Default"
 		},
 		{
+			"Name": "ClassFeatureAnimGraph",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "Default"
+		},
+		{
 			"Name": "ClassFeatureEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"

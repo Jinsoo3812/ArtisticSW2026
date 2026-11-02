@@ -14,6 +14,11 @@
 
 UGA_ThrowGrenade::UGA_ThrowGrenade()
 {
+	// Swimming, rolling and hit reactions cancel the aiming owner through this policy.
+	FGameplayTagContainer Tags;
+	Tags.AddTag(GameplayAbility_Weapon_AimCycle);
+	Tags.AddTag(GameplayAbility_InterruptibleByHit);
+	SetAssetTags(Tags);
 }
 
 void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -21,9 +26,17 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	OwnedStateTags.Reset();
+	bReleaseRequested = false;
+	bProjectileCommitted = false;
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (!Player || !GetWorld())
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 	if (Player)
 	{
 		if (!IsValid(Player->EquippedItem))
@@ -33,6 +46,7 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			return;
 		}
 
+		OwnedStateTags.Set(GetAbilitySystemComponentFromActorInfo(), State_Aiming, true);
 		if (Player->IsLocallyControlled())
 		{
 			GetWorld()->GetTimerManager().SetTimer(TrajectoryTimerHandle, this, &UGA_ThrowGrenade::DrawTrajectory, TrajectoryFrequency, true);
@@ -52,6 +66,8 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			MontageTask->OnCancelled.AddDynamic(this, &UGA_ThrowGrenade::OnMontageCompleted);
 			MontageTask->OnCompleted.AddDynamic(this, &UGA_ThrowGrenade::OnMontageCompleted);
 			MontageTask->ReadyForActivation();
+			if (!IsActive())
+				return;
 		}
 
 		// 몽타주 내부의 "발사!" 노티파이 대기도 시작부터 같이 켜둡니다.
@@ -60,6 +76,8 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		{
 			WaitEventTask->EventReceived.AddDynamic(this, &UGA_ThrowGrenade::OnThrowEventReceived);
 			WaitEventTask->ReadyForActivation();
+			if (!IsActive())
+				return;
 		}
 	}
 
@@ -69,6 +87,8 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	{
 		WaitReleaseTask->OnRelease.AddDynamic(this, &UGA_ThrowGrenade::OnInputReleased);
 		WaitReleaseTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 
 	// 3. 우클릭 입력 대기 (스킬 취소)
@@ -77,29 +97,33 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	{
 		WaitRightClickTask->EventReceived.AddDynamic(this, &UGA_ThrowGrenade::OnRightClickCancelled);
 		WaitRightClickTask->ReadyForActivation();
+		if (!IsActive())
+			return;
 	}
 }
 
 void UGA_ThrowGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
 	// 종료 시 궤적 타이머 해제
-	GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
 
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-	{
-		ASC->RemoveLooseGameplayTag(State_Aiming);
-		ASC->RemoveLooseGameplayTag(State_Attacking); // 어빌리티 종료 시 회전 고정도 해제
-	}
+	OwnedStateTags.Reset();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 {
-	if (!IsActive()) return;
+	if (!IsActive() || bReleaseRequested)
+		return;
+	bReleaseRequested = true;
+	OwnedStateTags.Set(GetAbilitySystemComponentFromActorInfo(), State_Aiming, false);
+	OwnedStateTags.Set(GetAbilitySystemComponentFromActorInfo(), State_Attacking, true);
 
 	// 화면의 궤적 지우기
-	GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
+	if (GetWorld())
+		GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 
@@ -109,13 +133,6 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 		// 루프를 돌며 폼을 잡고 있던 애니메이션이 던지는 모션으로 즉시 넘어갑니다.
 		ASC->CurrentMontageJumpToSection(ThrowSectionName);
 
-		// 1. 조준 태그를 빼서 카메라는 즉시 줌아웃 시킵니다.
-		ASC->RemoveLooseGameplayTag(State_Aiming);
-
-		// 2. 공격 태그를 넣어서 애니메이션이 끝날 때까지 캐릭터 회전을 고정합니다.
-		ASC->AddLooseGameplayTag(State_Attacking);
-
-		ASC->CurrentMontageJumpToSection(ThrowSectionName);
 	}
 	else
 	{
@@ -128,6 +145,8 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 
 void UGA_ThrowGrenade::OnThrowEventReceived(FGameplayEventData Payload)
 {
+	if (!IsActive() || !bReleaseRequested || bProjectileCommitted)
+		return;
 	// 기존의 OnInputReleased에 있던 수류탄 실제 스폰/발사 로직입니다.
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
@@ -174,19 +193,27 @@ void UGA_ThrowGrenade::OnThrowEventReceived(FGameplayEventData Payload)
 			Grenade->SetOwner(Player);
 			Grenade->DamageEffectSpecHandle = DamageSpecHandle;
 			Grenade->SetGrenadeMesh(ItemMesh);
+			bProjectileCommitted = true;
 			Grenade->FinishSpawning(SpawnTransform);
+			if (!IsValid(Grenade))
+			{
+				EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+				return;
+			}
 			Grenade->LaunchProjectile(LaunchVelocity);
+			Player->UseEquippedItem(true);
 		}
 
-		// 장착 Item 소비 및 파괴
-		Player->UseEquippedItem(true);
+		if (!Grenade)
+			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 	}
 }
 
 void UGA_ThrowGrenade::OnMontageCompleted()
 {
 	// 애니메이션이 완전히 끝나면 어빌리티를 정상 종료합니다.
-	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	if (IsActive())
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
 void UGA_ThrowGrenade::DrawTrajectory()

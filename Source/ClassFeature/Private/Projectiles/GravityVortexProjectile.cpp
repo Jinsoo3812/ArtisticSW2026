@@ -3,7 +3,6 @@
 #include "Components/SphereComponent.h"
 #include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Components/StaticMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
@@ -110,13 +109,6 @@ void AGravityVortexProjectile::BeginPlay()
 void AGravityVortexProjectile::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-
-#if !UE_SERVER
-	if (bDrawDebug && GetWorld())
-	{
-		DrawDebugSphere(GetWorld(), GetActorLocation(), 24.0f, 8, FColor::Yellow, false, 0.0f, 0, 2.0f);
-	}
-#endif
 
 	if (!HasAuthority() || bActivated || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{

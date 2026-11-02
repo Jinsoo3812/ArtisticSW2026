@@ -1,0 +1,318 @@
+{
+  "date": "2026-10-30",
+  "map": "/Game/Level/Lvl_CY",
+  "method": "Two-player single-process listen server/client PIE, both native CannonLook InputActions injected on owning local subsystems. Yaw -60/0/60 and pitch -15/0/45 sampled over 8 poses, repeated twice; last 1.5s of each 3s phase sampled.",
+  "phase_count": 16,
+  "time_samples": 240,
+  "operator_observations": 960,
+  "assertions_passed": true,
+  "summary": [
+    {
+      "peer": 0,
+      "player": "BP_Player_Woman_C_0",
+      "samples": 240,
+      "max_hand_error_cm": 6.507973210934907e-11,
+      "max_foot_error_cm": 1.049353530241639e-10,
+      "max_root_pitch_deg": 5.5659706925611504e-15,
+      "knee_angle_range_deg": [
+        79.13541440463986,
+        79.18669677772424
+      ],
+      "max_limb_length_ratio": 1.0000000000025584,
+      "local_hide_mismatches": 0
+    },
+    {
+      "peer": 0,
+      "player": "BP_Player_Man_C_0",
+      "samples": 240,
+      "max_hand_error_cm": 6.508171805788521e-11,
+      "max_foot_error_cm": 9.203467374490599e-11,
+      "max_root_pitch_deg": 2.7432284127622828e-14,
+      "knee_angle_range_deg": [
+        87.61766969961954,
+        87.61809760951644
+      ],
+      "max_limb_length_ratio": 1.0000000000021265,
+      "local_hide_mismatches": 0
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Man_C_0",
+      "samples": 240,
+      "max_hand_error_cm": 6.507973210934907e-11,
+      "max_foot_error_cm": 8.231877003641419e-11,
+      "max_root_pitch_deg": 0.0,
+      "knee_angle_range_deg": [
+        87.61766969963917,
+        87.61809760950206
+      ],
+      "max_limb_length_ratio": 1.0000000000020508,
+      "local_hide_mismatches": 0
+    },
+    {
+      "peer": 1,
+      "player": "BP_Player_Woman_C_0",
+      "samples": 240,
+      "max_hand_error_cm": 6.507903701304393e-11,
+      "max_foot_error_cm": 9.203502482651181e-11,
+      "max_root_pitch_deg": 0.0,
+      "knee_angle_range_deg": [
+        79.13541440464286,
+        79.18669677770838
+      ],
+      "max_limb_length_ratio": 1.0000000000023848,
+      "local_hide_mismatches": 0
+    }
+  ],
+  "raw_directory": "Saved\\AudioIntegration\\Live\\12612",
+  "aim_continuity": {
+    "observations": 5760,
+    "max_frame_interval_seconds": 0.03959669917821884,
+    "max_pose_step_cm": {
+      "pelvis": 3.772436724328588e-11,
+      "head": 1.6824147597583161,
+      "calf_l": 6.268638864525997e-11,
+      "calf_r": 6.642771931053994e-11,
+      "foot_l": 9.693716899110344e-11,
+      "foot_r": 9.392689011261389e-11
+    },
+    "max_mounted_deck_foot_step_cm": 1.484597429478276e-10,
+    "max_dismount_root_step_cm": 0.0,
+    "unrequested_turn_frames": 0
+  },
+  "exit": [
+    {
+      "world": "World=/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY NetMode=2 AudioDevice=4294967295",
+      "pawn": "BP_Player_Woman_C_0",
+      "is_character": true,
+      "attached": null,
+      "movement": "<MovementMode.MOVE_WALKING: 1>",
+      "cannon_hides": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "world": "World=/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY NetMode=3 AudioDevice=4294967295",
+      "pawn": "BP_Player_Man_C_0",
+      "is_character": true,
+      "attached": null,
+      "movement": "<MovementMode.MOVE_WALKING: 1>",
+      "cannon_hides": [
+        false,
+        false,
+        false
+      ]
+    }
+  ],
+  "lifecycle": {
+    "raw_directory": "Saved\\AudioIntegration\\Live\\12612",
+    "checks": {
+      "remount": [
+        {
+          "cannon": "BP_Cannon_C_0",
+          "yaw_delta": 0.9999999999999997,
+          "input_components": 1
+        },
+        {
+          "cannon": "BP_Cannon_C_1",
+          "yaw_delta": 0.9999999999999932,
+          "input_components": 1
+        }
+      ],
+      "after_exit_and_destroy": [
+        {
+          "pawn": "BP_Player_Woman_C_0",
+          "is_character": true,
+          "attached": null,
+          "walking": true,
+          "cannon_context_remains": false
+        },
+        {
+          "pawn": "BP_Player_Man_C_0",
+          "is_character": true,
+          "attached": null,
+          "walking": true,
+          "cannon_context_remains": false
+        }
+      ]
+    },
+    "movement": [
+      {
+        "name": "BP_Player_Woman_C_0",
+        "moved_cm": 257.6703125198372,
+        "server_moved_cm": 257.6703125198372,
+        "peak_horizontal_speed": 500.00000000040575,
+        "server_peak_horizontal_speed": 500.00000000040575,
+        "server_error_cm": 0.0,
+        "ship_relative_error_cm": 0.0,
+        "movement": "<MovementMode.MOVE_WALKING: 1>",
+        "velocity": "<Struct 'Vector' (0x000002ED3EEE4A60) {x: 0.000000, y: 0.000000, z: 0.000000}>"
+      },
+      {
+        "name": "BP_Player_Man_C_0",
+        "moved_cm": 252.17336125218603,
+        "server_moved_cm": 257.7462622467939,
+        "peak_horizontal_speed": 500.00000000026546,
+        "server_peak_horizontal_speed": 500.0000000002334,
+        "server_error_cm": 3.3968574762858768,
+        "ship_relative_error_cm": 0.2709025767850849,
+        "movement": "<MovementMode.MOVE_WALKING: 1>",
+        "velocity": "<Struct 'Vector' (0x000002ED3EEE4920) {x: 0.000000, y: 0.000000, z: 0.000000}>"
+      }
+    ],
+    "passed": true
+  },
+  "exit_continuity": {
+    "observations": 724,
+    "max_frame_interval_seconds": 0.03337020054459572,
+    "max_pose_step_cm": {
+      "pelvis": 6.102089658181178,
+      "head": 8.912377463899585,
+      "calf_l": 4.051723419734383,
+      "calf_r": 6.530007422464442,
+      "foot_l": 2.996736700696013,
+      "foot_r": 5.033265433043929
+    },
+    "max_mounted_deck_foot_step_cm": 1.2437758311669512e-10,
+    "max_dismount_root_step_cm": 0.7778635572012587,
+    "unrequested_turn_frames": 0
+  },
+  "first_exit_continuity": {
+    "observations": 672,
+    "max_frame_interval_seconds": 0.10115189850330353,
+    "max_pose_step_cm": {
+      "pelvis": 6.4211526716636,
+      "head": 9.630403224080373,
+      "calf_l": 3.9881480516625203,
+      "calf_r": 7.0942262070595605,
+      "foot_l": 3.0525411260305084,
+      "foot_r": 5.3853870299413
+    },
+    "max_mounted_deck_foot_step_cm": 1.2648340563867836e-10,
+    "max_dismount_root_step_cm": 0.5213367935224853,
+    "unrequested_turn_frames": 0
+  },
+  "ownership": [
+    {
+      "Controller": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_BasePlayerController_C_0",
+      "Pawn": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Woman_C_0",
+      "Ack": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Woman_C_0",
+      "Local": "1",
+      "State": "Playing",
+      "matches": true
+    },
+    {
+      "Controller": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_BasePlayerController_C_1",
+      "Pawn": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Man_C_0",
+      "Ack": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Man_C_0",
+      "Local": "0",
+      "State": "Playing",
+      "matches": true
+    },
+    {
+      "Controller": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY:PersistentLevel.BP_BasePlayerController_C_0",
+      "Pawn": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Man_C_0",
+      "Ack": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Man_C_0",
+      "Local": "1",
+      "State": "Playing",
+      "matches": true
+    }
+  ],
+  "post_exit_swimming": {
+    "time_samples": 400,
+    "summary": [
+      {
+        "peer": 0,
+        "phase": "surface_forward",
+        "samples": 50,
+        "passed": true
+      },
+      {
+        "peer": 0,
+        "phase": "underwater_forward",
+        "samples": 50,
+        "passed": true
+      },
+      {
+        "peer": 0,
+        "phase": "return_to_cabin",
+        "samples": 70,
+        "passed": true
+      },
+      {
+        "peer": 1,
+        "phase": "surface_forward",
+        "samples": 50,
+        "passed": true
+      },
+      {
+        "peer": 1,
+        "phase": "underwater_forward",
+        "samples": 50,
+        "passed": true
+      },
+      {
+        "peer": 1,
+        "phase": "return_to_cabin",
+        "samples": 70,
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "native_automation": {
+    "success": true,
+    "log": "C:\\Users\\I\\Documents\\GitHub\\ArtisticSW2026\\Saved\\CannonOperatorValidation\\StateBoundary_Final.log"
+  },
+  "physical_input_mappings": [
+    {
+      "controller": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_BasePlayerController_C_0",
+      "cannon": "BP_Cannon_C_0",
+      "priority": 10,
+      "look_keys": [
+        "<Struct 'Key' (0x000002EE0A5685A0) {}>"
+      ],
+      "exit_keys": [
+        "<Struct 'Key' (0x000002EE0A56F8E0) {}>"
+      ]
+    },
+    {
+      "controller": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY:PersistentLevel.BP_BasePlayerController_C_0",
+      "cannon": "BP_Cannon_C_2",
+      "priority": 10,
+      "look_keys": [
+        "<Struct 'Key' (0x000002EE0A56CF40) {}>"
+      ],
+      "exit_keys": [
+        "<Struct 'Key' (0x000002EE0A568380) {}>"
+      ]
+    }
+  ],
+  "ground_policy_components_checked": 60
+}

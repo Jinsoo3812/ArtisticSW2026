@@ -4,7 +4,6 @@
 #include "GameFramework/Pawn.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "Item/Projectiles/ProjectileLaunchTypes.h"
@@ -86,7 +85,6 @@ void ARangedEnemyProjectile::Tick(float DeltaSeconds)
 	if (!HasAuthority() || !IsEnemyBowDebugEnabled()) { SetActorTickEnabled(false); return; }
 	if (EnemyLaunchFrame == GFrameCounter) return;
 	const FVector Position = GetActorLocation();
-	DrawDebugLine(GetWorld(), LastDebugPosition, Position, FColor::Green, false, 3.0f, 0, 2.0f);
 	if (!bFirstStepLogged)
 	{
 		bFirstStepLogged = true;
@@ -101,8 +99,6 @@ void ARangedEnemyProjectile::HandleFlightImpact(const FHitResult& Hit)
 	if (HasAuthority() && IsEnemyBowDebugEnabled())
 	{
 		const UPrimitiveComponent* Component = Hit.GetComponent();
-		DrawDebugLine(GetWorld(), LastDebugPosition, GetActorLocation(), FColor::Green, false, 3.0f, 0, 2.0f);
-		DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 14.0f, FColor::Red, false, 3.0f);
 		UE_LOG(LogTemp, Display, TEXT("[EnemyBowHit] Id=%s Arrow=%s Actor=%s Component=%s Profile=%s Time=%.6f StartPenetrating=%d Root=%s Impact=%s"),
 			*EnemyShotId.ToString(), *GetName(), *GetNameSafe(Hit.GetActor()), *GetNameSafe(Component),
 			Component ? *Component->GetCollisionProfileName().ToString() : TEXT("None"), Hit.Time,

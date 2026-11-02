@@ -238,7 +238,10 @@ FReply UStatusWindowWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, 
 	{
 		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer()))
 		{
-			PlayerController->ToggleStatus();
+			if (!InKeyEvent.IsRepeat())
+			{
+				PlayerController->ToggleStatus();
+			}
 		}
 		return FReply::Handled();
 	}

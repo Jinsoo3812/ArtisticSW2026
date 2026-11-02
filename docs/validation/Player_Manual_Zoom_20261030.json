@@ -1,0 +1,237 @@
+{
+  "date": "2026-10-30",
+  "map": "/Game/Level/Lvl_CY",
+  "method": "Two-player listen server/client PIE; native zoom InputAction values injected through EnhancedInputLocalPlayerSubsystem; teleport setup for cabin/water. Physical wheel and every UI widget were not driven by this script.",
+  "samples": 250,
+  "stable_summary": [
+    {
+      "phase": "host_zoom_in",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 350,
+      "last_target_cm": 350.0076904296875,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "host_zoom_in",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 400,
+      "last_target_cm": 400.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "client_zoom_out",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 350,
+      "last_target_cm": 350.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "client_zoom_out",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 450,
+      "last_target_cm": 450.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "minimum",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 150,
+      "last_target_cm": 150.04006958007812,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "minimum",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 450,
+      "last_target_cm": 450.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "maximum",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 800,
+      "last_target_cm": 800.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "maximum",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 450,
+      "last_target_cm": 450.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "ui_blocks",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 800,
+      "last_target_cm": 800.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "ui_blocks",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 450,
+      "last_target_cm": 450.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "selection_blocks",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 800,
+      "last_target_cm": 800.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "selection_blocks",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 450,
+      "last_target_cm": 450.0,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "restore",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 400,
+      "last_target_cm": 400.0032958984375,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "restore",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 400,
+      "last_target_cm": 400.00042724609375,
+      "collision": false,
+      "swimming": false
+    },
+    {
+      "phase": "water_zoom_in",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 400,
+      "last_target_cm": 400.0,
+      "collision": false,
+      "swimming": true
+    },
+    {
+      "phase": "water_zoom_in",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 350,
+      "last_target_cm": 350.0076904296875,
+      "collision": false,
+      "swimming": true
+    },
+    {
+      "phase": "water_zoom_out",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 450,
+      "last_target_cm": 450.0,
+      "collision": false,
+      "swimming": true
+    },
+    {
+      "phase": "water_zoom_out",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 350,
+      "last_target_cm": 350.0,
+      "collision": false,
+      "swimming": true
+    },
+    {
+      "phase": "final",
+      "peer": 0,
+      "samples": 7,
+      "preferred_cm": 450,
+      "last_target_cm": 450.0,
+      "collision": false,
+      "swimming": true
+    },
+    {
+      "phase": "final",
+      "peer": 1,
+      "samples": 7,
+      "preferred_cm": 350,
+      "last_target_cm": 350.0,
+      "collision": false,
+      "swimming": true
+    }
+  ],
+  "mapping_audit": [
+    {
+      "context": "/Game/Blueprints/Ship/Input/IMC_Ship.IMC_Ship",
+      "wheel": [
+        {
+          "key": "MouseWheelAxis",
+          "action": "/Game/Blueprints/Ship/Input/IA_ShipZoom.IA_ShipZoom",
+          "consume": true
+        }
+      ]
+    },
+    {
+      "context": "/Game/Blueprints/Player/Default_Input/DefaultIMC.DefaultIMC",
+      "wheel": [
+        {
+          "key": "MouseScrollUp",
+          "action": "/Game/Blueprints/Player/Default_Input/IA_MouseWheelUp.IA_MouseWheelUp",
+          "consume": true
+        },
+        {
+          "key": "MouseScrollDown",
+          "action": "/Game/Blueprints/Player/Default_Input/IA_MouseWheelDown.IA_MouseWheelDown",
+          "consume": true
+        }
+      ]
+    },
+    {
+      "context": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Woman_C_0.CameraZoom.InputMappingContext_0",
+      "wheel": [
+        {
+          "key": "MouseWheelAxis",
+          "action": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Woman_C_0.CameraZoom.InputAction_0",
+          "consume": false
+        }
+      ]
+    },
+    {
+      "context": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Man_C_0.CameraZoom.InputMappingContext_0",
+      "wheel": [
+        {
+          "key": "MouseWheelAxis",
+          "action": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY:PersistentLevel.BP_Player_Man_C_0.CameraZoom.InputAction_0",
+          "consume": false
+        }
+      ]
+    }
+  ],
+  "raw_directory": "Saved\\AudioIntegration\\Live\\1396",
+  "assertions_passed": true
+}

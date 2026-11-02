@@ -1,0 +1,163 @@
+{
+  "moving_barrel_socket_contract_passed": true,
+  "time_samples": 239,
+  "metrics": {
+    "0:BP_Player_Woman_C_0": {
+      "max_hand_error_cm": 66.0830239126233,
+      "max_foot_error_cm": 5.7889938808222034e-08,
+      "target_motion_cm": 78.53561099438254
+    },
+    "0:BP_Player_Man_C_0": {
+      "max_hand_error_cm": 69.69128070702435,
+      "max_foot_error_cm": 3.1627132649952174e-05,
+      "target_motion_cm": 78.53561099435572
+    },
+    "1:BP_Player_Man_C_0": {
+      "max_hand_error_cm": 69.69128070704,
+      "max_foot_error_cm": 3.162713252150143e-05,
+      "target_motion_cm": 78.53561099436371
+    },
+    "1:BP_Player_Woman_C_0": {
+      "max_hand_error_cm": 66.08300560666812,
+      "max_foot_error_cm": 5.788708786171798e-08,
+      "target_motion_cm": 78.53558393548953
+    }
+  },
+  "full_pose_reach_passed": false,
+  "pose_settings_changed": false,
+  "date": "2026-10-31",
+  "raw_directory": "Saved\\AudioIntegration\\Live\\19000",
+  "socket_migration": {
+    "contact_mesh": "/Game/Blueprints/Ship/Cannon/Mesh/Operator/SM_OperatorBarrelVisual.SM_OperatorBarrelVisual",
+    "old_carriage_sockets_removed": true,
+    "sockets": [
+      {
+        "name": "Operator_LeftPalm",
+        "existing_barrel_socket_preserved": false,
+        "copied_custom_carriage_edit": false
+      },
+      {
+        "name": "Operator_RightPalm",
+        "existing_barrel_socket_preserved": false,
+        "copied_custom_carriage_edit": false
+      }
+    ],
+    "pose_and_mount_settings_preserved": true
+  },
+  "socket_edit": {
+    "offset_cm": 1,
+    "yaw_offset_deg": 2,
+    "actors": [
+      {
+        "world": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY",
+        "player": "BP_Player_Woman_C_0",
+        "z_offset_cm": 0.9999999999986606,
+        "palm_error_cm": 1.0844993337685684e-06
+      },
+      {
+        "world": "/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY",
+        "player": "BP_Player_Man_C_0",
+        "z_offset_cm": 1.0000000000000853,
+        "palm_error_cm": 1.2028802020935e-06
+      },
+      {
+        "world": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY",
+        "player": "BP_Player_Man_C_0",
+        "z_offset_cm": 0.999999999999595,
+        "palm_error_cm": 1.2028816913590665e-06
+      },
+      {
+        "world": "/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY",
+        "player": "BP_Player_Woman_C_0",
+        "z_offset_cm": 1.000000000000945,
+        "palm_error_cm": 1.0845074481974039e-06
+      }
+    ],
+    "restored": true
+  },
+  "native_test_count": 27,
+  "exit_state": [
+    {
+      "world": "World=/Game/Level/UEDPIE_0_Lvl_CY.Lvl_CY NetMode=2 AudioDevice=2",
+      "pawn": "BP_Player_Woman_C_0",
+      "is_character": true,
+      "attached": null,
+      "movement": "<MovementMode.MOVE_WALKING: 1>",
+      "cannon_hides": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "world": "World=/Game/Level/UEDPIE_1_Lvl_CY.Lvl_CY NetMode=3 AudioDevice=3",
+      "pawn": "BP_Player_Man_C_0",
+      "is_character": true,
+      "attached": null,
+      "movement": "<MovementMode.MOVE_WALKING: 1>",
+      "cannon_hides": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  ],
+  "exit_max_bone_step_cm": {
+    "pelvis": 3.492177699912494,
+    "head": 6.849078854411442,
+    "calf_l": 3.299677429473643,
+    "calf_r": 3.2251532930504205,
+    "foot_l": 0.73190390413672,
+    "foot_r": 1.1464748070811914
+  },
+  "max_limb_length_ratio": 1.0000000000026952,
+  "scope": "Moving socket binding corrected; full-range body pose reach remains incomplete.",
+  "persistence_audit": {
+    "fresh_editor_persisted_barrel_sockets": true,
+    "legacy_carriage_sockets_absent": true,
+    "tags": {
+      "OperatorBarrelVisual": [
+        "CannonOperatorContact"
+      ],
+      "OperatorCarriageVisual": []
+    },
+    "affected_asset_editors_closed": true
+  },
+  "editor_shutdown": {
+    "initial_run_crashed": true,
+    "exception": "EXCEPTION_ACCESS_VIOLATION reading 0x78",
+    "first_stack_module": "UnrealEditor-StaticMeshEditor.dll",
+    "crash_context": "Saved/Crashes/UECC-Windows-B97FB93F4D75718B1C48A5A5714E596B_0000/CrashContext.runtime-xml",
+    "root_cause_confirmed": false,
+    "precaution": "Close affected asset editor tabs before removing selected sockets.",
+    "reopen_shutdown_verified": true,
+    "reopen_log": "Saved/CannonOperatorValidation/BarrelSockets_Reopen.log",
+    "verification_limit": "One clean reopen/shutdown after closing affected editors; original crash root cause remains unconfirmed."
+  }
+}

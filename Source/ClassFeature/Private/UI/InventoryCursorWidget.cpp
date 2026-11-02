@@ -1,18 +1,19 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/InventoryCursorWidget.h"
+#include "UI/ItemIconLibrary.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 
-void UInventoryCursorWidget::SetupCursorItem(UTexture2D* InIcon, int32 InCount)
+void UInventoryCursorWidget::SetupCursorItem(UTexture2D* InIcon, int32 InCount, FGameplayTag InItemTag)
 {
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	if (ItemIconImage)
 	{
-		ItemIconImage->SetBrushFromTexture(InIcon, true);
+		UItemIconLibrary::SetItemIcon(ItemIconImage, InIcon, InItemTag);
 		ItemIconImage->SetVisibility(InIcon ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
 	}
 

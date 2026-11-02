@@ -1,4 +1,5 @@
 #include "UI/WeaponQuickSlotWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "BaseItem.h"
 #include "BasePlayer.h"
@@ -54,6 +55,7 @@ void UWeaponQuickSlotWidget::RefreshSlot(
 {
 	ABasePlayer* Player = CachedPlayer.Get();
 	UTexture2D* WeaponIcon = nullptr;
+	FGameplayTag IconItemTag;
 	bool bSelected = false;
 
 	if (Player && Player->QuickSlots.IsValidIndex(QuickSlotIndex))
@@ -64,6 +66,7 @@ void UWeaponQuickSlotWidget::RefreshSlot(
 			if (UInventoryComponent* Inventory = Player->GetInventoryComponent())
 			{
 				WeaponIcon = Inventory->GetMaterialIcon(QuickSlot.ItemTag);
+				IconItemTag = QuickSlot.ItemTag;
 			}
 
 			bSelected = IsValid(Player->EquippedItem)
@@ -75,7 +78,7 @@ void UWeaponQuickSlotWidget::RefreshSlot(
 	{
 		if (WeaponIcon)
 		{
-			WeaponImage->SetBrushFromTexture(WeaponIcon, true);
+			UItemIconLibrary::SetItemIcon(WeaponImage, WeaponIcon, IconItemTag);
 			WeaponImage->SetColorAndOpacity(FLinearColor::White);
 		}
 		else

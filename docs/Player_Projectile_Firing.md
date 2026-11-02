@@ -1,6 +1,6 @@
 # Player 화살 발사 파이프라인
 
-현재 구현 기준: 2026-10-03. 이 문서는 Player 활의 입력, 조준, 배 관성 상속, 발사 확정, 서버 생성, 비행과 에디터 확인을 한곳에 정리한다. Enemy 활은 [Enemy 화살 발사 파이프라인](Enemy_Projectile_Firing.md)을 따른다.
+현재 구현 기준: 2026-10-12. 이 문서는 Player 활의 입력, 조준, 배 관성 상속, 발사 확정, 서버 생성, 비행과 에디터 확인을 한곳에 정리한다. Enemy 활은 [Enemy 화살 발사 파이프라인](Enemy_Projectile_Firing.md)을 따른다.
 
 ## 한 발의 흐름
 
@@ -17,6 +17,16 @@
 `GA_BowAimFire`는 충전과 몽타주, Notify, 서버 발사 승인과 수명을 관리한다. `NockArrow`가 없거나 Release 상태·장비·소켓·Spawn Class·시선·속력·피해 Spec이 유효하지 않으면 발사를 거부한다. FireArrow Notify는 즉시 생성하는 대신 `ProjectileShotComponent`에 예약한다. 이 컴포넌트는 캐릭터 이동과 Mesh tick을 선행 조건으로 두고 `TG_PostUpdateWork`에서 처리한다. 몽타주가 먼저 끝나도 예약이 끝날 때까지 필요한 상태를 유지하며, 취소·장비 변경·어빌리티 종료 시 요청을 지운다. 중복 Notify와 ShotId 재사용은 반복 발사로 이어지지 않는다.
 
 `PlayerAimComponent`는 입력 해제 때 발사 식별자인 ShotId를 만들고, 실제 발사 확정 때 로컬 화면 중앙 ViewRay를 캡처한다. 원격 클라이언트는 이를 서버에 보내며 서버는 시선 원점·방향·시각·ShotId를 검증한다. 서버는 Notify 허용 상태와 검증된 시선이 모두 준비되어야 발사한다. 서버 쪽 예약 제한은 1초, 원격 owning client의 결과 대기는 2초다. 클라이언트는 성공/실패 응답으로 해당 요청을 끝낸다. 따라서 Release 입력 뒤 FireArrow Notify까지 카메라가 움직이면 **Notify에 대응하는 실제 캡처 시선**이 사용된다.
+
+## 장비와 화살 소켓 연결의 책임
+
+`PlayerEquipmentComponent`는 장비 부착과 화살 소켓 연결의 생성·교체·해제를 관리한다. `BowItem`은 연결된 캐릭터 Mesh를 보관하고 `Arrow_socket`의 월드 Transform을 제공한다. `GA_BowAimFire`는 이 연결을 검증해 발사에 사용하며, 발사 입력에서 장비 연결을 복구하지 않는다. 서버와 클라이언트는 각각 장비 부착 및 복제 처리에서 로컬 연결을 구성한다.
+
+`ClearBowArrowAnchor(ExpectedBow)`는 지정한 활만 해제한다. `nullptr`이면 아무 작업도 하지 않으며, 다른 활을 추적 중이면 그 연결은 유지한다. 이전 장비 정리·장착 취소·특정 활 연결 실패는 이 함수를 사용한다. `ClearCurrentBowArrowAnchor()`는 현재 추적하는 연결을 해제하고 추적 포인터를 초기화한다. 부착 대상 교체와 복제된 장비 표시의 정리처럼 현재 연결 전체를 비워야 할 때만 사용한다.
+
+장비 교체는 새 장비의 부착·어빌리티 부여·능력치 적용 성공 후 이전 장비를 정리한다. 검에서 활로 바로 교체할 때 이전 검의 활 캐스팅 결과가 `nullptr`이어도 새 활 연결을 해제하지 않는다. 이 순서는 새 장비 적용 실패 시 기존 장비를 보존하고 재부착하는 취소 경로를 유지한다.
+
+2026-10-12 연결 해제 책임 분리 검증: `ArtisticSW2026Editor Win64 Development` 전체 빌드 성공. 자동화 테스트는 요청에 따라 추가·실행하지 않았으며 PIE 검증은 수행하지 않았다. 빌드 로그는 `Saved/BowAnchorRefactorBuild_2026-10-12.log`에 있다. 수동 확인 시 검 → 활, 활 → 다른 활, 활 → 검 전환과 장착 취소·실패 후 기존 장비 복구를 확인한다. 원격 클라이언트에서 검 → 활 전환 후 서버의 `GetArrowAnchorMesh() == Player->GetMesh()` 및 `TryGetArrowSpawnTransform()` 성공, 발사당 화살 한 개 생성 여부를 확인한다.
 
 ## 조준점과 초기 속도
 

@@ -435,6 +435,13 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 	if (SWRoomLoadDiagnostics::IsEnabled() && FParse::Param(FCommandLine::Get(), TEXT("SWRoomLoadTrace")))
 		DiagnosticParams += FString::Printf(TEXT(" -trace=cpu,loadtime,file,bookmark,frame -statnamedevents -tracefile=\"%s\""), *FPaths::Combine(LogDir, TEXT("Server.utrace")));
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	// The room server is hidden; carry the host's diagnostic setting into its startup commands.
+	if (const IConsoleVariable* CombatLog = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.EnemyShipSafety.CombatLog")))
+	{
+		const int32 Level = FMath::Clamp(CombatLog->GetInt(), 0, 2);
+		if (Level > 0)
+			DiagnosticParams += FString::Printf(TEXT(" -ExecCmds=\"sw.EnemyShipSafety.CombatLog %d\""), Level);
+	}
 	const TCHAR* DiagnosticSwitches[] = { TEXT("EnemyNetProfile"), TEXT("EnemyShipTorpedoBuoyancyTest"),
 		TEXT("EnemyShipObstacleBuoyancyTest"), TEXT("EnemyShipTimeStopTest") };
 	for (const TCHAR* Switch : DiagnosticSwitches)

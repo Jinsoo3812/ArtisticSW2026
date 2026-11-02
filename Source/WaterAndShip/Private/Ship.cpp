@@ -124,6 +124,7 @@ bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 		AttributeSet->InitHealth(State.Health);
 	}
 	bIsSinking = State.bSinking;
+	ClearPlayerRamNavigationStop();
  if (bIsSinking) if (AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>()) Mode->NotifyPlayerShipSinking(this);
 	bIsAnchorDropped = State.bAnchorDropped;
 	AnchorOriginXY = State.AnchorOriginXY;
@@ -653,10 +654,10 @@ void AShip::BeginPlay()
 	if (HelmInteractable)
 	{
 		const FText ObjectName = HelmInteractable->InteractUIInfo.ObjectName.IsEmpty()
-			? NSLOCTEXT("ShipInteraction", "HelmObject", "Ship Helm")
+			? NSLOCTEXT("ShipInteraction", "HelmObject", "타륜")
 			: HelmInteractable->InteractUIInfo.ObjectName;
 		const FText ActionText = HelmInteractable->InteractUIInfo.ActionText.IsEmpty()
-			? NSLOCTEXT("ShipInteraction", "HelmAction", "Take Control")
+			? NSLOCTEXT("ShipInteraction", "HelmAction", "조종하기")
 			: HelmInteractable->InteractUIInfo.ActionText;
 		HelmInteractable->InitializeInteractable(ObjectName, ActionText);
 	}
@@ -703,6 +704,7 @@ void AShip::BeginPlay()
 
 void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ClearPlayerRamNavigationStop();
 	if (HasAuthority() && SharedUpgradeState)
 	{
 		SharedUpgradeState->UnregisterPlayerShip(this);
@@ -1099,6 +1101,8 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->BlastApplicationPointLocal = CurrentBlastApplicationPointLocal;
 				AsyncInput->bApplyAuthoritativeBlast = HasAuthority();
 				AsyncInput->bApplyAuthoritativeBuoyancyState = HasAuthority();
+				AsyncInput->bApplyAuthoritativeAISafety = HasAuthority();
+				AsyncInput->AISafety = IsPlayerControlled() ? FShipAISafetyControl() : AISafetyControl;
 				AsyncInput->bBuoyancyEnabled = BuoyancyForceSettings.BuoyancyCoefficient > UE_SMALL_NUMBER;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
@@ -1130,8 +1134,10 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->ServerPhysicsStepSeconds = ServerPhysicsStepSeconds;
 				AsyncInput->NetworkPhysicsTickOffset = NetworkPhysicsTickOffset;
 				AsyncInput->bNetworkPhysicsTickOffsetAssigned = bNetworkPhysicsTickOffsetAssigned;
-				AsyncInput->bIsAnchorDropped = bIsAnchorDropped;
-				AsyncInput->AnchorOriginXY = AnchorOriginXY;
+				// Feed the temporary brake through the existing rewindable anchor input.
+				// A real anchor keeps its own origin and is never raised by the ram timer.
+				AsyncInput->bIsAnchorDropped = bIsAnchorDropped || bPlayerRamNavigationStopped;
+				AsyncInput->AnchorOriginXY = bIsAnchorDropped ? AnchorOriginXY : PlayerRamStopOriginXY;
 				AsyncInput->AnchorStiffness = AnchorStiffness;
 				AsyncInput->AnchorDamping = AnchorDamping;
 				AsyncInput->AnchorSlackRadius = AnchorSlackRadius;
@@ -1157,6 +1163,7 @@ void AShip::Tick(float DeltaTime)
 
 void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 {
+	if (!bEnabled) ClearPlayerRamNavigationStop();
 	if (!BuoyancyRoot || (bShipRuntimePhysicsEnabled == bEnabled && BuoyancyRoot->IsSimulatingPhysics() == bEnabled))
 	{
 		return;
@@ -1210,7 +1217,9 @@ bool AShip::CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDo
 
 void AShip::ResetFreshEncounterControlState()
 {
+	ClearPlayerRamNavigationStop();
 	CurrentMoveInput = CurrentTurnInput = 0.0f;
+	AISafetyControl = FShipAISafetyControl();
 	bIsAnchorDropped = false;
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
@@ -1300,6 +1309,7 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AShip::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	AISafetyControl = FShipAISafetyControl();
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
 	CurrentAIPropulsionScale = 1.0f;
@@ -1334,6 +1344,7 @@ void AShip::PossessedBy(AController* NewController)
 
 void AShip::UnPossessed()
 {
+	AISafetyControl = FShipAISafetyControl();
 	ResetToFollowCamera();
 	RememberFollowCameraState(Cast<APlayerController>(GetController()));
 
@@ -1355,6 +1366,13 @@ void AShip::UnPossessed()
 	Super::UnPossessed();
 }
 
+void AShip::SetAISafetyControl(const FShipAISafetyControl& Control)
+{
+	if (!HasAuthority()) return;
+	AISafetyControl = IsEnemyShipForEffects() && !IsPlayerControlled() ? Control : FShipAISafetyControl();
+	AISafetyControl.Sanitize();
+}
+
 void AShip::SetAIControlInput(
 	float MoveInput,
 	float TurnInput,
@@ -1368,7 +1386,7 @@ void AShip::SetAIControlInput(
 
 	const float PreviousPropulsionScale = CurrentAIPropulsionScale;
 	const float PreviousTurnScale = CurrentAITurnScale;
-	if (IsPropulsionSuppressed() || bIsAnchorDropped)
+	if (IsPropulsionSuppressed() || bIsAnchorDropped || bPlayerRamNavigationStopped)
 	{
 		CurrentMoveInput = 0.0f;
 		CurrentTurnInput = 0.0f;
@@ -1495,6 +1513,7 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	DOREPLIFETIME(AShip, CurrentAITurnScale);
 	DOREPLIFETIME(AShip, bIsAnchorDropped);
 	DOREPLIFETIME(AShip, AnchorOriginXY);
+	DOREPLIFETIME(AShip, bPlayerRamNavigationStopped);
 }
 
 void AShip::Board(APawn* PlayerPawn)
@@ -1891,6 +1910,7 @@ void AShip::StartSinking(float DestroyDelaySeconds)
 	}
 
 	bIsSinking = true;
+	ClearPlayerRamNavigationStop();
 	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
 	for (UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
 	{
@@ -2908,6 +2928,36 @@ UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+void AShip::StartPlayerRamNavigationStop()
+{
+	if (!HasAuthority() || !IsEnemyShipForEffects() || bIsSinking || !GetWorld()
+		|| !FMath::IsFinite(PlayerRamNavigationStopDuration) || PlayerRamNavigationStopDuration <= 0.0f)
+	{
+		return;
+	}
+
+	bPlayerRamNavigationStopped = true;
+	const FVector Location = BuoyancyRoot ? BuoyancyRoot->GetComponentLocation() : GetActorLocation();
+	PlayerRamStopOriginXY = FVector2D(Location.X, Location.Y);
+	AISafetyControl = FShipAISafetyControl();
+	SetAIControlInput(0.0f, 0.0f);
+	// Reusing the handle restarts the full interval after each accepted ram.
+	GetWorldTimerManager().SetTimer(PlayerRamNavigationStopTimerHandle,
+		this, &AShip::ClearPlayerRamNavigationStop, PlayerRamNavigationStopDuration, false);
+	ForceNetUpdate();
+}
+
+void AShip::ClearPlayerRamNavigationStop()
+{
+	if (GetWorld()) GetWorldTimerManager().ClearTimer(PlayerRamNavigationStopTimerHandle);
+	PlayerRamStopOriginXY = FVector2D::ZeroVector;
+	if (bPlayerRamNavigationStopped)
+	{
+		bPlayerRamNavigationStopped = false;
+		if (HasAuthority()) ForceNetUpdate();
+	}
+}
+
 void AShip::HandlePlayerShipCollisionTelemetry(
 	UPrimitiveComponent* HitComponent,
 	AActor* OtherActor,
@@ -2991,6 +3041,7 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
 		TargetSpec, this, this, OtherShip, &Hit, PlayerVelocity);
 		TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+	OtherShip->StartPlayerRamNavigationStop();
 		SpawnRamImpactNiagaraForAll(
 			PlayerRamImpactEffect,
 			Hit.ImpactPoint,
@@ -3037,6 +3088,7 @@ void AShip::InitializeDefaultAttributes()
 	static const FString ContextString(TEXT("Ship Stat Table Context"));
 	if (const FShipStatRow* StatRow = ResolveShipStatRow(ContextString))
 	{
+		NormalMaximumHealth = StatRow->MaxHealth;
 		AttributeSet->InitHealth(StatRow->MaxHealth);
 		AttributeSet->InitMaxHealth(StatRow->MaxHealth);
 		AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
@@ -3059,8 +3111,8 @@ void AShip::InitializeDefaultAttributes()
 	}
 
 	// Fallback 기본값 설정
-	AttributeSet->InitHealth(100.f);
-	AttributeSet->InitMaxHealth(100.f);
+	AttributeSet->InitHealth(3000.f);
+	AttributeSet->InitMaxHealth(3000.f);
 	AttributeSet->InitMoveSpeed(1.f);
 	AttributeSet->InitForwardPropulsionMultiplier(1.f);
 	AttributeSet->InitTurnTorqueMultiplier(1.f);
@@ -3154,7 +3206,10 @@ void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHea
 	if (!HasAuthority() || !AttributeSet) return;
 	const float PreviousMaxHealth = AttributeSet->GetMaxHealth();
 	const float PreviousHealth = AttributeSet->GetHealth();
-	const float NewMaxHealth = FMath::Max(1.0f, Snapshot.MaxHealth);
+	NormalMaximumHealth = FMath::Max(1.0f, Snapshot.MaxHealth);
+	const bool bDevelopmentHealth = ActorHasTag(TEXT("Player")) && !ActorHasTag(TEXT("Enemy"))
+		&& SWDevelopmentOptions::IsEnabled(this, SWDevelopmentOptions::Session);
+	const float NewMaxHealth = bDevelopmentHealth ? 1000000.f : NormalMaximumHealth;
 	AttributeSet->InitMaxHealth(NewMaxHealth);
 	if (bRefillHealth)
 	{
@@ -3382,10 +3437,10 @@ void AShip::UpdateAnchorInteractionUI()
 {
 	if (AnchorInteractable)
 	{
-		const FText ObjectName = NSLOCTEXT("ShipInteraction", "AnchorObject", "닻 (Anchor)");
+		const FText ObjectName = NSLOCTEXT("ShipInteraction", "AnchorObject", "닻");
 		const FText ActionText = bIsAnchorDropped
-			? NSLOCTEXT("ShipInteraction", "AnchorRaiseAction", "닻 올리기 (Raise Anchor)")
-			: NSLOCTEXT("ShipInteraction", "AnchorDropAction", "닻 내리기 (Drop Anchor)");
+			? NSLOCTEXT("ShipInteraction", "AnchorRaiseAction", "닻 올리기")
+			: NSLOCTEXT("ShipInteraction", "AnchorDropAction", "닻 내리기");
 
 		AnchorInteractable->InitializeInteractable(ObjectName, ActionText);
 	}

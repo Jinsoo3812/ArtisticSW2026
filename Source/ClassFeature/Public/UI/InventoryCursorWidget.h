@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "GameplayTagContainer.h"
 #include "InventoryCursorWidget.generated.h"
 
 class UImage;
@@ -20,7 +21,7 @@ class CLASSFEATURE_API UInventoryCursorWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	void SetupCursorItem(UTexture2D* InIcon, int32 InCount);
+	void SetupCursorItem(UTexture2D* InIcon, int32 InCount, FGameplayTag InItemTag = FGameplayTag());
 	void ClearCursorItem();
 
 protected:

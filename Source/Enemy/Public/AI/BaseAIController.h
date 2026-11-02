@@ -20,6 +20,9 @@ UCLASS()
 class ENEMY_API ABaseAIController : public AAIController
 {
 	GENERATED_BODY()
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FDeckStickyFocusTest;
+#endif
 
 public:
 	ABaseAIController();
@@ -54,6 +57,9 @@ public:
 
 	/** Reapply the possessed enemy's dynamic subtrees after pooled brain logic resumes. */
 	bool RefreshBehaviorRouting();
+	/** Refreshes an already acquired player; never acquires unseen actors or overrides attack-owned facing. */
+	bool RefreshDeckCombatFocus();
+	bool ShouldRetainDeckCombatTarget() const;
 	/** Deferred intent is server-only and is applied after the current Deck attack ends. */
 	bool HasDeferredDeckDecision() const { return DeferredDeckDecision != EDeferredDeckDecision::None; }
 	void DiscardDeferredDeckDecision();
@@ -147,4 +153,5 @@ private:
 	EEnemyAIState DeferredDeckState = EEnemyAIState::Passive;
 	FVector DeferredDeckInvestigation = FVector::ZeroVector;
 	bool bDeferredReturnToPassive = true;
+	bool bRetainingDeckTargetWithoutSight = false;
 };

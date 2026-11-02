@@ -35,6 +35,8 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	bool bApplyAuthoritativeBlast = false;
 	/** Only authority writes the game-thread buoyancy state into Network Physics history. */
 	bool bApplyAuthoritativeBuoyancyState = false;
+	bool bApplyAuthoritativeAISafety = false;
+	FShipAISafetyControl AISafety;
 	bool bBuoyancyEnabled = true;
 	bool bQueryDiagnostics = false;
 
@@ -91,6 +93,8 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		bApplyAuthoritativeExternalAcceleration = false;
 		bApplyAuthoritativeBlast = false;
 		bApplyAuthoritativeBuoyancyState = false;
+		bApplyAuthoritativeAISafety = false;
+		AISafety = FShipAISafetyControl();
 		bBuoyancyEnabled = true;
 		bQueryDiagnostics = false;
 		PontoonOffsets.Empty();
@@ -180,6 +184,9 @@ private:
 	bool bAuthoritativeBuoyancyWriter_Internal = false;
 	bool bQueryDiagnostics_Internal = false;
 	bool bAnchorDropped_Internal = false;
+	FShipAISafetyControl AISafety_Internal;
+	bool bAuthoritativeAISafetyWriter_Internal = false;
+	void ApplyAISafety_Internal(Chaos::FPBDRigidParticleHandle* Particle, float DeltaTime) const;
 	FVector2D CachedAnchorOriginXY = FVector2D::ZeroVector;
 
 	// 물리 스레드에서 고정 보관할 데이터들 (최초 전송 시 캐싱)

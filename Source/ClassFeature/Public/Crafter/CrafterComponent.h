@@ -5,9 +5,12 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayAbilitySpec.h"
+#include "GAS/SWOwnedLooseGameplayTags.h"
 #include "CrafterComponent.generated.h"
 
 class UGameplayAbility;
+class UAbilitySystemComponent;
+class APlayerController;
 class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
@@ -29,6 +32,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// ASC 초기화 완료 시 호출될 Crafter 시스템 초기화 함수
 	void SetupCrafterSystem();
@@ -73,9 +77,10 @@ public:
 	// 서버로 제작 완료를 알리는 RPC
 	UFUNCTION(Server, Reliable)
 	void Server_AttemptCrafting(AWorkTable* TargetTable, float ErrorMargin, float BarLength);
-	
+	UFUNCTION(Server, Reliable)
+	void Server_EndCrafting(AWorkTable* ClosedTable);
 
-protected:
+  protected:
 	// ItemData DA 캐시
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafter|WorkTable")
 	TObjectPtr<UItemData> ItemDataAsset;
@@ -115,4 +120,14 @@ protected:
 
 	UFUNCTION()
 	void HandleStarforceAttempt(float ErrorMargin, float BarLength);
+	friend class FCrafterSessionSafetyTest;
+	bool IsCraftingTableInReach(AWorkTable* Table) const;
+	TWeakObjectPtr<UAbilitySystemComponent> BoundCraftingASC;
+	FDelegateHandle CraftEventSubscription;
+	FSWOwnedLooseGameplayTags RoleTags, CraftingTags;
+	TWeakObjectPtr<APlayerController> CraftingController;
+	TWeakObjectPtr<AWorkTable> DisplayedCraftingTable;
+	bool bPreviousCursor = false;
+	UPROPERTY(EditDefaultsOnly, Category = "Crafter|WorkTable", meta = (ClampMin = "0"))
+	float MaxCraftingDistance = 500.f;
 };

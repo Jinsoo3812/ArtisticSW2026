@@ -23,12 +23,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FPlayerShipTierStatsAuthoringTest::RunTest(const FString& Parameters)
 {
 	UDataTable* Table = LoadObject<UDataTable>(
-		nullptr, TEXT("/Game/Blueprints/Ship/Data/DT_ShipStat.DT_ShipStat"));
+		nullptr, TEXT("/Game/Blueprints/Item/Data/ShipUpgrade/DT_ShipStat.DT_ShipStat"));
 	if (!TestNotNull(TEXT("DT_ShipStat loads"), Table)) return false;
 
 	const FShipStatRow* PreviousRow = Table->FindRow<FShipStatRow>(TEXT("PlayerShip"), TEXT("Player tier baseline"));
 	if (!TestNotNull(TEXT("PlayerShip baseline exists"), PreviousRow)) return false;
-	for (int32 Index = 0; Index < 3; ++Index)
+	TestEqual(TEXT("Baseline health is 3000"), PreviousRow->MaxHealth, 3000.f);
+	for (int32 Index = 0; Index < 4; ++Index)
 	{
 		const FName RowName(*FString::Printf(TEXT("PlayerShip_%d"), Index + 2));
 		const FShipStatRow* Row = Table->FindRow<FShipStatRow>(RowName, TEXT("Player tier test"));
@@ -38,7 +39,7 @@ bool FPlayerShipTierStatsAuthoringTest::RunTest(const FString& Parameters)
 			*RowName.ToString(), Row->MaxHealth, Row->ForwardPropulsionMultiplier,
 			Row->TurnTorqueMultiplier, Row->CannonDamage, Row->CannonFireCooldown,
 			Row->CannonballSpeed));
-		TestTrue(TEXT("Health increases each tier"), Row->MaxHealth > PreviousRow->MaxHealth);
+		TestEqual(TEXT("Health increases by 1500 each tier"), Row->MaxHealth, PreviousRow->MaxHealth + 1500.f);
 		TestTrue(TEXT("Propulsion increases each tier"), Row->ForwardPropulsionMultiplier > PreviousRow->ForwardPropulsionMultiplier);
 		TestTrue(TEXT("Turn torque increases each tier"), Row->TurnTorqueMultiplier > PreviousRow->TurnTorqueMultiplier);
 		TestTrue(TEXT("Cannon damage increases each tier"), Row->CannonDamage > PreviousRow->CannonDamage);

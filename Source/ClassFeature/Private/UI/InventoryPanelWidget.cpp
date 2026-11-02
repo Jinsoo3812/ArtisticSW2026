@@ -1,8 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/InventoryPanelWidget.h"
+#include "UI/ItemIconLibrary.h"
 
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
+#include "InputCoreTypes.h"
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "Components/Button.h"
@@ -11,6 +14,22 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "UI/InventoryEntryWidget.h"
+
+FReply UInventoryPanelWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Tab)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer()))
+		{
+			if (!InKeyEvent.IsRepeat())
+			{
+				PlayerController->ToggleInventory();
+			}
+			return FReply::Handled();
+		}
+	}
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
 
 void UInventoryPanelWidget::NativeConstruct()
 {
@@ -208,7 +227,7 @@ void UInventoryPanelWidget::RefreshItemInfo(FGameplayTag ItemTag, int32 Count)
 	{
 		if (UTexture2D* Icon = BoundInventoryComponent->GetMaterialIcon(ItemTag))
 		{
-			ItemInfoIconImage->SetBrushFromTexture(Icon, true);
+			UItemIconLibrary::SetItemIcon(ItemInfoIconImage, Icon, ItemTag);
 			ItemInfoIconImage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		}
 		else

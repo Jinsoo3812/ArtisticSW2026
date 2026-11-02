@@ -3629,6 +3629,27 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
 {
     if (!CachedLocomotionStateComponent) return;
 
+    const bool bMounted=CachedBasePlayer && CachedBasePlayer->IsOperatingCannon();
+    if (bMounted!=bWasMountedForStateController)
+    {
+        // A hidden pre-mount TIP/Start/Land clip must not resume on dismount.
+        bWasMountedForStateController=bMounted;
+        StateControllerPlaybackHoldState=EStateControllerPresentationState::None;
+        StateControllerPlaybackHoldDuration=0.f;
+        StateControllerPlaybackHoldElapsed=0.f;
+        StateControllerSelectedAnimation=nullptr;
+        StateControllerSelectedAnimationOutput=FS_ChooserOutputs();
+        StateControllerActiveTurnInPlaceIndex=0;
+        StateControllerTurnInPlaceIndexForChooser=0.f;
+        bStateControllerForceMotionMatchingReselect=true;
+    }
+    if (bMounted)
+    {
+        StateControllerRequestedPresentationState=EStateControllerPresentationState::IdleLoop;
+        EvaluateStateControllerPlaybackHold(EStateControllerPresentationState::IdleLoop);
+        return;
+    }
+
     FAnimThreadSafeData& ThreadSafeData = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
     EStateControllerPresentationState DesiredState = EStateControllerPresentationState::IdleLoop;
 

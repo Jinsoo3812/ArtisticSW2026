@@ -22,6 +22,10 @@ public:
  void RequestSessionEnabled(bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerSetDevelopmentOption(FName Option, bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerSetShipSpeedMultiplier(float Multiplier);
+ UFUNCTION(Server, Reliable) void ServerSetWeather(int32 Hour, int32 Minute, int32 Weather);
+ UFUNCTION(Server, Reliable) void ServerSetWeatherPreset(const FString& WeatherName, int32 Hour);
+ /** Top up ordinary/good wooden planks and iron plates to 50 each; host-only, enabled test session only. */
+ UFUNCTION(Server, Reliable) void ServerGrantRepairPlanks();
  UFUNCTION(Server, Reliable) void ServerSkipCampaign(FName Target, int32 ExpectedGeneration);
  void RequestCampaignSkip(FName Target);
  /** Console and key input share the same session, UI, generation and server policy. */
@@ -43,8 +47,16 @@ private:
  friend class FDevelopmentPlayerInvulnerabilityTest;
 #endif
  void RefreshDevelopmentOptions();
+ void GrantRepairPlanks(bool bTopUp);
+ bool bSessionRepairPlanksGranted = false;
  int32 LastDevelopmentMask = INDEX_NONE;
- TWeakObjectPtr<UAbilitySystemComponent> DevelopmentInvulnerableASC;
+ struct FDevelopmentHealthOverride
+ {
+  float OriginalMaximum = 0.f;
+  TWeakObjectPtr<AActor> Avatar;
+ };
+ TMap<TWeakObjectPtr<UAbilitySystemComponent>, FDevelopmentHealthOverride> DevelopmentHealthOverrides;
+ void RestoreDevelopmentHealth();
  bool MatchesCurrentLife(ABasePlayer* ExpectedLifeCharacter, int32 ExpectedWaitingGeneration) const;
  UFUNCTION() void OnRep_SessionEnabled();
  UFUNCTION() void OnRep_ServerRestoreGeneration();

@@ -74,8 +74,13 @@ public:
 	void RequestEnemyShipDebugTeleport(const FString& ShipTag, const FString& ArrivalTag);
 	virtual void UpdateCameraManager(float DeltaSeconds) override;
 	bool IsDevelopmentTestInputBlockedByUI() const;
+	bool IsGameplayInputBlockedByUI() const;
+	/** Local view preference survives pawn replacement; never replicated or sent as gameplay input. */
+	UPROPERTY(Transient) float LocalPreferredCameraDistance = 0.f;
 	bool IsDevelopmentTestInputBlockedByServerUI() const;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class USWDevTestInputComponent> DevTestInput;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<class USWCameraRevealComponent> CameraReveal;
 	virtual bool CaptureLatestLifeProgress(APawn* SourcePawn) override;
 	virtual bool CanAcceptLifeDeath(APawn* SourcePawn) const override;
 	virtual void SetDeathFlowState(const FSWDeathFlowState& State) override;

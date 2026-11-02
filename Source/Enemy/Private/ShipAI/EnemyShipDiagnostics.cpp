@@ -9,7 +9,7 @@ static TAutoConsoleVariable<int32> CVarShipInitLog(TEXT("sw.EnemyShip.InitLog"),
 	TEXT("Initial pool Actor construction timing summaries. No Actor/ISM transition logs."));
 static TAutoConsoleVariable<int32> CVarCrewLog(TEXT("sw.EnemyCrew.Log"), 1,
 	TEXT("Bounded crew initialization, sight, request, readiness and activation diagnostics."));
-static TAutoConsoleVariable<int32> CVarQueueLog(TEXT("sw.EnemyShipPool.QueueLog"), 1,
+static TAutoConsoleVariable<int32> CVarQueueLog(TEXT("sw.EnemyShipPool.QueueLog"), 0,
 	TEXT("0=off, 1=queue lifecycle and bounded progress, 2=include per-stage changes. Development diagnostics; set separately on server/client."));
 
 int32 EnemyShipDiagnostics::QueueLogLevel()

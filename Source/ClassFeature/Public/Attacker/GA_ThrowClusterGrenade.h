@@ -28,6 +28,8 @@ protected:
   UPROPERTY()
   TObjectPtr<class UClusterGrenadeSelectionWidget> SelectionWidget;
 
+  TWeakObjectPtr<class USWPlayerCameraZoomComponent> ReservedCameraZoom;
+
   /* Sub-munition Mapping */
   UPROPERTY(EditDefaultsOnly, Category = "Cluster")
   TMap<FGameplayTag, TSubclassOf<class ASubMunitionProjectile>> SubMunitionClassMap;
